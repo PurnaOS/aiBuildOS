@@ -28,7 +28,8 @@ test("prompts to attach a harness on an empty config, and not once one exists", 
 
     await window.getByTestId("harness-name").fill("Stub");
     await window.getByTestId("harness-command").fill(process.execPath);
-    await window.getByTestId("harness-args").fill(stub);
+    // `--experimental-strip-types` is the default only from Node 22.18; `engines` admits 22.0.
+    await window.getByTestId("harness-args").fill(`--experimental-strip-types\n${stub}`);
     await window.getByTestId("harness-save").click();
 
     await expect(window.getByTestId("attach-dialog")).toBeHidden();
@@ -41,7 +42,38 @@ test("prompts to attach a harness on an empty config, and not once one exists", 
 
     await expect(reopened.getByTestId("title")).toHaveText("aiBuildOS");
     await expect(reopened.getByTestId("attach-dialog")).toHaveCount(0);
+
+    // Removing the last harness puts the app back in its first-run state, without a restart.
+    await reopened.getByTestId("nav-settings").click();
+    await reopened.getByTestId("harness-remove").click();
+    await expect(reopened.getByTestId("attach-dialog")).toBeVisible();
     await second.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * TC-0004 step 8 — RQ-0001#AC-10. The attach dialog has no dismiss, so a save that fails silently
+ * is a dead end: the button returns to its idle label and the user has no way out and no reason why.
+ */
+test("shows the reason when a save cannot be written", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "aibuildos-e2e-"));
+  // A directory where the app expects a file: every write to it fails with EISDIR.
+  const env = { ...process.env, AIBUILDOS_HARNESSES_FILE: dir };
+
+  try {
+    const app = await electron.launch({ args: ["."], cwd: appRoot, env });
+    const window = await app.firstWindow();
+
+    await expect(window.getByTestId("attach-dialog")).toBeVisible();
+    await window.getByTestId("harness-name").fill("Stub");
+    await window.getByTestId("harness-command").fill(process.execPath);
+    await window.getByTestId("harness-save").click();
+
+    await expect(window.getByTestId("harness-error")).toBeVisible();
+    await expect(window.getByTestId("attach-dialog")).toBeVisible();
+    await app.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

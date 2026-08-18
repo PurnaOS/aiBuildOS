@@ -7,12 +7,12 @@ import { useUiStore } from "./state/ui-store.js";
  * The shell: a sidebar, a view, and the first-run prompt to attach a coding harness (RQ-0001).
  */
 export function App(): React.JSX.Element {
-  const sidebarOpen = useUiStore((state) => state.sidebarOpen);
-  const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const view = useUiStore((state) => state.view);
   const setView = useUiStore((state) => state.setView);
   const [info, setInfo] = useState<ChannelResponse<"app:info"> | null>(null);
-  const { harnesses, refresh } = useHarnesses();
+  // One owner of the harness list, passed down: see `useHarnesses`.
+  const harnessState = useHarnesses();
+  const { harnesses, refresh } = harnessState;
 
   useEffect(() => {
     void window.aibuildos.invoke("app:info", undefined).then(setInfo);
@@ -33,16 +33,14 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="flex h-screen bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-      {sidebarOpen && (
-        <aside
-          data-testid="sidebar"
-          className="flex w-56 shrink-0 flex-col gap-1 border-r border-neutral-200 p-4 text-sm dark:border-neutral-800"
-        >
-          <p className="mb-2 font-medium">aiBuildOS</p>
-          {navItem("home", "Home")}
-          {navItem("settings", "Settings")}
-        </aside>
-      )}
+      <aside
+        data-testid="sidebar"
+        className="flex w-56 shrink-0 flex-col gap-1 border-r border-neutral-200 p-4 text-sm dark:border-neutral-800"
+      >
+        <p className="mb-2 font-medium">aiBuildOS</p>
+        {navItem("home", "Home")}
+        {navItem("settings", "Settings")}
+      </aside>
 
       <main className="flex flex-1 flex-col items-start gap-4 overflow-auto p-8">
         <h1 data-testid="title" className="text-xl font-semibold tracking-tight">
@@ -50,7 +48,7 @@ export function App(): React.JSX.Element {
         </h1>
 
         {view === "settings" ? (
-          <HarnessPanel />
+          <HarnessPanel {...harnessState} />
         ) : (
           <>
             <dl data-testid="runtime" className="text-sm tabular-nums">
@@ -62,19 +60,7 @@ export function App(): React.JSX.Element {
                 <dt className="text-neutral-500">electron</dt>
                 <dd>{info?.runtime.electron ?? "…"}</dd>
               </div>
-              <div className="flex gap-2">
-                <dt className="text-neutral-500">harnesses</dt>
-                <dd>{harnesses?.length ?? "…"}</dd>
-              </div>
             </dl>
-
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              className="rounded border border-neutral-300 px-3 py-1 text-sm dark:border-neutral-700"
-            >
-              Toggle sidebar
-            </button>
           </>
         )}
       </main>

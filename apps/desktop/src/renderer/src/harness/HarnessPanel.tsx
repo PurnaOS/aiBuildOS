@@ -1,7 +1,7 @@
 import { HARNESS_PRESETS } from "@aibuildos/acp";
 import type { ChannelRequest, ChannelResponse } from "@aibuildos/ipc";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 /**
  * Harness settings and the first-run attach prompt (ST-0001), plus the result of a live ACP test
@@ -15,27 +15,51 @@ type ProbeResult = ChannelResponse<"harness:test">;
 type Draft = ChannelRequest<"harness:save">;
 
 const EMPTY: Draft = { displayName: "", command: "", args: [] };
+/** A field the agent did not advertise is not a failure (RQ-0001#AC-6). */
+const NONE = "not advertised";
+
+const names = (info: { name: string; version: string } | null): string =>
+  info ? `${info.name} ${info.version}` : NONE;
 
 const field =
   "w-full rounded border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700";
 const button =
   "rounded border border-neutral-300 px-3 py-1 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800";
 
-export function useHarnesses(): {
+export interface Harnesses {
+  /** `null` until the first read lands. */
   harnesses: Harness[] | null;
+  error: string | null;
   refresh: () => Promise<void>;
-} {
+}
+
+/**
+ * Called **once**, by `App`, and passed down. Two copies of this hook are two answers to "is a
+ * harness attached?", and the first-run prompt reads one while the settings list writes the other.
+ */
+export function useHarnesses(): Harnesses {
   const [harnesses, setHarnesses] = useState<Harness[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setHarnesses(await window.aibuildos.invoke("harness:list", undefined));
+    try {
+      setHarnesses(await window.aibuildos.invoke("harness:list", undefined));
+      setError(null);
+    } catch (cause) {
+      setError(message(cause));
+    }
   }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  return { harnesses, refresh };
+  return { harnesses, error, refresh };
+}
+
+/** Anything crossing IPC arrives as an unknown rejection; the user still has to be told. */
+function message(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 /** The add/edit form. Presets prefill it; every field stays editable (RQ-0001#AC-3). */
@@ -50,12 +74,17 @@ function HarnessForm({
 }): React.JSX.Element {
   const [draft, setDraft] = useState<Draft>(initial);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const save = async (): Promise<void> => {
     setSaving(true);
+    setError(null);
     try {
       await window.aibuildos.invoke("harness:save", draft);
       onSaved();
+    } catch (cause) {
+      // Without this the dialog silently flips back to "Save harness" — and it has no dismiss.
+      setError(message(cause));
     } finally {
       setSaving(false);
     }
@@ -151,6 +180,12 @@ function HarnessForm({
           </button>
         )}
       </div>
+
+      {error && (
+        <p data-testid="harness-error" className="text-xs text-red-600">
+          {error}
+        </p>
+      )}
     </form>
   );
 }
@@ -158,30 +193,22 @@ function HarnessForm({
 /** What the probe found, in the shape the user asked the question in (RQ-0001#AC-6, AC-7). */
 function ProbeReport({ result }: { result: ProbeResult }): React.JSX.Element {
   if (result.ok) {
+    const rows: [string, string][] = [
+      ["reply", result.reply || "(no text)"],
+      ["agent", names(result.agentInfo)],
+      ["protocol", `v${result.protocolVersion}`],
+      ["stop reason", result.stopReason],
+      ["capabilities", result.agentCapabilities ? JSON.stringify(result.agentCapabilities) : NONE],
+      ["auth methods", result.authMethods.map((m) => m.name).join(", ") || "none required"],
+    ];
     return (
       <dl data-testid="probe-ok" className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-xs">
-        <dt className="text-neutral-500">reply</dt>
-        <dd className="font-medium">{result.reply || "(no text)"}</dd>
-        <dt className="text-neutral-500">agent</dt>
-        <dd>
-          {result.agentInfo
-            ? `${result.agentInfo.name} ${result.agentInfo.version}`
-            : "not advertised"}
-        </dd>
-        <dt className="text-neutral-500">protocol</dt>
-        <dd>v{result.protocolVersion}</dd>
-        <dt className="text-neutral-500">stop reason</dt>
-        <dd>{result.stopReason}</dd>
-        <dt className="text-neutral-500">capabilities</dt>
-        <dd className="font-mono break-all">
-          {result.agentCapabilities ? JSON.stringify(result.agentCapabilities) : "not advertised"}
-        </dd>
-        <dt className="text-neutral-500">auth methods</dt>
-        <dd>
-          {result.authMethods.length === 0
-            ? "none required"
-            : result.authMethods.map((method) => method.name).join(", ")}
-        </dd>
+        {rows.map(([label, value]) => (
+          <Fragment key={label}>
+            <dt className="text-neutral-500">{label}</dt>
+            <dd className="break-all">{value}</dd>
+          </Fragment>
+        ))}
       </dl>
     );
   }
@@ -210,6 +237,18 @@ function ProbeReport({ result }: { result: ProbeResult }): React.JSX.Element {
   );
 }
 
+/** Renders an IPC rejection through the same report the probe's own failures use. */
+function failure(what: string, cause: unknown): ProbeResult {
+  return {
+    ok: false,
+    stage: "spawn",
+    code: "ipc_failed",
+    message: `${what}: ${message(cause)}`,
+    stderr: "",
+    authMethods: [],
+  };
+}
+
 function HarnessRow({ harness, onChanged }: { harness: Harness; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -220,8 +259,19 @@ function HarnessRow({ harness, onChanged }: { harness: Harness; onChanged: () =>
     setResult(null);
     try {
       setResult(await window.aibuildos.invoke("harness:test", { id: harness.id }));
+    } catch (cause) {
+      setResult(failure("could not run the test", cause));
     } finally {
       setTesting(false);
+    }
+  };
+
+  const remove = async (): Promise<void> => {
+    try {
+      await window.aibuildos.invoke("harness:remove", { id: harness.id });
+      onChanged();
+    } catch (cause) {
+      setResult(failure("could not remove this harness", cause));
     }
   };
 
@@ -254,9 +304,7 @@ function HarnessRow({ harness, onChanged }: { harness: Harness; onChanged: () =>
             type="button"
             data-testid="harness-remove"
             className={button}
-            onClick={() =>
-              void window.aibuildos.invoke("harness:remove", { id: harness.id }).then(onChanged)
-            }
+            onClick={() => void remove()}
           >
             Remove
           </button>
@@ -290,8 +338,7 @@ function HarnessRow({ harness, onChanged }: { harness: Harness; onChanged: () =>
   );
 }
 
-export function HarnessPanel(): React.JSX.Element {
-  const { harnesses, refresh } = useHarnesses();
+export function HarnessPanel({ harnesses, error, refresh }: Harnesses): React.JSX.Element {
   const [adding, setAdding] = useState(false);
 
   return (
@@ -326,7 +373,11 @@ export function HarnessPanel(): React.JSX.Element {
         </div>
       )}
 
-      {harnesses === null ? (
+      {error !== null ? (
+        <p data-testid="harness-list-error" className="text-sm text-red-600">
+          Could not read the harness list — {error}
+        </p>
+      ) : harnesses === null ? (
         <p className="text-sm text-neutral-500">Loading…</p>
       ) : harnesses.length === 0 ? (
         <p data-testid="harness-empty" className="text-sm text-neutral-500">

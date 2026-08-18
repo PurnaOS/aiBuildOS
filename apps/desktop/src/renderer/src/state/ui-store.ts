@@ -10,15 +10,11 @@ import { create } from "zustand";
 export type View = "home" | "settings";
 
 export interface UiState {
-  sidebarOpen: boolean;
-  toggleSidebar: () => void;
   view: View;
   setView: (view: View) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  sidebarOpen: true,
-  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   view: "home",
   setView: (view) => set({ view }),
 }));

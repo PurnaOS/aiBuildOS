@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { probeHarness } from "./probe.js";
@@ -10,9 +11,16 @@ import { probeHarness } from "./probe.js";
  */
 const STUB = fileURLToPath(new URL("../../../tools/stub-acp-agent/src/agent.ts", import.meta.url));
 
+/**
+ * `--experimental-strip-types` is what lets Node run the stub's TypeScript source directly. It is
+ * the default from Node 22.18, but `engines` admits 22.0, where omitting it fails the spawn for a
+ * reason that has nothing to do with the code under test.
+ */
 const stub = (mode?: string) => ({
   command: process.execPath,
-  args: mode ? [STUB, `--mode=${mode}`] : [STUB],
+  args: mode
+    ? ["--experimental-strip-types", STUB, `--mode=${mode}`]
+    : ["--experimental-strip-types", STUB],
 });
 
 const cwd = process.cwd();
@@ -67,6 +75,47 @@ describe("probeHarness — TC-0003, the failure modes", () => {
     expect(result.code).toBe("timeout");
     expect(Date.now() - started).toBeLessThan(5_000);
   });
+
+  it("blames the working directory, not PATH, when the working directory does not exist", async () => {
+    // Both faults raise ENOENT with the *command* in `error.path`, so this is the one failure the
+    // probe cannot tell apart after the fact — it has to be ruled out first.
+    const result = await probeHarness(stub(), {
+      cwd: "/definitely/not/a/directory",
+      timeoutMs: 5_000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("cwd_not_found");
+  });
+
+  it("reaps a grandchild process, not just the launcher it spawned", async () => {
+    // The shipped presets are all `npx -y <pkg>`, so the agent is a grandchild of the process the
+    // probe holds. `sh -c` reproduces that shape offline: a marker process in the background, and
+    // the stub `exec`d in the foreground so the probe hangs long enough to time out.
+    const marker = "aibuildos-orphan-probe";
+    const result = await probeHarness(
+      {
+        command: "/bin/sh",
+        args: [
+          "-c",
+          `${process.execPath} -e 'setTimeout(()=>{},30000)' ${marker} & ` +
+            `exec ${process.execPath} --experimental-strip-types ${STUB} --mode=silent`,
+        ],
+      },
+      { cwd, timeoutMs: 750 },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("timeout");
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const survivors = execFileSync("/bin/sh", ["-c", `pgrep -f ${marker} || true`], {
+      encoding: "utf8",
+    }).trim();
+    expect(survivors).toBe("");
+  }, 20_000);
 
   it("reports authentication as its own outcome, with the methods the agent offers", async () => {
     const result = await probeHarness(stub("auth-required"), { cwd, timeoutMs: 20_000 });

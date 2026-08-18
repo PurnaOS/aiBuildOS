@@ -11,14 +11,13 @@
  *
  *   --mode=ok             the happy path: handshake, session, one streamed reply (default)
  *   --mode=silent         reads input, answers nothing — drives the probe's timeout
- *   --mode=exit           exits immediately without speaking
  *   --mode=auth-required  fails `session/new` with JSON-RPC -32000
  *
  * Node-compatible on purpose: it stands in for an agent binary, and agent binaries are not Bun.
  */
 import { createInterface } from "node:readline";
 
-type Mode = "ok" | "silent" | "exit" | "auth-required";
+type Mode = "ok" | "silent" | "auth-required";
 
 interface Request {
   jsonrpc: "2.0";
@@ -30,8 +29,6 @@ interface Request {
 const mode = (process.argv
   .find((argument) => argument.startsWith("--mode="))
   ?.slice("--mode=".length) ?? "ok") as Mode;
-
-if (mode === "exit") process.exit(3);
 
 function write(message: unknown): void {
   process.stdout.write(`${JSON.stringify(message)}\n`);

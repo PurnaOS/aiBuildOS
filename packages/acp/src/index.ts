@@ -12,8 +12,6 @@ export interface LaunchSpec {
   /** Executable to spawn. Resolved on PATH unless absolute. */
   readonly command: string;
   readonly args: readonly string[];
-  /** Working directory for the agent. Defaults to the app's own cwd. */
-  readonly cwd?: string | undefined;
 }
 
 /** A launch spec the product ships, offered when the user adds a harness (RQ-0001#AC-3). */
@@ -50,10 +48,6 @@ export const HARNESS_PRESETS: readonly HarnessPreset[] = [
     args: ["-y", "@google/gemini-cli", "--acp"],
   },
 ];
-
-export function findPreset(id: string): HarnessPreset | undefined {
-  return HARNESS_PRESETS.find((preset) => preset.id === id);
-}
 
 // The probe lives behind `@aibuildos/acp/probe`, not here: it imports `node:child_process`, and this
 // module is imported by the renderer for the preset list.

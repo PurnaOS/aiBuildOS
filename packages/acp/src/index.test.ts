@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { findPreset, HARNESS_PRESETS } from "./index.js";
+import { HARNESS_PRESETS } from "./index.js";
 
 describe("harness presets", () => {
-  it("finds a preset by id", () => {
-    expect(findPreset("claude-code")?.displayName).toBe("Claude Code");
-    expect(findPreset("nope")).toBeUndefined();
-  });
-
   it("gives every preset a unique id and a command to run", () => {
     expect(new Set(HARNESS_PRESETS.map((p) => p.id)).size).toBe(HARNESS_PRESETS.length);
     for (const preset of HARNESS_PRESETS) {

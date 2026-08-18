@@ -1,5 +1,7 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
+import { setTimeout as sleep } from "node:timers/promises";
 import {
   client,
   methods,
@@ -57,16 +59,15 @@ export type ProbeResult =
 export interface ProbeOptions {
   /** Absolute path the session runs against. */
   readonly cwd: string;
-  readonly prompt?: string;
   readonly timeoutMs?: number;
   readonly clientVersion?: string;
 }
 
 /** JSON-RPC code an agent returns from `session/new` when it has not been logged in. */
 const AUTH_REQUIRED = -32000;
-const DEFAULT_PROMPT = "Reply with exactly: ok";
+const PROBE_PROMPT = "Reply with exactly: ok";
 const DEFAULT_TIMEOUT_MS = 30_000;
-/** Enough to see a stack trace or a missing-module error, not enough to blow up an IPC payload. */
+/** Enough for a stack trace, not enough to blow up an IPC payload. The *tail* is the useful end. */
 const STDERR_LIMIT = 8_000;
 /** How long the failure path waits for `exit` after the stream error it caused. */
 const EXIT_GRACE_MS = 250;
@@ -91,27 +92,31 @@ export async function probeHarness(spec: LaunchSpec, options: ProbeOptions): Pro
   let stage: ProbeStage = "spawn";
   let authMethods: ProbeAuthMethod[] = [];
 
-  let child: ChildProcessWithoutNullStreams;
-  try {
-    child = spawn(spec.command, [...spec.args], {
-      cwd: spec.cwd ?? options.cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-  } catch (cause) {
-    // Synchronous throws are rare — bad argv shapes, mostly. ENOENT arrives on the `error` event.
+  // A working directory that does not exist makes `spawn` emit ENOENT with the *command* in
+  // `error.path` — indistinguishable from the command being missing, and the working directory is a
+  // free-text field in the harness form. Rule it out here rather than mis-blame PATH later.
+  if (!existsSync(options.cwd)) {
     return {
       ok: false,
       stage: "spawn",
-      code: "spawn_failed",
-      message: describe(cause),
+      code: "cwd_not_found",
+      message: `the working directory ${options.cwd} does not exist`,
       stderr: "",
       authMethods: [],
     };
   }
 
+  const child = spawn(spec.command, [...spec.args], {
+    cwd: options.cwd,
+    stdio: ["pipe", "pipe", "pipe"],
+    // The presets launch through `npx`, so the agent is a grandchild. Its own process group is what
+    // makes it killable; without this, killing `npx` leaves the agent holding its pipes.
+    detached: true,
+  });
+
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => {
-    if (stderr.length < STDERR_LIMIT) stderr = (stderr + chunk).slice(0, STDERR_LIMIT);
+    stderr = (stderr + chunk).slice(-STDERR_LIMIT);
   });
 
   // A command that is not on PATH never starts at all, so it never produces a protocol error to
@@ -137,11 +142,8 @@ export async function probeHarness(spec: LaunchSpec, options: ProbeOptions): Pro
     );
   });
 
-  const timer = new Promise<never>((_resolve, reject) => {
-    setTimeout(
-      () => reject(new ProbeFailure(stage, "timeout", `no response within ${timeoutMs}ms`)),
-      timeoutMs,
-    ).unref?.();
+  const timer = sleep(timeoutMs, undefined, { ref: false }).then<never>(() => {
+    throw new ProbeFailure(stage, "timeout", `no response within ${timeoutMs}ms`);
   });
 
   const run = client({ name: "aiBuildOS" })
@@ -174,7 +176,7 @@ export async function probeHarness(spec: LaunchSpec, options: ProbeOptions): Pro
           stage = "prompt";
           let reply = "";
 
-          const prompted = session.prompt(options.prompt ?? DEFAULT_PROMPT);
+          const prompted = session.prompt(PROBE_PROMPT);
           // `prompt()` queues the stop message only when it *resolves*. If it rejects, draining
           // updates would block until the timeout, so the rejection is raced in — and because it is
           // handled here, it is never an unhandled rejection either.
@@ -215,11 +217,26 @@ export async function probeHarness(spec: LaunchSpec, options: ProbeOptions): Pro
   } catch (cause) {
     // A process that died takes the blame for whatever its closed stream then threw. `exit` lands a
     // tick or two after the stream error, so give it that long — but no longer.
-    const how = await Promise.race([exited, sleep(EXIT_GRACE_MS).then(() => null)]);
+    const how = await Promise.race([exited, sleep(EXIT_GRACE_MS, null, { ref: false })]);
     return { ok: false, ...classify(cause, stage, how), stderr, authMethods };
   } finally {
     run.catch(() => undefined);
-    child.kill();
+    kill(child.pid);
+  }
+}
+
+/**
+ * Signals the whole process group, so an agent launched through `npx` dies with its launcher.
+ *
+ * ponytail: SIGTERM only, no SIGKILL escalation — an agent that traps SIGTERM survives a probe.
+ * Add a grace period and a follow-up SIGKILL if a real agent turns out to ignore it.
+ */
+function kill(pid: number | undefined): void {
+  if (pid === undefined) return;
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    // ESRCH: the group is already gone, which is the outcome we wanted.
   }
 }
 
@@ -245,12 +262,6 @@ function classify(
     };
   }
   return { stage, code: "failed", message: describe(cause) };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms).unref?.();
-  });
 }
 
 function describe(cause: unknown): string {

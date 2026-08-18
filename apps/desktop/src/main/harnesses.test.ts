@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -65,5 +65,18 @@ describe("the harness store", () => {
     writeFileSync(file, "not json at all", "utf8");
 
     expect(loadHarnesses(file)).toEqual([]);
+  });
+
+  it("refuses to write over a file it could not read, rather than deleting it", () => {
+    for (const displayName of ["One", "Two", "Three"])
+      saveHarness(file, { displayName, command: "a", args: [] });
+    const raw = readFileSync(file, "utf8");
+    writeFileSync(file, raw.slice(0, raw.length / 2), "utf8"); // a write truncated by a crash
+
+    expect(() => saveHarness(file, { displayName: "Four", command: "a", args: [] })).toThrow(
+      /not valid harness configuration/,
+    );
+    expect(() => removeHarness(file, "whatever")).toThrow(/not valid harness configuration/);
+    expect(readFileSync(file, "utf8")).toBe(raw.slice(0, raw.length / 2)); // untouched
   });
 });
