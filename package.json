@@ -1,0 +1,27 @@
+{
+  "name": "aibuildos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tools/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter @aibuildos/desktop dev",
+    "build": "bun run --filter @aibuildos/desktop build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "vitest run",
+    "test:e2e": "bun run --filter @aibuildos/desktop test:e2e",
+    "docs:check": "bun tools/okf/cli.ts docs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

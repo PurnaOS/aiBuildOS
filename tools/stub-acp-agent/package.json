@@ -1,0 +1,9 @@
+{
+  "name": "@aibuildos/stub-acp-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "stub-acp-agent": "./src/agent.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "@aibuildos/acp": "workspace:*" }
+}

@@ -111,3 +111,10 @@ dist
 
 # TernJS port file
 .tern-port
+
+# electron-vite build output
+out/
+
+# playwright
+test-results/
+playwright-report/

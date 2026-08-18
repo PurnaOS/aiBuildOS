@@ -1,0 +1,4 @@
+# OKF mandates LF (docs/guidelines/okf-conventions.md §2) and the parser enforces it. Without this,
+# a Windows checkout with core.autocrlf=true rewrites every artifact to CRLF, the walker skips them
+# all as non-artifacts, and `docs:check` passes having validated nothing.
+* text=auto eol=lf
