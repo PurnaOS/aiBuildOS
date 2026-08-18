@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { describeAgent, TIER_1_AGENTS } from "./index.js";
+import { findPreset, HARNESS_PRESETS } from "./index.js";
 
-describe("agent descriptors", () => {
-  it("exposes the three Tier-1 agents", () => {
-    expect(TIER_1_AGENTS.map((a) => a.id)).toEqual(["claude-code", "codex-cli", "pi"]);
+describe("harness presets", () => {
+  it("finds a preset by id", () => {
+    expect(findPreset("claude-code")?.displayName).toBe("Claude Code");
+    expect(findPreset("nope")).toBeUndefined();
   });
 
-  it("looks an agent up by id", () => {
-    expect(describeAgent("pi")?.displayName).toBe("pi");
-    expect(describeAgent("nope")).toBeUndefined();
+  it("gives every preset a unique id and a command to run", () => {
+    expect(new Set(HARNESS_PRESETS.map((p) => p.id)).size).toBe(HARNESS_PRESETS.length);
+    for (const preset of HARNESS_PRESETS) {
+      expect(preset.command).not.toBe("");
+      expect(preset.args.length).toBeGreaterThan(0);
+    }
   });
 });

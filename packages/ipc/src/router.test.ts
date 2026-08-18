@@ -26,9 +26,16 @@ function createFakeIpc(): IpcMainLike & IpcRendererLike {
   };
 }
 
-const validHandlers: Handlers = {
+/**
+ * These tests exercise the router's mechanism, not the channel roster, so they register only the
+ * channel under test. `createRouter` binds every channel but calls none of them until invoked, so a
+ * partial map is safe here — and it keeps adding a channel from churning this file.
+ */
+const only = (handlers: Partial<Handlers>): Handlers => handlers as Handlers;
+
+const validHandlers = only({
   "app:info": () => ({ name: "aibuildos", version: "0.1.0", runtime: { node: "22.0.0" } }),
-};
+});
 
 describe("ipc router", () => {
   it("round-trips a contract channel through a typed client", async () => {
@@ -43,9 +50,7 @@ describe("ipc router", () => {
 
   it("rejects a response that does not match the contract", async () => {
     const ipc = createFakeIpc();
-    createRouter(ipc, {
-      "app:info": () => ({ name: "aibuildos" }) as never,
-    });
+    createRouter(ipc, only({ "app:info": () => ({ name: "aibuildos" }) as never }));
 
     await expect(createClient(ipc).invoke("app:info", undefined)).rejects.toThrow(IpcContractError);
   });

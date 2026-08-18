@@ -8,6 +8,4 @@ back to [docs/README.md](../README.md)
 
 | ID | Title | State | Implements |
 | ---- | ------- | ------- | ------ |
-
-_Empty. No epic exists yet — the first one arrives through
-[requirement-first development](../guidelines/requirement-first.md)._
+| [EP-0001](ep-0001.md) | Harness connection | active | [RQ-0001](../requirements/rq-0001.md) |

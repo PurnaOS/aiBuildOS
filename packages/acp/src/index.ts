@@ -1,45 +1,59 @@
 /**
  * @aibuildos/acp — the boundary to external agent processes (DC-0007).
  *
- * Agents are stdio child processes speaking ACP. An adapter is configuration, not code: a name, a
- * command, and its arguments. No live client lives here yet — this package fixes the vocabulary and
- * the spawn shape so the rest of the app can be written against it.
+ * A harness is one configured coding agent: a name, a command, and its arguments. Agents are stdio
+ * child processes speaking ACP, and this package holds the only code that spawns one.
  *
  * Node-compatible only: this is imported by the Electron main process (AR-0001).
  */
 
-/** How to start one agent as a child process. */
-export interface AgentDescriptor {
-  /** Stable key used in configuration and transcripts. */
-  readonly id: string;
-  readonly displayName: string;
+/** Everything needed to start one agent as a child process. */
+export interface LaunchSpec {
   /** Executable to spawn. Resolved on PATH unless absolute. */
   readonly command: string;
   readonly args: readonly string[];
+  /** Working directory for the agent. Defaults to the app's own cwd. */
+  readonly cwd?: string | undefined;
 }
 
-/** The agents supported at bootstrap. Adding one is a config entry, not an integration. */
-export const TIER_1_AGENTS: readonly AgentDescriptor[] = [
-  { id: "claude-code", displayName: "Claude Code", command: "claude", args: ["--acp"] },
-  { id: "codex-cli", displayName: "Codex CLI", command: "codex", args: ["acp"] },
-  { id: "pi", displayName: "pi", command: "pi", args: ["acp"] },
-];
+/** A launch spec the product ships, offered when the user adds a harness (RQ-0001#AC-3). */
+export interface HarnessPreset extends LaunchSpec {
+  readonly id: string;
+  readonly displayName: string;
+}
 
 /**
- * A live agent process. Implemented against `@agentclientprotocol/sdk` when the ACP client lands;
- * `tools/stub-acp-agent` is spawned through the same interface in tests (DC-0013).
+ * The harnesses aiBuildOS ships support for. Adding one is a config entry, not an integration.
+ *
+ * These commands are the ones that actually exist today — the `@zed-industries/*` adapters were
+ * renamed to `@agentclientprotocol/*`, and Gemini's `--experimental-acp` is deprecated in favour of
+ * `--acp`. There is an upstream registry of ACP agents; three hardcoded presets are a few lines and
+ * a fetch-and-cache layer is a project, so that arrives when these go stale.
  */
-export interface AgentConnection {
-  readonly descriptor: AgentDescriptor;
-  /** Send one JSON-RPC message to the agent's stdin. */
-  send(message: unknown): Promise<void>;
-  close(): Promise<void>;
+export const HARNESS_PRESETS: readonly HarnessPreset[] = [
+  {
+    id: "claude-code",
+    displayName: "Claude Code",
+    command: "npx",
+    args: ["-y", "@agentclientprotocol/claude-agent-acp"],
+  },
+  {
+    id: "codex",
+    displayName: "Codex",
+    command: "npx",
+    args: ["-y", "@agentclientprotocol/codex-acp"],
+  },
+  {
+    id: "gemini",
+    displayName: "Gemini CLI",
+    command: "npx",
+    args: ["-y", "@google/gemini-cli", "--acp"],
+  },
+];
+
+export function findPreset(id: string): HarnessPreset | undefined {
+  return HARNESS_PRESETS.find((preset) => preset.id === id);
 }
 
-export interface AgentSpawner {
-  spawn(descriptor: AgentDescriptor): Promise<AgentConnection>;
-}
-
-export function describeAgent(id: string): AgentDescriptor | undefined {
-  return TIER_1_AGENTS.find((agent) => agent.id === id);
-}
+// The probe lives behind `@aibuildos/acp/probe`, not here: it imports `node:child_process`, and this
+// module is imported by the renderer for the preset list.

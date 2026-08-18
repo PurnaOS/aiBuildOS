@@ -16,7 +16,8 @@
     "@aibuildos/ipc": "workspace:*",
     "@aibuildos/knowledge-engine": "workspace:*",
     "@aibuildos/shared": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@agentclientprotocol/sdk": "^1.3.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
