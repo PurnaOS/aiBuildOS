@@ -42,6 +42,8 @@ bun install          # workspaces: apps/*, packages/*, tools/*
 bun run dev          # electron-vite dev — the desktop app
 bun run build        # build the desktop app
 bun run typecheck    # tsc --noEmit across every package
+bun run lint         # biome (ts/tsx/css/json) + markdownlint (docs/); lint:fix to apply
+bun run format       # biome format --write
 bun run test         # vitest (runs on Node, not Bun — see AR-0001)
 bun run test:e2e     # playwright against the built app; build first
 bun run docs:check   # validate the OKF bundle in docs/

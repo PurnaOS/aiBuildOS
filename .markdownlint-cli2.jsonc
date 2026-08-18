@@ -1,0 +1,24 @@
+{
+  // Biome does not process Markdown at all (DC-0016), so the OKF bundle gets its own linter.
+  // This checks prose *form* only — structure and links are docs:check's job.
+  "config": {
+    "default": true,
+    // Tables in the index files are intentionally wide; wrapping them would break the format.
+    "MD013": false,
+    // Compact, not aligned. Index tables carry long link-filled cells, and character-aligning
+    // their pipes would make the source unreadable and unmaintainable by hand.
+    "MD060": { "style": "compact" },
+    // Artifact bodies repeat `## Context` / `## Decision` across files, which is the point.
+    "MD024": { "siblings_only": true },
+    // ASCII diagrams in architecture docs use fenced blocks without a language.
+    "MD040": false,
+    // OKF artifacts carry `title:` in frontmatter *and* an H1 in the body, on purpose: the
+    // frontmatter title is identity, the heading is the document. Without this, MD025 counts the
+    // frontmatter key as the title and flags every artifact's heading as a second H1.
+    "MD025": { "front_matter_title": "" }
+  },
+  "globs": ["**/*.md"],
+  // Bun's isolated linker puts a node_modules under every workspace package, so these must be
+  // globbed from any depth, not just the repo root.
+  "ignores": ["**/node_modules/**", "**/out/**", "**/dist/**", "**/test-results/**"]
+}

@@ -12,12 +12,17 @@
     "dev": "bun run --filter @aibuildos/desktop dev",
     "build": "bun run --filter @aibuildos/desktop build",
     "typecheck": "bun run --filter '*' typecheck",
+    "lint": "biome check . && markdownlint-cli2",
+    "lint:fix": "biome check --write . && markdownlint-cli2 --fix",
+    "format": "biome format --write .",
     "test": "vitest run",
     "test:e2e": "bun run --filter @aibuildos/desktop test:e2e",
     "docs:check": "bun tools/okf/cli.ts docs"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.9",
     "@types/node": "^22.10.0",
+    "markdownlint-cli2": "^0.23.2",
     "typescript": "~5.9.3",
     "vitest": "^4.1.10"
   },
