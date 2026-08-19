@@ -10,18 +10,21 @@
  * not do — printing, and deciding the exit code.
  */
 import { validate } from "@aibuildos/knowledge-engine";
-import { loadBundle } from "@aibuildos/knowledge-engine/load";
+import { loadBundle, loadProfile } from "@aibuildos/knowledge-engine/load";
 
 const root = process.argv[2] ?? "docs";
 
 const { bundle, parseErrors } = loadBundle(root, process.cwd());
+const { profile, issues } = loadProfile(root, process.cwd());
 
-for (const { file, message } of parseErrors) {
+// A type definition that will not parse is reported the same way an artifact is, and is just as
+// fatal: the rules that follow would silently stop enforcing whatever that type declared.
+for (const { file, message } of [...parseErrors, ...issues]) {
   console.error(`${file}  parse  ${message}`);
   process.exitCode = 1;
 }
 
-const findings = validate(bundle);
+const findings = validate(bundle, profile);
 
 for (const finding of findings) {
   const at = finding.line === undefined ? finding.file : `${finding.file}:${finding.line}`;

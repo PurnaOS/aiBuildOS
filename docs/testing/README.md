@@ -17,6 +17,10 @@ back to [docs/README.md](../README.md)
 | [TC-0007](tc-0007.md) | Git reads branch, working-tree counts and commits, and names its own failures | active | [RQ-0002](../requirements/rq-0002.md)#AC-5, #AC-7, #AC-11 |
 | [TC-0008](tc-0008.md) | A project is created, listed, opened and closed from the launch page | active | [RQ-0002](../requirements/rq-0002.md)#AC-2, #AC-6, #AC-10 |
 | [TC-0009](tc-0009.md) | The bundle loader walks a bundle permissively and summarises it by type and state | active | [RQ-0002](../requirements/rq-0002.md)#AC-8 |
+| [TC-0010](tc-0010.md) | The type profile loads from disk and resolves extends by merging child over parent | active | [RQ-0003](../requirements/rq-0003.md)#AC-1, #AC-14 |
+| [TC-0011](tc-0011.md) | Frontmatter rules check type, prefix, directory, fields, state and provenance | active | [RQ-0003](../requirements/rq-0003.md)#AC-2 … #AC-7 |
+| [TC-0012](tc-0012.md) | Link rules check declared relationships, target types, cardinality and cycles | active | [RQ-0003](../requirements/rq-0003.md)#AC-8 … #AC-11 |
+| [TC-0013](tc-0013.md) | Body rules check required sections, acceptance criteria and criterion links | active | [RQ-0003](../requirements/rq-0003.md)#AC-12, #AC-13 |
 | [TC-0014](tc-0014.md) | The event channel validates both ends, delivers to subscribers and unsubscribes | active | [RQ-0004](../requirements/rq-0004.md)#AC-3, #AC-18 |
 | [TC-0015](tc-0015.md) | A session stays open across prompts, streams every update kind, and cancels cleanly | active | [RQ-0004](../requirements/rq-0004.md)#AC-4, #AC-11, #AC-17 |
 | [TC-0016](tc-0016.md) | Every ACP session update maps onto AG-UI events | active | [RQ-0004](../requirements/rq-0004.md)#AC-5, #AC-6, #AC-7, #AC-8 |
