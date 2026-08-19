@@ -89,6 +89,32 @@ function toGitError(cause: unknown): GitError {
 }
 
 /**
+ * Configuration this application refuses to honour when **reading** a repository it did not create.
+ *
+ * `core.fsmonitor` names a program Git executes during `status`, and `.git/config` travels with a
+ * directory — cloning does not carry it, but an unpacked archive or a folder on a shared drive does.
+ * The launch page reads every registered project on every launch, so adopting one hostile directory
+ * once would re-arm it indefinitely, and Git runs it silently: measured on 2.54.0, a program that
+ * exits non-zero still leaves `git status` at exit 0 with empty stderr.
+ *
+ * Deliberately scoped to reads, and deliberately narrow — see DC-0010. `fsmonitor` is a performance
+ * cache, not Git semantics, so forcing it off costs only the speed-up on a very large repository.
+ * Hooks, credential helpers, signing and merge behaviour are untouched.
+ */
+const UNTRUSTED_READ = ["-c", "core.fsmonitor="];
+
+/**
+ * `git`, for commands that read a repository the user pointed this application at.
+ *
+ * Writes — `init`, `add`, `commit` — deliberately do *not* go through here: they only ever run in a
+ * directory the application just created, and they are exactly the operations DC-0010 wants running
+ * under the user's own hooks and signing.
+ */
+async function readGit(cwd: string, ...argv: string[]): Promise<string> {
+  return await git(cwd, ...UNTRUSTED_READ, ...argv);
+}
+
+/**
  * The root of the repository containing `dir`, or `null` when `dir` is not in one.
  *
  * Deliberately not `existsSync(dir + "/.git")`: adopting a *subdirectory* of an existing repository
@@ -97,7 +123,7 @@ function toGitError(cause: unknown): GitError {
  */
 export async function repoRoot(dir: string): Promise<string | null> {
   try {
-    return (await git(dir, "rev-parse", "--show-toplevel")).trim();
+    return (await readGit(dir, "rev-parse", "--show-toplevel")).trim();
   } catch (cause) {
     // Only Git's own "not a repository" means there is no repository. Every other failure —
     // `detected dubious ownership`, a permission error, a corrupt `.git` — is a repository this
@@ -157,7 +183,7 @@ export async function recentCommits(dir: string, limit = 10): Promise<GitCommit[
     // inside a commit message. With it last, everything after the second separator is the subject, so
     // a crafted message cannot shift the hash or the date. `%s` is the first line only, so the
     // line-based split above stays safe too.
-    stdout = await git(dir, "log", "-n", String(limit), `--format=%h${UNIT}%aI${UNIT}%s`);
+    stdout = await readGit(dir, "log", "-n", String(limit), `--format=%h${UNIT}%aI${UNIT}%s`);
   } catch (cause) {
     if (cause instanceof GitError && /does not have any commits yet/i.test(cause.stderr)) return [];
     throw cause;
@@ -180,7 +206,7 @@ export async function recentCommits(dir: string, limit = 10): Promise<GitCommit[
  * line-based format quotes such paths instead of reporting them plainly.
  */
 export async function status(dir: string): Promise<GitStatus> {
-  const stdout = await git(
+  const stdout = await readGit(
     dir,
     "status",
     "--porcelain=v2",

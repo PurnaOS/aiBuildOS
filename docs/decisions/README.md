@@ -20,7 +20,7 @@ Conventions: [OKF conventions](../guidelines/okf-conventions.md) ·
 | [DC-0007](dc-0007.md) | Agent integration through the official ACP TypeScript SDK | accepted | [AR-0001](../architecture/ar-0001.md) · [DC-0008](dc-0008.md), [DC-0013](dc-0013.md) |
 | [DC-0008](dc-0008.md) | CopilotKit and AG-UI for conversational and generative UI | accepted | [DC-0004](dc-0004.md), [DC-0007](dc-0007.md) |
 | [DC-0009](dc-0009.md) | Custom TypeScript knowledge engine over YAML CST | accepted | [AR-0002](../architecture/ar-0002.md) · [DC-0015](dc-0015.md) |
-| [DC-0010](dc-0010.md) | System Git CLI driven by argv, with worktrees for isolation | accepted | [AR-0001](../architecture/ar-0001.md) · [DC-0015](dc-0015.md) |
+| [DC-0010](dc-0010.md) | System Git CLI driven by argv, with worktrees for isolation | accepted | [AR-0001](../architecture/ar-0001.md), [RQ-0002](../requirements/rq-0002.md) · [DC-0015](dc-0015.md) |
 | [DC-0011](dc-0011.md) | Secrets held in Electron safeStorage, never in the bundle | accepted | [AR-0001](../architecture/ar-0001.md) · [DC-0007](dc-0007.md) |
 | [DC-0012](dc-0012.md) | Previews via WebContentsView with execa-managed dev servers | accepted | [AR-0001](../architecture/ar-0001.md) · [DC-0003](dc-0003.md) |
 | [DC-0013](dc-0013.md) | Vitest, Playwright and a scripted stub ACP agent | accepted | [AR-0002](../architecture/ar-0002.md) · [DC-0002](dc-0002.md), [DC-0007](dc-0007.md) |

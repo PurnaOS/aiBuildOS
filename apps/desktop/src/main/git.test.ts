@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -186,6 +186,31 @@ describe("the git boundary", () => {
     const error = await git(dir, "rev-parse", "--show-toplevel").catch((cause) => cause);
     expect(error).toBeInstanceOf(GitError);
     expect(error.message).toMatch(/not a git repository/i);
+  });
+
+  /**
+   * `.git/config` travels with a directory, and `core.fsmonitor` names a program `git status` runs.
+   * Adopting one unpacked archive would otherwise execute it on every launch, for every launch —
+   * silently, since Git reports exit 0 with empty stderr even when the program fails (DC-0010).
+   */
+  it("never executes a repository's own fsmonitor program while reading it", async () => {
+    await initRepo(dir);
+    await identify();
+    writeFileSync(join(dir, "a.txt"), "one", "utf8");
+    await commitAll(dir, "add a");
+
+    const marker = join(dir, "EXECUTED");
+    const program = join(dir, "fsmonitor.sh");
+    writeFileSync(program, `#!/bin/sh\ntouch "${marker}"\nexit 1\n`, "utf8");
+    chmodSync(program, 0o755);
+    await git(dir, "config", "core.fsmonitor", program);
+
+    // Every read the application performs against a project it did not create.
+    await status(dir);
+    await recentCommits(dir);
+    await repoRoot(dir);
+
+    expect(existsSync(marker)).toBe(false);
   });
 
   it("reports a missing identity as its own outcome (RQ-0002#AC-11)", async () => {
