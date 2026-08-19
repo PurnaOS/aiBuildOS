@@ -67,11 +67,9 @@ test("follows the system appearance, in this application's neutrals", async () =
   await expect(surface).toHaveCSS("color", "rgb(23, 23, 23)");
 
   // Nothing on the document says which appearance is in force; the media query is the only authority.
-  const marks = await w.evaluate(() => ({
-    className: document.documentElement.className,
-    theme: document.documentElement.getAttribute("data-theme"),
-  }));
-  expect(marks).toEqual({ className: "", theme: null });
+  const root = w.locator("html");
+  expect(await root.getAttribute("class")).toBe(null);
+  expect(await root.getAttribute("data-theme")).toBe(null);
 
   await app.close();
 });

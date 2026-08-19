@@ -1,5 +1,6 @@
 import {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -19,9 +20,12 @@ import {
   ArtifactGraph,
   editArtifact,
   type GraphNode,
+  insertIndexRow,
+  nextId,
   type Profile,
   parseOkfDocument,
   resolveProfile,
+  scaffoldArtifact,
   updateIndexRow,
   validate,
 } from "@aibuildos/knowledge-engine";
@@ -197,6 +201,16 @@ function insideProject(root: string, path: string): string {
  * `loadBundle` skips `profile/` because it holds type definitions rather than artifacts, so the
  * dialect is read separately — by the engine, which is the only thing allowed to parse `docs/`.
  */
+/** Today, as the conventions write a date. Local, because it is the author's own calendar day. */
+function today(): string {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function loadProfile(root: string): { profile: Profile } {
   const dir = join(root, "profile");
   if (!isDirectory(dir)) return { profile: resolveProfile([]).profile };
@@ -724,6 +738,117 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         };
       } catch (cause) {
         return { problem: failure(cause).message, markdown: null, findings: [] };
+      }
+    },
+
+    "project:artifact-types": ({ id }) => {
+      const project = requireProject(id);
+      const root = join(project.path, "docs");
+      if (!isDirectory(join(root, "profile"))) {
+        return {
+          types: [],
+          problem: "This project has no OKF profile, so it has no artifact types to mint.",
+        };
+      }
+
+      const { profile } = loadProfile(root);
+      // Only what the profile declares, permits directly, and can put somewhere.
+      const types = profile
+        .names()
+        .flatMap((name) => {
+          const definition = profile.get(name);
+          if (!definition || definition.abstract) return [];
+          if (!definition.prefix || !definition.dir) return [];
+          return [{ type: name, prefix: definition.prefix, dir: definition.dir }];
+        })
+        .sort((a, b) => a.type.localeCompare(b.type));
+
+      return { types, problem: null };
+    },
+
+    "project:create-file": ({ id, path }) => {
+      const project = requireProject(id);
+
+      try {
+        const file = insideProject(project.path, path);
+        if (existsSync(file)) return { problem: `${path} already exists.` };
+
+        mkdirSync(dirname(file), { recursive: true });
+        // `wx` rather than a check and a write: between the two, something else could have created
+        // it, and the point of refusing is that nothing of anyone's is overwritten.
+        writeFileSync(file, "", { encoding: "utf8", flag: "wx" });
+        return { problem: null };
+      } catch (cause) {
+        return { problem: failure(cause).message };
+      }
+    },
+
+    "project:create-artifact": async ({ id, type, title }) => {
+      const project = requireProject(id);
+      const root = join(project.path, "docs");
+
+      try {
+        const { profile } = loadProfile(root);
+        const definition = profile.get(type);
+        if (!definition?.prefix || !definition.dir) {
+          return {
+            artifactId: null,
+            problem: `This project's profile has no \`${type}\` to mint.`,
+          };
+        }
+
+        // The conventions require a git handle, and this application has no way to invent a real
+        // one. Refusing names the setting rather than writing an empty field into the record.
+        const owner = (await git(project.path, "config", "user.name").catch(() => "")).trim();
+        if (owner === "") {
+          return {
+            artifactId: null,
+            problem: "This repository has no `user.name` configured, so an artifact has no owner.",
+          };
+        }
+
+        const { bundle } = loadBundle(root, project.path);
+        const artifactId = nextId(
+          bundle.artifacts.map((artifact) =>
+            String((artifact.frontmatter as { id?: unknown }).id ?? ""),
+          ),
+          definition.prefix,
+        );
+
+        const file = insideProject(
+          project.path,
+          join("docs", definition.dir, `${artifactId.toLowerCase()}.md`),
+        );
+        const source = scaffoldArtifact(profile, {
+          type,
+          id: artifactId,
+          title,
+          owner,
+          created: today(),
+        });
+
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, source, { encoding: "utf8", flag: "wx" });
+
+        // Written with it: an artifact missing from its index is a validation error, so a creation
+        // that skipped this would leave a broken bundle the moment it succeeded (AC-4).
+        const indexFile = join(project.path, "docs", definition.dir, "README.md");
+        if (existsSync(indexFile)) {
+          const contained = insideProject(project.path, join("docs", definition.dir, "README.md"));
+          const state = definition.states?.initial ?? "";
+          writeFileSync(
+            contained,
+            insertIndexRow(
+              readFileSync(contained, "utf8"),
+              `| [${artifactId}](${artifactId.toLowerCase()}.md) | ${title} | ${state} | — |`,
+            ),
+            "utf8",
+          );
+        }
+
+        return { artifactId, problem: null };
+      } catch (cause) {
+        return { artifactId: null, problem: failure(cause).message };
       }
     },
 

@@ -2,6 +2,7 @@ import type { ChannelResponse } from "@aibuildos/ipc";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { eyebrow, focusRing, mono } from "../ui.js";
+import { NewArtifact } from "./NewArtifact.js";
 import { useRevision } from "./revision.js";
 import type { Tab } from "./TabStrip.js";
 
@@ -37,11 +38,14 @@ export function RecordRail({
   projectId,
   onOpen,
   onWorkOn,
+  onCreated,
 }: {
   projectId: string;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
   /** Attach this artifact to the conversation, with everything it says (ST-0012#AC-4). */
   onWorkOn: (artifact: { id: string; file: string }) => void;
+  /** A newly minted artifact: opened straight away rather than left to be found (RQ-0006#AC-5). */
+  onCreated: (artifactId: string) => void;
 }): React.JSX.Element {
   const [record, setRecord] = useState<Record_ | null>(null);
   // Re-read when the project has moved underneath this. What is expanded and what is filtered are
@@ -97,12 +101,13 @@ export function RecordRail({
   }, [record, filter]);
 
   return (
-    <div data-testid="record-rail" className="flex h-full flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between px-3 py-2">
-        <span className={eyebrow}>The record</span>
+    <div data-testid="record-rail" className="relative flex h-full flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center gap-2 px-3 py-2">
+        <span className={`flex-1 ${eyebrow}`}>The record</span>
         <span className={`text-[11px] text-neutral-500 ${mono}`}>
           {record?.artifacts?.length ?? ""}
         </span>
+        <NewArtifact projectId={projectId} onCreated={onCreated} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-2">

@@ -2,6 +2,7 @@ import type { ChannelResponse } from "@aibuildos/ipc";
 import { ChevronDown, ChevronRight, File, Folder } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { eyebrow, focusRing, mono, relativeTime } from "../ui.js";
+import { NewFile } from "./NewArtifact.js";
 import { useRevision } from "./revision.js";
 import type { Tab } from "./TabStrip.js";
 
@@ -19,14 +20,17 @@ type Entry = Tree["entries"][number];
 export function FilesRail({
   projectId,
   onOpen,
+  onCreated,
 }: {
   projectId: string;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
+  /** A newly created file: opened straight away, and the tree re-read so it is there to see. */
+  onCreated: (path: string) => void;
 }): React.JSX.Element {
   const [tab, setTab] = useState<"files" | "git">("files");
 
   return (
-    <div data-testid="files-rail" className="flex h-full flex-col overflow-hidden">
+    <div data-testid="files-rail" className="relative flex h-full flex-col overflow-hidden">
       <div className="flex h-[34px] shrink-0 items-stretch border-b border-neutral-200 dark:border-neutral-800">
         {(["files", "git"] as const).map((name) => (
           <button
@@ -44,6 +48,9 @@ export function FilesRail({
             {name}
           </button>
         ))}
+        <span className="flex flex-1 items-center justify-end pr-2">
+          <NewFile projectId={projectId} onCreated={onCreated} />
+        </span>
       </div>
 
       {tab === "files" ? (

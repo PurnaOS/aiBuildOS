@@ -24,3 +24,4 @@ back to [docs/README.md](../README.md)
 | [ST-0014](st-0014.md) | Author an artifact through its own profile | review | [RQ-0005](../requirements/rq-0005.md) · [EP-0004](../epics/ep-0004.md) · [TC-0024](../testing/tc-0024.md), [TC-0025](../testing/tc-0025.md), [TC-0026](../testing/tc-0026.md) |
 | [ST-0015](st-0015.md) | The rails follow the work as it happens | review | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0027](../testing/tc-0027.md) |
 | [ST-0016](st-0016.md) | The conversation looks like part of the application | review | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0028](../testing/tc-0028.md) |
+| [ST-0017](st-0017.md) | Start a file, and mint an artifact | review | [RQ-0006](../requirements/rq-0006.md) · [EP-0004](../epics/ep-0004.md) · [TC-0029](../testing/tc-0029.md), [TC-0030](../testing/tc-0030.md) |

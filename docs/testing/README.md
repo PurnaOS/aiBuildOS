@@ -36,3 +36,5 @@ back to [docs/README.md](../README.md)
 | [TC-0026](tc-0026.md) | An artifact is authored as its own shape, from the profile | active | [RQ-0005](../requirements/rq-0005.md)#AC-3 through #AC-10 |
 | [TC-0027](tc-0027.md) | The rails show what the agent and the user just changed | active | [BG-0001](../bugs/bg-0001.md), [RQ-0004](../requirements/rq-0004.md)#AC-14, #AC-15 |
 | [TC-0028](tc-0028.md) | The conversation is drawn in the application's palette | active | [BG-0002](../bugs/bg-0002.md), [RQ-0004](../requirements/rq-0004.md)#AC-1 |
+| [TC-0029](tc-0029.md) | A minted artifact is what its type says it is | active | [RQ-0006](../requirements/rq-0006.md)#AC-2, #AC-3, #AC-4 |
+| [TC-0030](tc-0030.md) | A file and an artifact are started from the workspace | active | [RQ-0006](../requirements/rq-0006.md)#AC-1, #AC-5, #AC-6, #AC-7, #AC-8 |

@@ -93,6 +93,10 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
             projectId={projectId}
             onOpen={tabs.open}
             onWorkOn={(artifact) => void workOn(artifact)}
+            onCreated={(artifactId) => {
+              bump();
+              tabs.open({ id: artifactId, kind: "artifact", title: artifactId });
+            }}
           />
         </Panel>
         <Handle />
@@ -141,7 +145,14 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
         <Handle />
 
         <Panel id="files" defaultSize={25} minSize={14} collapsible collapsedSize={0}>
-          <FilesRail projectId={projectId} onOpen={tabs.open} />
+          <FilesRail
+            projectId={projectId}
+            onOpen={tabs.open}
+            onCreated={(path) => {
+              bump();
+              tabs.open({ id: path, kind: "file", title: path.split("/").pop() ?? path });
+            }}
+          />
         </Panel>
       </Group>
     </RevisionContext>

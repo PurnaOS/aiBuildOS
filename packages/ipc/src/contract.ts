@@ -529,6 +529,44 @@ export const channels = {
       ),
     }),
   },
+  /**
+   * The artifact types this project can mint (RQ-0006#AC-6).
+   *
+   * Read from the project's own profile, never from this application's vocabulary: a project whose
+   * profile declares types nobody here has heard of gets those, and a project with no profile is
+   * told it cannot mint artifacts rather than being handed someone else's taxonomy.
+   */
+  "project:artifact-types": {
+    request: z.object({ id: z.string() }),
+    response: z.object({
+      types: z.array(z.object({ type: z.string(), prefix: z.string(), dir: z.string() })),
+      problem: z.string().nullable(),
+    }),
+  },
+  /**
+   * Create an empty file at a path the user chose (RQ-0006#AC-1).
+   *
+   * The path is the user's own text and therefore the least trusted input this process takes, which
+   * is why it goes through the same schema and the same containment as every other write.
+   */
+  "project:create-file": {
+    request: z.object({ id: z.string(), path: RepoPathSchema.min(1) }),
+    response: z.object({ problem: z.string().nullable() }),
+  },
+  /**
+   * Mint an artifact (RQ-0006#AC-2 to AC-5, AC-7).
+   *
+   * The number is allocated here rather than asked for: it is append-only and never reused, which is
+   * a property of the bundle, not a decision for whoever is typing.
+   */
+  "project:create-artifact": {
+    request: z.object({ id: z.string(), type: z.string(), title: z.string().min(1) }),
+    response: z.object({
+      /** The ID it was given, so the workspace can open it without looking it up again. */
+      artifactId: z.string().nullable(),
+      problem: z.string().nullable(),
+    }),
+  },
 } as const satisfies Record<string, ChannelDefinition>;
 
 /**
