@@ -856,12 +856,12 @@ function createHandlers(sessions: SessionRegistry): Handlers {
     "settings:get": () => loadSettings(settingsFile(app.getPath("userData"))),
 
     "settings:set-appearance": ({ appearance }) => {
-      const saved = saveSettings(settingsFile(app.getPath("userData")), { appearance });
-      // The platform is what applies it: `themeSource` changes `prefers-color-scheme` in every
-      // renderer, so the media query the stylesheets already read simply answers differently. There
-      // is nothing to hand back for the renderer to apply.
-      nativeTheme.themeSource = saved.appearance;
-      return saved;
+      // Applied before it is written, so a disk that will not take the setting is a failure to
+      // *remember* the choice rather than a failure to make it. `themeSource` changes
+      // `prefers-color-scheme` in every renderer, so the media query the stylesheets already read
+      // simply answers differently — there is nothing to hand back for the renderer to apply.
+      nativeTheme.themeSource = appearance;
+      return saveSettings(settingsFile(app.getPath("userData")), { appearance });
     },
 
     "session:start": async ({ projectId, harnessId }) => {

@@ -21,21 +21,41 @@ const CHOICES: { value: Appearance; label: string; hint: string }[] = [
 
 export function AppearancePanel(): React.JSX.Element {
   const [appearance, setAppearance] = useState<Appearance | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    void window.aibuildos.invoke("settings:get", {}).then((settings) => {
-      if (live) setAppearance(settings.appearance);
-    });
+    void window.aibuildos
+      .invoke("settings:get", {})
+      .then((settings) => {
+        if (live) setAppearance(settings.appearance);
+      })
+      .catch((cause: unknown) => {
+        if (!live) return;
+        // Falling back to the documented default rather than staying `null`: unread settings would
+        // otherwise leave all three buttons disabled forever, with nothing said about why.
+        setAppearance("system");
+        setProblem(`Your settings could not be read (${message(cause)}). Showing the default.`);
+      });
     return () => {
       live = false;
     };
   }, []);
 
   const choose = async (next: Appearance): Promise<void> => {
-    // Shown from what was saved, not from what was clicked: the setting in force is the one on disk.
-    const settings = await window.aibuildos.invoke("settings:set-appearance", { appearance: next });
-    setAppearance(settings.appearance);
+    try {
+      // Shown from what was saved, not from what was clicked: the setting in force is the one on disk.
+      const settings = await window.aibuildos.invoke("settings:set-appearance", {
+        appearance: next,
+      });
+      setAppearance(settings.appearance);
+      setProblem(null);
+    } catch (cause) {
+      // The window has already changed — the appearance is applied before it is written — so what
+      // failed is the remembering, and saying so is more use than saying nothing.
+      setAppearance(next);
+      setProblem(`This appearance is in force, but could not be saved: ${message(cause)}`);
+    }
   };
 
   return (
@@ -62,6 +82,16 @@ export function AppearancePanel(): React.JSX.Element {
           </button>
         ))}
       </div>
+
+      {problem !== null && (
+        <p data-testid="appearance-problem" className="mt-2 text-xs text-red-600">
+          {problem}
+        </p>
+      )}
     </section>
   );
+}
+
+function message(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
