@@ -9,6 +9,7 @@ function artifact(
     file: `docs/decisions/${id.toLowerCase()}.md`,
     dir: "docs/decisions",
     basename: `${id.toLowerCase()}.md`,
+    body: "",
     keyLines: new Map([["id", 3]]),
     ...overrides,
   };
@@ -22,13 +23,14 @@ const valid = {
   owner: "srini",
   provenance: "agent",
   created: "2026-08-18",
+  generated: { by: "claude-code", at: "2026-08-18T00:00:00Z" },
 };
 
 function bundle(
   artifacts: LoadedArtifact[],
   index = "[DC-0001](dc-0001.md) [DC-0002](dc-0002.md)",
 ): Bundle {
-  return { artifacts, indexes: new Map([["docs/decisions", index]]) };
+  return { root: "docs", artifacts, indexes: new Map([["docs/decisions", index]]) };
 }
 
 describe("validate", () => {

@@ -13,3 +13,6 @@ back to [docs/README.md](../README.md)
 | [ST-0003](st-0003.md) | Create or adopt a project | review | [RQ-0002](../requirements/rq-0002.md) · [EP-0002](../epics/ep-0002.md) · [TC-0005](../testing/tc-0005.md), [TC-0006](../testing/tc-0006.md), [TC-0007](../testing/tc-0007.md) |
 | [ST-0004](st-0004.md) | Open a project from the launch page | review | [RQ-0002](../requirements/rq-0002.md) · [EP-0002](../epics/ep-0002.md) · [TC-0008](../testing/tc-0008.md) |
 | [ST-0005](st-0005.md) | See a project's Git and record status | review | [RQ-0002](../requirements/rq-0002.md) · [EP-0002](../epics/ep-0002.md) · [TC-0008](../testing/tc-0008.md), [TC-0009](../testing/tc-0009.md) |
+| [ST-0006](st-0006.md) | Load the type profile | review | [RQ-0003](../requirements/rq-0003.md) · [EP-0003](../epics/ep-0003.md) · [TC-0010](../testing/tc-0010.md) |
+| [ST-0007](st-0007.md) | Validate frontmatter against its type | review | [RQ-0003](../requirements/rq-0003.md) · [EP-0003](../epics/ep-0003.md) · [TC-0011](../testing/tc-0011.md) |
+| [ST-0008](st-0008.md) | Validate links and body structure | review | [RQ-0003](../requirements/rq-0003.md) · [EP-0003](../epics/ep-0003.md) · [TC-0012](../testing/tc-0012.md), [TC-0013](../testing/tc-0013.md) |

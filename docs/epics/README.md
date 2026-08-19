@@ -10,3 +10,4 @@ back to [docs/README.md](../README.md)
 | ---- | ------- | ------- | ------ |
 | [EP-0001](ep-0001.md) | Harness connection | active | [RQ-0001](../requirements/rq-0001.md) |
 | [EP-0002](ep-0002.md) | Projects | active | [RQ-0002](../requirements/rq-0002.md) |
+| [EP-0003](ep-0003.md) | Profile-driven validation | active | [RQ-0003](../requirements/rq-0003.md) |

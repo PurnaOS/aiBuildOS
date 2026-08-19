@@ -1,6 +1,12 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { hasFrontmatter, parseOkfDocument } from "./parse.js";
+import {
+  type Profile,
+  type ProfileIssue,
+  type RawTypeDefinition,
+  resolveProfile,
+} from "./profile.js";
 import type { Bundle, LoadedArtifact } from "./validate.js";
 
 /**
@@ -47,7 +53,7 @@ export function loadBundle(root: string, base: string = root): LoadedBundle {
 
   walk(root, base, artifacts, indexes, parseErrors);
 
-  return { bundle: { artifacts, indexes }, parseErrors };
+  return { bundle: { root: relative(base, root), artifacts, indexes }, parseErrors };
 }
 
 function walk(
@@ -76,12 +82,17 @@ function walk(
     const at = { file, dir: relative(base, dir), basename: entry };
     try {
       const parsed = parseOkfDocument(raw);
-      artifacts.push({ ...at, frontmatter: parsed.frontmatter, keyLines: parsed.keyLines });
+      artifacts.push({
+        ...at,
+        frontmatter: parsed.frontmatter,
+        body: parsed.body,
+        keyLines: parsed.keyLines,
+      });
     } catch (error) {
       // A file that will not parse still has to be reported, not dropped — so it goes into the
       // artifact list *and* into `parseErrors`. Deciding what to do about it is the caller's job:
       // a library must not print, and must not set `process.exitCode`.
-      artifacts.push({ ...at, frontmatter: {}, keyLines: new Map() });
+      artifacts.push({ ...at, frontmatter: {}, body: "", keyLines: new Map() });
       parseErrors.push({ file, message: (error as Error).message });
     }
   }
@@ -111,4 +122,55 @@ export function summarize(bundle: Bundle): BundleSummary {
 function tally(into: Record<string, number>, value: unknown): void {
   if (typeof value !== "string" || value === "") return;
   into[value] = (into[value] ?? 0) + 1;
+}
+
+export interface LoadedProfile {
+  readonly profile: Profile;
+  /** Profile documents that would not parse, plus unresolvable `extends`. Reported, never thrown. */
+  readonly issues: readonly ProfileIssue[];
+}
+
+/**
+ * Read a bundle's type profile (ST-0006, TC-0010).
+ *
+ * `profile/` is the one directory `loadBundle` skips — it holds the type dialect, not artifacts
+ * (conventions §6). This is the other half of that: the same directory, read as the schema.
+ *
+ * Only documents declaring `type: TypeDefinition` are collected, which is what skips the directory
+ * index and the `profile.md` manifest without either having to be named here. A bundle with no
+ * `profile/` at all resolves to an empty profile rather than an error — a newly created project is a
+ * valid bundle before it is a described one (RQ-0003#AC-14).
+ */
+export function loadProfile(root: string, base: string = root): LoadedProfile {
+  const dir = join(root, "profile");
+  const raw: RawTypeDefinition[] = [];
+  const issues: ProfileIssue[] = [];
+
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return { profile: resolveProfile([]).profile, issues: [] };
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith(".md")) continue;
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) continue;
+
+    const file = relative(base, path);
+    const text = readFileSync(path, "utf8");
+    if (!hasFrontmatter(text)) continue;
+
+    try {
+      const parsed = parseOkfDocument(text);
+      if (parsed.frontmatter.type !== "TypeDefinition") continue;
+      raw.push({ file, frontmatter: parsed.frontmatter });
+    } catch (error) {
+      issues.push({ file, message: (error as Error).message });
+    }
+  }
+
+  const resolved = resolveProfile(raw);
+  return { profile: resolved.profile, issues: [...issues, ...resolved.issues] };
 }
