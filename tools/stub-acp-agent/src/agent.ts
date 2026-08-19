@@ -107,8 +107,8 @@ const CONFIG_OPTIONS = [
     type: "select",
     currentValue: "sonnet",
     options: [
-      { id: "sonnet", name: "Sonnet" },
-      { id: "opus", name: "Opus" },
+      { value: "sonnet", name: "Sonnet" },
+      { value: "opus", name: "Opus" },
     ],
   },
   {
@@ -118,8 +118,8 @@ const CONFIG_OPTIONS = [
     type: "select",
     currentValue: "think",
     options: [
-      { id: "think", name: "Think" },
-      { id: "think_hard", name: "Think hard" },
+      { value: "think", name: "Think" },
+      { value: "think_hard", name: "Think hard" },
     ],
   },
 ];
@@ -298,9 +298,9 @@ async function handle(line: string): Promise<void> {
       break;
 
     case "session/set_config_option": {
-      const params = message.params as { optionId?: string; value?: string };
+      const params = message.params as { configId?: string; value?: string };
       const next = CONFIG_OPTIONS.map((option) =>
-        option.id === params?.optionId ? { ...option, currentValue: params?.value } : option,
+        option.id === params?.configId ? { ...option, currentValue: params?.value } : option,
       );
       respond(message.id, { configOptions: next });
       update({ sessionUpdate: "config_option_update", configOptions: next });

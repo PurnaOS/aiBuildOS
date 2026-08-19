@@ -24,3 +24,4 @@ back to [docs/README.md](../README.md)
 | [TC-0018](tc-0018.md) | The workspace lays out three panes with a tabbed centre and streams a turn | active | [RQ-0004](../requirements/rq-0004.md)#AC-1, #AC-2, #AC-3 |
 | [TC-0019](tc-0019.md) | The rails list the record with derived links, and the working tree as Git sees it | active | [RQ-0004](../requirements/rq-0004.md)#AC-14, #AC-15, #AC-16 |
 | [TC-0020](tc-0020.md) | A live session's narration crosses the real boundary into a real renderer | active | [RQ-0004](../requirements/rq-0004.md)#AC-3, #AC-11, #AC-18 |
+| [TC-0021](tc-0021.md) | Session controls come from the agent, and follow the agent when it changes them | active | [RQ-0004](../requirements/rq-0004.md)#AC-12, #AC-13 |

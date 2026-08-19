@@ -90,11 +90,20 @@ function deferred<T>(): {
 export class AgentSession {
   private turn = 0;
   private closed = false;
+  /** The turn in flight, resolved by the drain loop when the agent stops. */
+  private pending: {
+    runId: string;
+    resolve: (reason: StopReason) => void;
+    reject: (cause: unknown) => void;
+  } | null = null;
 
   private constructor(
     private readonly child: ChildProcess,
     private readonly session: ActiveSession,
-    private readonly context: { notify: (method: string, params: unknown) => Promise<void> },
+    private readonly context: {
+      notify: (method: string, params: unknown) => Promise<void>;
+      request: (method: string, params: unknown) => Promise<unknown>;
+    },
     private readonly bridge: SessionBridge,
     private readonly options: SessionOptions,
     private readonly finished: Promise<unknown>,
@@ -188,17 +197,21 @@ export class AgentSession {
           advertised = (init.authMethods ?? []).map((m) => ({ id: m.id, name: m.name }));
 
           return await ctx.buildSession(options.cwd).withSession(async (session) => {
-            ready.resolve(
-              new AgentSession(
-                child,
-                session,
-                ctx as unknown as { notify: (m: string, p: unknown) => Promise<void> },
-                new SessionBridge(session.sessionId),
-                options,
-                finished.promise,
-                stop,
-              ),
+            const opened = new AgentSession(
+              child,
+              session,
+              ctx as unknown as {
+                notify: (m: string, p: unknown) => Promise<void>;
+                request: (m: string, p: unknown) => Promise<unknown>;
+              },
+              new SessionBridge(session.sessionId),
+              options,
+              finished.promise,
+              stop,
             );
+            // Reading starts with the session, not with the first prompt.
+            void opened.drain();
+            ready.resolve(opened);
             // Holding here is what keeps the session open. Returning would close it, which is
             // precisely what the probe wants and this must not do.
             await stop.promise;
@@ -245,28 +258,52 @@ export class AgentSession {
     const runId = `${this.session.sessionId}-${this.turn}`;
     this.emit(this.bridge.runStarted(runId));
 
-    const prompted = this.session.prompt(text);
-    // A rejected prompt never queues a stop message, so draining would block until something else
-    // gave up. Racing it in keeps the failure prompt rather than eventual — and because it is
-    // handled here, it is never an unhandled rejection.
-    const rejection = prompted.then<never, never>(
-      () => new Promise<never>(() => undefined),
-      (cause) => Promise.reject(cause),
-    );
+    const turn = new Promise<StopReason>((resolve, reject) => {
+      this.pending = { runId, resolve, reject };
+    });
 
-    try {
-      for (;;) {
-        const message = await Promise.race([this.session.nextUpdate(), rejection]);
-        if (message.kind === "stop") {
-          const stopReason = message.response.stopReason;
-          this.emit(this.bridge.runFinished(runId, stopReason));
-          return stopReason;
-        }
-        this.emit(this.bridge.update(message.update));
-      }
-    } catch (cause) {
+    // The drain loop, not this call, decides when the turn is over: it sees the agent's updates and
+    // its stop message in the order the agent sent them, so nothing is reported as finished while
+    // updates are still queued behind it.
+    this.session.prompt(text).catch((cause: unknown) => {
+      const failed = this.pending;
+      this.pending = null;
       this.emit(this.bridge.runFailed(describe(cause), "protocol_error"));
-      throw new SessionError("protocol_error", describe(cause));
+      failed?.reject(new SessionError("protocol_error", describe(cause)));
+    });
+
+    return await turn;
+  }
+
+  /**
+   * Read this session's updates for as long as it is open.
+   *
+   * Deliberately **not** tied to a turn. An agent narrates between turns too — the commands it
+   * offers, the mode it is in, the model it is set to — and a client that only drains while
+   * prompting leaves all of that sitting in a queue nobody reads. That was a real bug: the controls
+   * showed what the session opened with and never moved again.
+   */
+  private async drain(): Promise<void> {
+    for (;;) {
+      let message: Awaited<ReturnType<ActiveSession["nextUpdate"]>>;
+      try {
+        message = await this.session.nextUpdate();
+      } catch {
+        // The session is gone. `close()` is the ordinary way here.
+        return;
+      }
+
+      if (message.kind === "stop") {
+        const finished = this.pending;
+        this.pending = null;
+        if (finished) {
+          this.emit(this.bridge.runFinished(finished.runId, message.response.stopReason));
+          finished.resolve(message.response.stopReason);
+        }
+        continue;
+      }
+
+      this.emit(this.bridge.update(message.update));
     }
   }
 
@@ -274,12 +311,40 @@ export class AgentSession {
    * Ask the agent to stop the turn in progress.
    *
    * A notification, so there is nothing to await and nothing to fail. The protocol requires the
-   * client to go on accepting updates afterwards — which it does, because `prompt` keeps draining
-   * until the agent itself resolves the turn as cancelled.
+   * client to go on accepting updates afterwards — which it does, because the drain loop never stops
+   * reading and the turn ends only when the agent itself says it has.
    */
   async cancel(): Promise<void> {
     if (this.closed) return;
     await this.context.notify(methods.agent.session.cancel, { sessionId: this.session.sessionId });
+  }
+
+  /**
+   * Change the session's mode — plan, code, whatever this agent calls them.
+   *
+   * The protocol allows this at any time, "whether the Agent is idle or actively generating a turn",
+   * so it is not blocked mid-turn. What the interface then shows follows the agent's own
+   * `current_mode_update`, not this call: the agent is the authority on what it is set to.
+   */
+  async setMode(modeId: string): Promise<void> {
+    if (this.closed) throw new SessionError("not_open", "this session has been closed");
+    await this.context.request(methods.agent.session.setMode, {
+      sessionId: this.session.sessionId,
+      modeId,
+    });
+  }
+
+  /**
+   * Change one configuration option — a model, an effort level, or whatever else the agent chose to
+   * offer under a category this protocol has never heard of.
+   */
+  async setConfigOption(configId: string, value: string | boolean): Promise<void> {
+    if (this.closed) throw new SessionError("not_open", "this session has been closed");
+    await this.context.request(methods.agent.session.setConfigOption, {
+      sessionId: this.session.sessionId,
+      configId,
+      ...(typeof value === "boolean" ? { type: "boolean" as const, value } : { value }),
+    });
   }
 
   /** Close the session and reap the agent, along with anything it spawned. */

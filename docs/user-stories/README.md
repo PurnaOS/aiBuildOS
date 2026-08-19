@@ -14,6 +14,6 @@ back to [docs/README.md](../README.md)
 | [ST-0004](st-0004.md) | Open a project from the launch page | done | [RQ-0002](../requirements/rq-0002.md) · [EP-0002](../epics/ep-0002.md) · [TC-0008](../testing/tc-0008.md) |
 | [ST-0005](st-0005.md) | See a project's Git and record status | done | [RQ-0002](../requirements/rq-0002.md) · [EP-0002](../epics/ep-0002.md) · [TC-0008](../testing/tc-0008.md), [TC-0009](../testing/tc-0009.md) |
 | [ST-0009](st-0009.md) | Stream a live agent session into the workspace | review | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0014](../testing/tc-0014.md), [TC-0015](../testing/tc-0015.md), [TC-0016](../testing/tc-0016.md), [TC-0020](../testing/tc-0020.md) |
-| [ST-0010](st-0010.md) | Answer what the agent asks, and steer what it uses | draft | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0017](../testing/tc-0017.md) |
+| [ST-0010](st-0010.md) | Answer what the agent asks, and steer what it uses | review | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0017](../testing/tc-0017.md), [TC-0021](../testing/tc-0021.md) |
 | [ST-0011](st-0011.md) | The workspace shell: three panes and a tabbed centre | review | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0018](../testing/tc-0018.md) |
 | [ST-0012](st-0012.md) | The record rail and the files rail | review | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0019](../testing/tc-0019.md) |

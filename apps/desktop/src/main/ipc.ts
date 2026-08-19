@@ -521,6 +521,16 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       sessions.answerPermission(sessionId, requestId, optionId);
     },
 
+    "session:controls": ({ sessionId }) => sessions.controlsOf(sessionId),
+
+    "session:set-mode": async ({ sessionId, modeId }) => {
+      await sessions.setMode(sessionId, modeId);
+    },
+
+    "session:set-config": async ({ sessionId, configId, value }) => {
+      await sessions.setConfigOption(sessionId, configId, value);
+    },
+
     "session:close": async ({ sessionId }) => {
       await sessions.close(sessionId);
     },

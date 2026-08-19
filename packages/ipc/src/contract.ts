@@ -406,6 +406,41 @@ export const channels = {
       problem: z.string().nullable(),
     }),
   },
+  /**
+   * Change what the agent is set to (RQ-0004#AC-12).
+   *
+   * The response carries nothing: what the interface shows follows the agent's own
+   * `current_mode_update` / `config_option_update`, never the request. A control that showed what was
+   * clicked would be reporting the user's intention as though it were the agent's state.
+   */
+  "session:set-mode": {
+    request: z.object({ sessionId: z.string(), modeId: z.string() }),
+    response: z.void(),
+  },
+  "session:set-config": {
+    request: z.object({
+      sessionId: z.string(),
+      configId: z.string(),
+      value: z.union([z.string(), z.boolean()]),
+    }),
+    response: z.void(),
+  },
+  /**
+   * What the agent last said it is set to (ST-0010#AC-5).
+   *
+   * Events tell the interface when something changes; this tells it where things stood before it was
+   * listening. An agent announces its commands and its mode as soon as a session opens — before any
+   * component has mounted to hear it — so without this the controls would show whatever the session
+   * happened to open with and never the truth.
+   */
+  "session:controls": {
+    request: z.object({ sessionId: z.string() }),
+    response: z.object({
+      modeId: z.string().nullable(),
+      configOptions: z.array(z.looseObject({ id: z.string() })),
+      commands: z.array(z.looseObject({ name: z.string() })),
+    }),
+  },
 } as const satisfies Record<string, ChannelDefinition>;
 
 /**

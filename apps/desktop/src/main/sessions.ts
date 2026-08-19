@@ -24,6 +24,19 @@ interface Held {
   readonly session: AgentSession;
   /** Permission requests this session is waiting on, by the id we gave them. */
   readonly pending: Map<string, (optionId: string | null) => void>;
+  /**
+   * The last thing the agent said about how it is set up.
+   *
+   * Remembered because an agent announces this the moment a session opens, long before any component
+   * has mounted to hear it. Events carry the changes; this carries the starting point.
+   */
+  controls: Controls;
+}
+
+export interface Controls {
+  modeId: string | null;
+  configOptions: { id: string }[];
+  commands: { name: string }[];
 }
 
 export type StartResult =
@@ -39,6 +52,7 @@ export class SessionRegistry {
     // The id the pending map is keyed by has to exist before the session does, because the agent can
     // ask for permission during the very first turn.
     const pending = new Map<string, (optionId: string | null) => void>();
+    const controls: Controls = { modeId: null, configOptions: [], commands: [] };
     let sessionId = "";
 
     try {
@@ -48,6 +62,10 @@ export class SessionRegistry {
           cwd,
           clientVersion,
           onEvent: (event) => {
+            remember(
+              controls,
+              event as unknown as { type: string; name?: string; value?: unknown },
+            );
             this.emit("session:event", {
               sessionId,
               event: event as unknown as { type: string },
@@ -58,7 +76,11 @@ export class SessionRegistry {
       );
 
       sessionId = session.sessionId;
-      this.held.set(sessionId, { session, pending });
+      controls.modeId ??= session.offered.modes?.currentModeId ?? null;
+      if (controls.configOptions.length === 0) {
+        controls.configOptions = (session.offered.configOptions ?? []) as { id: string }[];
+      }
+      this.held.set(sessionId, { session, pending, controls });
       this.emit("session:state", { sessionId, state: "ready", error: null });
 
       return {
@@ -114,6 +136,23 @@ export class SessionRegistry {
     held.pending.clear();
 
     await held.session.cancel();
+  }
+
+  /** Where things stood before whoever is asking started listening. */
+  controlsOf(sessionId: string): Controls {
+    return this.require(sessionId).controls;
+  }
+
+  async setMode(sessionId: string, modeId: string): Promise<void> {
+    await this.require(sessionId).session.setMode(modeId);
+  }
+
+  async setConfigOption(
+    sessionId: string,
+    configId: string,
+    value: string | boolean,
+  ): Promise<void> {
+    await this.require(sessionId).session.setConfigOption(configId, value);
   }
 
   answerPermission(sessionId: string, requestId: string, optionId: string | null): void {
@@ -173,5 +212,27 @@ export class SessionRegistry {
     // Prompting a session that is not open is a renderer bug, not something a user did.
     if (!held) throw new Error(`no open session with id ${sessionId}`);
     return held;
+  }
+}
+
+/** Keep the remembered controls in step with what the agent announces. */
+function remember(
+  controls: Controls,
+  event: { type: string; name?: string; value?: unknown },
+): void {
+  if (event.type !== "CUSTOM") return;
+
+  if (event.name === CUSTOM.mode) {
+    controls.modeId = (event.value as { currentModeId?: string })?.currentModeId ?? controls.modeId;
+  }
+  if (event.name === CUSTOM.configOptions) {
+    controls.configOptions =
+      (event.value as { configOptions?: { id: string }[] })?.configOptions ??
+      controls.configOptions;
+  }
+  if (event.name === CUSTOM.commands) {
+    controls.commands =
+      (event.value as { availableCommands?: { name: string }[] })?.availableCommands ??
+      controls.commands;
   }
 }

@@ -1,11 +1,12 @@
-import { CopilotKit, useCopilotChatHeadless_c } from "@copilotkit/react-core";
+import { CopilotKit, useCopilotChatInternal } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
-import { type ComponentProps, useEffect } from "react";
+import { type ComponentProps, useEffect, useState } from "react";
 import "@copilotkit/react-ui/styles.css";
 import { useHarnesses } from "../harness/HarnessPanel.js";
 import type { Session } from "../session/useSession.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { Activity } from "./Activity.js";
+import { Controls } from "./Controls.js";
 import { ToolCallCard } from "./ToolCallCard.js";
 
 /**
@@ -37,10 +38,18 @@ export function Chat({
 }): React.JSX.Element {
   const { harnesses } = useHarnesses();
   const { state, start } = session;
+  /** A slash command the user picked. It is sent as ordinary text, which is all a command is. */
+  const [command, setCommand] = useState<string | null>(null);
 
   if (state.status === "ready") {
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="chat">
+        {/* What the agent is set to, above the conversation it applies to. */}
+        <Controls
+          sessionId={state.sessionId}
+          offered={state.offered}
+          onCommand={(text) => setCommand(text)}
+        />
         <CopilotKit
           selfManagedAgents={{ default: state.agent }}
           agent="default"
@@ -55,6 +64,7 @@ export function Chat({
               left to scroll away. */}
           <Activity sessionId={state.sessionId} />
           <PendingPrompt text={pending ?? null} onSent={onSent} />
+          <PendingPrompt text={command} onSent={() => setCommand(null)} />
         </CopilotKit>
       </div>
     );
@@ -132,7 +142,10 @@ function PendingPrompt({
   text: string | null;
   onSent?: (() => void) | undefined;
 }): null {
-  const { sendMessage } = useCopilotChatHeadless_c();
+  // `useCopilotChatInternal`, not the headless hook: this is the store `CopilotChat` itself reads,
+  // and a message sent to any other one is delivered to the agent without ever appearing in the
+  // conversation — which is exactly the thing this must not do.
+  const { sendMessage } = useCopilotChatInternal();
 
   useEffect(() => {
     if (text === null) return;
