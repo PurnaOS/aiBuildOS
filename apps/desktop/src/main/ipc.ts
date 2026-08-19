@@ -688,7 +688,11 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         // Only the named keys and the body change; the rest of the file is byte-identical.
         writeFileSync(
           file,
-          editArtifact(readFileSync(file, "utf8"), { frontmatter, body, create }),
+          editArtifact(readFileSync(file, "utf8"), {
+            frontmatter,
+            ...(body === undefined ? {} : { body }),
+            create,
+          }),
           "utf8",
         );
 

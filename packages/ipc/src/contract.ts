@@ -517,7 +517,8 @@ export const channels = {
       id: z.string(),
       artifactId: z.string(),
       frontmatter: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
-      body: z.string(),
+      /** Left out when nothing in the body moved, so the prose is not rewritten by a field edit. */
+      body: z.string().optional(),
     }),
     response: z.object({
       problem: z.string().nullable(),

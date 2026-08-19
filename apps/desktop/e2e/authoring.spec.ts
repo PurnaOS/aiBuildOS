@@ -42,7 +42,8 @@ links:
 ## Acceptance criteria
 
 - [AC-1] It does the thing.
-- [AC-2] It also does the other thing.
+- [AC-2] It also does the other thing, at such length that whoever wrote it down
+  wrapped the sentence across two lines.
 `;
 
 const RQ2 = `---
@@ -196,7 +197,10 @@ test("writes the fields, the criteria and the index, and disturbs nothing else",
   expect(after).toContain("tags: [alpha, beta]");
   expect(after).toContain("  related_to: [RQ-0002]");
   // Append-only: AC-2 stays AC-2, and the new one is AC-3 rather than reusing the retired number.
-  expect(after).toContain("- [AC-2] It also does the other thing.");
+  // Untouched, so written back as the two lines it was read from rather than unwrapped.
+  expect(after).toContain(
+    "- [AC-2] It also does the other thing, at such length that whoever wrote it down\n  wrapped the sentence across two lines.",
+  );
   expect(after).toContain("- [AC-3]");
   expect(after).not.toContain("[AC-1]");
 
@@ -204,6 +208,39 @@ test("writes the fields, the criteria and the index, and disturbs nothing else",
   expect(readFileSync(join(work, "docs/requirements/README.md"), "utf8")).toContain(
     "| [RQ-0001](rq-0001.md) | The first thing | ready |",
   );
+
+  await app.close();
+});
+
+test("changing a field alone leaves the whole body byte-identical", async () => {
+  const { app, w, work } = await open();
+  const path = join(work, "docs/requirements/rq-0001.md");
+  const before = readFileSync(path, "utf8");
+
+  await w.getByTestId("artifact-state").selectOption("ready");
+  await w.getByTestId("artifact-save").click();
+  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+
+  // One field moved and nothing else did — prose, wrapping, comment and all (AC-8).
+  expect(readFileSync(path, "utf8")).toBe(before.replace("state: draft", "state: ready"));
+
+  await app.close();
+});
+
+test("edits the prose of the body as markdown", async () => {
+  const { app, w, work } = await open();
+
+  await w.getByTestId("artifact-body").locator(".cm-content").click();
+  await w.keyboard.press("End");
+  await w.keyboard.type("\n\nA sentence someone added.");
+
+  await w.getByTestId("artifact-save").click();
+  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+
+  const after = readFileSync(join(work, "docs/requirements/rq-0001.md"), "utf8");
+  expect(after).toContain("A sentence someone added.");
+  // The criteria below the prose are untouched by an edit above them.
+  expect(after).toContain("- [AC-1] It does the thing.");
 
   await app.close();
 });

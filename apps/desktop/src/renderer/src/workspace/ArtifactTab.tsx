@@ -1,4 +1,6 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
+import { markdown } from "@codemirror/lang-markdown";
+import CodeMirror from "@uiw/react-codemirror";
 import { AlertTriangle, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { button, eyebrow, field, focusRing, mono, primary } from "../ui.js";
@@ -21,6 +23,10 @@ type Finding = Artifact["findings"][number];
 interface Criterion {
   readonly number: number;
   readonly text: string;
+  /** The text as it was read, so an untouched criterion can be written back as it was found. */
+  readonly original: string;
+  /** The exact lines this criterion was read from, wrapping and all. */
+  readonly source: string;
 }
 
 const CRITERIA_HEADING = "## Acceptance criteria";
@@ -38,19 +44,26 @@ export function ArtifactTab({
   const [title, setTitle] = useState("");
   const [state, setState] = useState("");
   const [links, setLinks] = useState<Record<string, string[]>>({});
-  const [criteria, setCriteria] = useState<Criterion[]>([]);
+  const [parts, setParts] = useState<BodyParts>({
+    head: "",
+    criteria: [],
+    tail: "",
+    hasCriteria: false,
+  });
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
 
   const baseline = useRef("");
   /** What was loaded, so a save can send the difference rather than the whole form. */
-  const original = useRef<{ title: string; state: string; links: Record<string, string[]> }>({
-    title: "",
-    state: "",
-    links: {},
-  });
-  const snapshot = JSON.stringify({ title, state, links, criteria });
+  const original = useRef<{
+    title: string;
+    state: string;
+    links: Record<string, string[]>;
+    body: string;
+  }>({ title: "", state: "", links: {}, body: "" });
+  const body = joinBody(parts);
+  const snapshot = JSON.stringify({ title, state, links, body });
   const dirty = loaded !== null && snapshot !== baseline.current;
 
   const report = useRef(onDirtyChange);
@@ -71,18 +84,16 @@ export function ArtifactTab({
     const nextLinks = Object.fromEntries(
       next.links.map((link) => [link.relationship, link.current]),
     );
-    const nextCriteria = readCriteria(next.body);
-
     setTitle(nextTitle);
     setState(nextState);
     setLinks(nextLinks);
-    setCriteria(nextCriteria);
-    original.current = { title: nextTitle, state: nextState, links: nextLinks };
+    setParts(splitBody(next.body));
+    original.current = { title: nextTitle, state: nextState, links: nextLinks, body: next.body };
     baseline.current = JSON.stringify({
       title: nextTitle,
       state: nextState,
       links: nextLinks,
-      criteria: nextCriteria,
+      body: next.body,
     });
   }, [projectId, artifactId]);
 
@@ -109,12 +120,14 @@ export function ArtifactTab({
               .map(([key, ids]) => [`links.${key}`, ids]),
           ),
         },
-        body: writeCriteria(loaded.body, criteria),
+        // Left out entirely when nothing in the body moved, so that a state change does not rewrite
+        // the prose it never touched.
+        ...(body === original.current.body ? {} : { body }),
       });
       setProblem(result.problem);
       setFindings(result.findings);
       if (result.problem === null) {
-        original.current = { title, state, links };
+        original.current = { title, state, links, body };
         baseline.current = snapshot;
       }
     } finally {
@@ -199,8 +212,13 @@ export function ArtifactTab({
           )}
         </Field>
 
+        {/* Reported once. The validator names `links` as the field, not one relationship inside it. */}
+        {against("links").map((finding) => (
+          <Note key={`${finding.rule}-${finding.message}`} finding={finding} />
+        ))}
+
         {loaded.links.map((link) => (
-          <Field key={link.relationship} label={link.relationship} findings={against("links")}>
+          <Field key={link.relationship} label={link.relationship} findings={[]}>
             <LinkPicker
               relationship={link.relationship}
               candidates={link.candidates}
@@ -210,7 +228,29 @@ export function ArtifactTab({
           </Field>
         ))}
 
-        <Criteria criteria={criteria} onChange={setCriteria} />
+        {/* The body in the order the document has it: prose, criteria, whatever follows them. */}
+        <Markdown
+          testId="artifact-body"
+          label={parts.hasCriteria ? "body" : "body (no acceptance criteria section)"}
+          value={parts.head}
+          onChange={(head) => setParts((current) => ({ ...current, head }))}
+        />
+
+        {parts.hasCriteria && (
+          <Criteria
+            criteria={parts.criteria}
+            onChange={(criteria) => setParts((current) => ({ ...current, criteria }))}
+          />
+        )}
+
+        {parts.tail !== "" && (
+          <Markdown
+            testId="artifact-body-tail"
+            label="after the criteria"
+            value={parts.tail}
+            onChange={(tail) => setParts((current) => ({ ...current, tail }))}
+          />
+        )}
 
         {findings.filter((finding) => finding.key === null).length > 0 && (
           <div className="mt-5">
@@ -223,6 +263,33 @@ export function ArtifactTab({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The prose parts of the body, as markdown. Nothing here is structured, so nothing pretends to be. */
+function Markdown({
+  testId,
+  label,
+  value,
+  onChange,
+}: {
+  testId: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}): React.JSX.Element {
+  return (
+    <div className="mt-5">
+      <p className={`mb-1.5 ${eyebrow}`}>{label}</p>
+      <CodeMirror
+        data-testid={testId}
+        value={value}
+        onChange={onChange}
+        extensions={[markdown()]}
+        basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLine: false }}
+        className="rounded border border-neutral-300 text-sm dark:border-neutral-700"
+      />
     </div>
   );
 }
@@ -327,7 +394,7 @@ function Criteria({
   criteria,
   onChange,
 }: {
-  criteria: Criterion[];
+  criteria: readonly Criterion[];
   onChange: (criteria: Criterion[]) => void;
 }): React.JSX.Element {
   const next = criteria.reduce((highest, criterion) => Math.max(highest, criterion.number), 0) + 1;
@@ -366,7 +433,9 @@ function Criteria({
       <button
         type="button"
         data-testid="criterion-add"
-        onClick={() => onChange([...criteria, { number: next, text: "" }])}
+        onClick={() =>
+          onChange([...criteria, { number: next, text: "", original: "", source: "" }])
+        }
         className={`mt-1 flex items-center gap-1.5 ${primary} ${focusRing}`}
       >
         <Plus size={11} aria-hidden />
@@ -376,40 +445,77 @@ function Criteria({
   );
 }
 
-/** Read `- [AC-n] …` items, joining the continuation lines a wrapped criterion is written across. */
-export function readCriteria(body: string): Criterion[] {
-  const section = body.split(CRITERIA_HEADING)[1];
-  if (section === undefined) return [];
+/**
+ * The three parts of an artifact's body: the prose before the criteria, the criteria, and whatever
+ * sections follow them.
+ *
+ * Split rather than edited whole because the criteria are not prose — their numbers are identity —
+ * and joined back in place so a document whose criteria are not its last section keeps its order.
+ */
+export interface BodyParts {
+  readonly head: string;
+  readonly criteria: readonly Criterion[];
+  readonly tail: string;
+  /** False when the document has no criteria section; then `head` is the entire body. */
+  readonly hasCriteria: boolean;
+}
 
-  const upToNextHeading = section.split(/\n## /)[0] ?? "";
+export function splitBody(body: string): BodyParts {
+  const at = body.indexOf(CRITERIA_HEADING);
+  if (at === -1) return { head: body, criteria: [], tail: "", hasCriteria: false };
+
+  const after = body.slice(at + CRITERIA_HEADING.length);
+  const next = after.search(/\n## /);
+  const section = next === -1 ? after : after.slice(0, next);
+
+  return {
+    head: body.slice(0, at),
+    criteria: readCriteria(section),
+    tail: next === -1 ? "" : after.slice(next),
+    hasCriteria: true,
+  };
+}
+
+export function joinBody(parts: BodyParts): string {
+  if (!parts.hasCriteria) return parts.head;
+
+  const rendered = parts.criteria
+    // A criterion nobody edited is written back as the exact lines it was read from. Re-rendering it
+    // would unwrap every criterion written across two lines — which is most of them — and turn a
+    // one-field edit into a diff over the whole section (AC-8).
+    .map((criterion) =>
+      // A criterion added here has no source to preserve, even before anything is typed into it.
+      criterion.source !== "" && criterion.text === criterion.original
+        ? criterion.source
+        : `- [AC-${criterion.number}] ${criterion.text}`,
+    )
+    .join("\n");
+
+  return `${parts.head}${CRITERIA_HEADING}\n\n${rendered}\n${parts.tail}`;
+}
+
+/** Read `- [AC-n] …` items from a criteria section, joining the lines a wrapped one is written across. */
+function readCriteria(section: string): Criterion[] {
   const criteria: Criterion[] = [];
 
-  for (const line of upToNextHeading.split("\n")) {
+  for (const line of section.split("\n")) {
     const start = /^- \[AC-(\d+)\]\s?(.*)$/.exec(line);
     if (start) {
-      criteria.push({ number: Number(start[1]), text: start[2] ?? "" });
+      const text = start[2] ?? "";
+      criteria.push({ number: Number(start[1]), text, original: text, source: line });
       continue;
     }
     // A wrapped criterion continues on an indented line.
     const last = criteria[criteria.length - 1];
     if (last && /^\s+\S/.test(line)) {
-      criteria[criteria.length - 1] = { ...last, text: `${last.text} ${line.trim()}` };
+      const text = `${last.text} ${line.trim()}`;
+      criteria[criteria.length - 1] = {
+        ...last,
+        text,
+        original: text,
+        source: `${last.source}\n${line}`,
+      };
     }
   }
   return criteria;
-}
-
-/** Write the criteria back, leaving every other part of the body exactly as it was. */
-export function writeCriteria(body: string, criteria: Criterion[]): string {
-  const rendered = criteria
-    .map((criterion) => `- [AC-${criterion.number}] ${criterion.text}`)
-    .join("\n");
-  const at = body.indexOf(CRITERIA_HEADING);
-  if (at === -1) return body;
-
-  const after = body.slice(at + CRITERIA_HEADING.length);
-  const nextHeading = after.search(/\n## /);
-  const tail = nextHeading === -1 ? "" : after.slice(nextHeading);
-
-  return `${body.slice(0, at)}${CRITERIA_HEADING}\n\n${rendered}\n${tail}`;
 }
