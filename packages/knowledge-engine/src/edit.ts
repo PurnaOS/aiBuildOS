@@ -26,7 +26,13 @@ const DELIMITER = "---";
 
 interface Split {
   readonly frontmatter: string;
-  /** Everything after the closing delimiter, its leading newline included. */
+  /**
+   * Everything after the line the closing delimiter is on — that line's own newline excluded.
+   *
+   * The same convention `parseOkfDocument` uses, and it has to be: a body handed to `editArtifact`
+   * has usually been round-tripped through that parser, and a one-newline disagreement between the
+   * two would silently eat the blank line under the frontmatter on every save.
+   */
   readonly body: string;
 }
 
@@ -53,9 +59,7 @@ function split(source: string): Split {
 
   return {
     frontmatter: lines.slice(1, closing).join("\n"),
-    // The newline that ended the delimiter line is put back by the caller, so the body starts with
-    // whatever followed it — usually the blank line before the title.
-    body: `\n${lines.slice(closing + 1).join("\n")}`,
+    body: lines.slice(closing + 1).join("\n"),
   };
 }
 
@@ -68,7 +72,11 @@ export interface ArtifactEdit {
    * own shape needs: `links.implements`.
    */
   readonly frontmatter?: Readonly<Record<string, FieldValue>>;
-  /** Replaces everything after the closing delimiter. Left out, the body is untouched. */
+  /**
+   * Replaces the body: everything after the line the closing delimiter is on, that line's own
+   * newline excluded — `parseOkfDocument`'s convention, which is where a body normally comes from.
+   * Left out, the body is untouched.
+   */
   readonly body?: string;
   /**
    * Nested paths this edit is allowed to **create** when the file does not carry them yet.
@@ -97,7 +105,7 @@ export function editArtifact(source: string, edit: ArtifactEdit): string {
       : setKeys(parts.frontmatter, edit.frontmatter, new Set(edit.create ?? []));
 
   const body = edit.body ?? parts.body;
-  return `${DELIMITER}\n${frontmatter}\n${DELIMITER}${body}`;
+  return `${DELIMITER}\n${frontmatter}\n${DELIMITER}\n${body}`;
 }
 
 function setKeys(

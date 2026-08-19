@@ -514,6 +514,11 @@ export const channels = {
     }),
     response: z.object({
       problem: z.string().nullable(),
+      /**
+       * What was actually written. The editor holds this as its idea of the file on disk, so its own
+       * save is not mistaken for the agent having changed the artifact underneath it.
+       */
+      markdown: z.string().nullable(),
       findings: z.array(
         z.object({
           rule: z.string(),

@@ -676,7 +676,9 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         const found = bundle.artifacts.find(
           (artifact) => (artifact.frontmatter as { id?: unknown }).id === artifactId,
         );
-        if (!found) return { problem: `${artifactId} is not in this bundle.`, findings: [] };
+        if (!found) {
+          return { problem: `${artifactId} is not in this bundle.`, markdown: null, findings: [] };
+        }
 
         // The path comes from the bundle walk rather than from the renderer, so nothing untrusted
         // reaches it — but this is a write, and every write in this process is contained the same
@@ -689,25 +691,22 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         const create = Object.keys(dialect.get(type)?.links ?? {}).map((rel) => `links.${rel}`);
 
         // Only the named keys and the body change; the rest of the file is byte-identical.
-        writeFileSync(
-          file,
-          editArtifact(readFileSync(file, "utf8"), {
-            frontmatter,
-            ...(body === undefined ? {} : { body }),
-            create,
-          }),
-          "utf8",
-        );
+        const written = editArtifact(readFileSync(file, "utf8"), {
+          frontmatter,
+          ...(body === undefined ? {} : { body }),
+          create,
+        });
+        writeFileSync(file, written, "utf8");
 
         // The record must not disagree with itself: the index says what the artifact says (AC-10).
         const indexFile = join(project.path, found.dir, "README.md");
         if (existsSync(indexFile)) {
-          insideProject(project.path, join(found.dir, "README.md"));
+          const contained = insideProject(project.path, join(found.dir, "README.md"));
           const title = frontmatter.title;
           const state = frontmatter.state;
           writeFileSync(
-            indexFile,
-            updateIndexRow(readFileSync(indexFile, "utf8"), artifactId, {
+            contained,
+            updateIndexRow(readFileSync(contained, "utf8"), artifactId, {
               ...(typeof title === "string" ? { title } : {}),
               ...(typeof state === "string" ? { state } : {}),
             }),
@@ -720,10 +719,11 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         const parsed = parseOkfDocument(readFileSync(file, "utf8"));
         return {
           problem: null,
+          markdown: written,
           findings: findingsFor(after.bundle, dialect, found.file, parsed.keyLines),
         };
       } catch (cause) {
-        return { problem: failure(cause).message, findings: [] };
+        return { problem: failure(cause).message, markdown: null, findings: [] };
       }
     },
 

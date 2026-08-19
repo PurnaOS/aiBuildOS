@@ -231,16 +231,20 @@ test("edits the prose of the body as markdown", async () => {
   const { app, w, work } = await open();
 
   await w.getByTestId("artifact-body").locator(".cm-content").click();
-  await w.keyboard.press("End");
-  await w.keyboard.type("\n\nA sentence someone added.");
+  await w.keyboard.press("ControlOrMeta+End");
+  await w.keyboard.type("A sentence someone added.\n\n");
 
   await w.getByTestId("artifact-save").click();
   await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
 
-  const after = readFileSync(join(work, "docs/requirements/rq-0001.md"), "utf8");
-  expect(after).toContain("A sentence someone added.");
-  // The criteria below the prose are untouched by an edit above them.
-  expect(after).toContain("- [AC-1] It does the thing.");
+  // Byte-exact: an edit inside the prose moves the prose and nothing else — the blank line under
+  // the frontmatter above all, which a one-newline disagreement about where the body starts eats.
+  expect(readFileSync(join(work, "docs/requirements/rq-0001.md"), "utf8")).toBe(
+    RQ.replace(
+      "# RQ-0001 — The first thing\n\n## Acceptance criteria",
+      "# RQ-0001 — The first thing\n\nA sentence someone added.\n\n## Acceptance criteria",
+    ),
+  );
 
   await app.close();
 });
@@ -340,6 +344,36 @@ test("takes the agent's version of an artifact nobody was editing", async () => 
   await expect(w.getByTestId("artifact-title")).toHaveValue("Theirs", { timeout: 15000 });
   // Nothing to resolve: there was nothing of the user's to lose.
   await expect(w.getByTestId("artifact-conflict")).toHaveCount(0);
+
+  await app.close();
+});
+
+test("does not mistake its own save for the agent having changed the artifact", async () => {
+  const { app, w } = await open();
+
+  await w.getByTestId("tab-chat").click();
+  await w.getByTestId("start-h").click();
+  await w.getByTestId("chat").waitFor({ timeout: 20000 });
+  await w.getByTestId("tab-RQ-0001").click();
+
+  await w.getByTestId("artifact-title").fill("Mine");
+  await w.getByTestId("artifact-save").click();
+  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+  // Still editing when the turn ends: what is on disk is this save, not what was first read.
+  await w.getByTestId("artifact-title").fill("Mine again");
+
+  await w.getByTestId("tab-chat").click();
+  const composer = w.locator("textarea, [contenteditable=true]").first();
+  await composer.click();
+  // A prompt the reply cannot be mistaken for: the stub answers `ok`, and waiting for the turn to
+  // actually end is the whole point — a check made before it ends would prove nothing.
+  await composer.fill("please proceed");
+  await w.keyboard.press("Enter");
+  await expect(w.getByTestId("chat")).toContainText("ok", { timeout: 15000 });
+  await w.getByTestId("tab-RQ-0001").click();
+
+  await expect(w.getByTestId("artifact-conflict")).toHaveCount(0);
+  await expect(w.getByTestId("artifact-title")).toHaveValue("Mine again");
 
   await app.close();
 });

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { editArtifact, OkfEditError, updateIndexRow } from "./edit.js";
+import { parseOkfDocument } from "./parse.js";
 
 /**
  * TC-0024. Saving an artifact rewrites only what changed.
@@ -140,6 +141,15 @@ describe("editing an artifact", () => {
     });
 
     expect(after).toContain("  depends_on:\n    - RQ-0002\n    - RQ-0003\n  related_to: [DC-0009]");
+  });
+
+  it("agrees with the parser about where the body starts", () => {
+    // The body a save sends has been round-tripped through `parseOkfDocument`, so a one-newline
+    // disagreement between the two would eat the blank line under the frontmatter every time.
+    const path = fileURLToPath(new URL("../../../docs/requirements/rq-0004.md", import.meta.url));
+    const source = readFileSync(path, "utf8");
+
+    expect(editArtifact(source, { body: parseOkfDocument(source).body })).toBe(source);
   });
 
   it("leaves a real artifact from this repository untouched but for the edit", () => {

@@ -182,6 +182,9 @@ export function ArtifactTab({
       setProblem(result.problem);
       setFindings(result.findings);
       if (result.problem === null) {
+        // What is on disk is now this save, not what was read. Without that, the next turn to end
+        // would read back the user's own writing and report the agent as having changed it.
+        if (result.markdown !== null) onDisk.current = result.markdown;
         original.current = { title, state, links, body };
         baseline.current = snapshot;
       }
@@ -588,7 +591,7 @@ export function joinBody(parts: BodyParts): string {
       // A criterion added here has no source to preserve, even before anything is typed into it.
       criterion.source !== "" && criterion.text === criterion.original
         ? criterion.source
-        : `- [AC-${criterion.number}] ${criterion.text}`,
+        : `- [AC-${criterion.number}] ${criterion.text}`.trimEnd(),
     )
     .join("\n");
 
