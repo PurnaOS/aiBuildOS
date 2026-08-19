@@ -34,3 +34,5 @@ back to [docs/README.md](../README.md)
 | [TC-0024](tc-0024.md) | Saving an artifact rewrites only what changed, and the index with it | active | [RQ-0005](../requirements/rq-0005.md)#AC-8, #AC-10 |
 | [TC-0025](tc-0025.md) | An artifact's body survives being edited | active | [RQ-0005](../requirements/rq-0005.md)#AC-7, #AC-8 |
 | [TC-0026](tc-0026.md) | An artifact is authored as its own shape, from the profile | active | [RQ-0005](../requirements/rq-0005.md)#AC-3 through #AC-10 |
+| [TC-0027](tc-0027.md) | The rails show what the agent and the user just changed | active | [BG-0001](../bugs/bg-0001.md), [RQ-0004](../requirements/rq-0004.md)#AC-14, #AC-15 |
+| [TC-0028](tc-0028.md) | The conversation is drawn in the application's palette | active | [BG-0002](../bugs/bg-0002.md), [RQ-0004](../requirements/rq-0004.md)#AC-1 |

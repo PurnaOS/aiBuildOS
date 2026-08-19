@@ -7,6 +7,7 @@ import { DiffTab } from "./DiffTab.js";
 import { FilesRail } from "./FilesRail.js";
 import { FileTab } from "./FileTab.js";
 import { RecordRail } from "./RecordRail.js";
+import { RevisionContext, useWorkspaceRevision } from "./revision.js";
 import { TabStrip, useTabs } from "./TabStrip.js";
 
 /**
@@ -38,6 +39,10 @@ function readLayout(): Layout | undefined {
 export function Workspace({ projectId }: { projectId: string }): React.JSX.Element {
   const session = useSession(projectId);
   const tabs = useTabs();
+  // What tells the rails the project has moved: the agent's turns ending, and the user's own saves.
+  const { revision, bump } = useWorkspaceRevision(
+    session.state.status === "ready" ? session.state.sessionId : null,
+  );
   const [defaultLayout] = useState<Layout | undefined>(readLayout);
   /**
    * A message the record rail wants sent.
@@ -74,69 +79,72 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
   }, []);
 
   return (
-    <Group
-      orientation="horizontal"
-      id="workspace"
-      className="flex-1"
-      data-testid="workspace"
-      {...(defaultLayout ? { defaultLayout } : {})}
-      onLayoutChanged={remember}
-    >
-      <Panel id="record" defaultSize={20} minSize={12} collapsible collapsedSize={0}>
-        <RecordRail
-          projectId={projectId}
-          onOpen={tabs.open}
-          onWorkOn={(artifact) => void workOn(artifact)}
-        />
-      </Panel>
-      <Handle />
+    <RevisionContext value={revision}>
+      <Group
+        orientation="horizontal"
+        id="workspace"
+        className="flex-1"
+        data-testid="workspace"
+        {...(defaultLayout ? { defaultLayout } : {})}
+        onLayoutChanged={remember}
+      >
+        <Panel id="record" defaultSize={20} minSize={12} collapsible collapsedSize={0}>
+          <RecordRail
+            projectId={projectId}
+            onOpen={tabs.open}
+            onWorkOn={(artifact) => void workOn(artifact)}
+          />
+        </Panel>
+        <Handle />
 
-      <Panel id="centre" defaultSize={55} minSize={30}>
-        <div className="flex h-full flex-col">
-          <TabStrip {...tabs} />
-          {/* Every open tab stays mounted; only the focused one is shown. Unmounting would throw
+        <Panel id="centre" defaultSize={55} minSize={30}>
+          <div className="flex h-full flex-col">
+            <TabStrip {...tabs} />
+            {/* Every open tab stays mounted; only the focused one is shown. Unmounting would throw
               away an editor's unsaved work the moment someone glanced at the conversation, and would
               drop the conversation's own scrollback on the way back. */}
-          {tabs.tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={tab.id === tabs.active ? "min-h-0 flex-1" : "hidden"}
-              aria-hidden={tab.id !== tabs.active}
-            >
-              {tab.kind === "chat" ? (
-                <Chat
-                  projectId={projectId}
-                  session={session}
-                  pending={pending}
-                  onSent={() => setPending(null)}
-                />
-              ) : tab.kind === "diff" ? (
-                <DiffTab projectId={projectId} path={tab.id.replace(/^diff:/, "")} />
-              ) : tab.kind === "file" ? (
-                <FileTab
-                  projectId={projectId}
-                  path={tab.id}
-                  sessionId={session.state.status === "ready" ? session.state.sessionId : null}
-                  onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
-                />
-              ) : tab.kind === "artifact" ? (
-                <ArtifactTab
-                  projectId={projectId}
-                  artifactId={tab.id}
-                  sessionId={session.state.status === "ready" ? session.state.sessionId : null}
-                  onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
-                />
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </Panel>
-      <Handle />
+            {tabs.tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={tab.id === tabs.active ? "min-h-0 flex-1" : "hidden"}
+                aria-hidden={tab.id !== tabs.active}
+              >
+                {tab.kind === "chat" ? (
+                  <Chat
+                    projectId={projectId}
+                    session={session}
+                    pending={pending}
+                    onSent={() => setPending(null)}
+                  />
+                ) : tab.kind === "diff" ? (
+                  <DiffTab projectId={projectId} path={tab.id.replace(/^diff:/, "")} />
+                ) : tab.kind === "file" ? (
+                  <FileTab
+                    projectId={projectId}
+                    path={tab.id}
+                    sessionId={session.state.status === "ready" ? session.state.sessionId : null}
+                    onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
+                  />
+                ) : tab.kind === "artifact" ? (
+                  <ArtifactTab
+                    projectId={projectId}
+                    artifactId={tab.id}
+                    sessionId={session.state.status === "ready" ? session.state.sessionId : null}
+                    onSaved={bump}
+                    onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Handle />
 
-      <Panel id="files" defaultSize={25} minSize={14} collapsible collapsedSize={0}>
-        <FilesRail projectId={projectId} onOpen={tabs.open} />
-      </Panel>
-    </Group>
+        <Panel id="files" defaultSize={25} minSize={14} collapsible collapsedSize={0}>
+          <FilesRail projectId={projectId} onOpen={tabs.open} />
+        </Panel>
+      </Group>
+    </RevisionContext>
   );
 }
 

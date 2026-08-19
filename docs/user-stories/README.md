@@ -22,3 +22,5 @@ back to [docs/README.md](../README.md)
 | [ST-0012](st-0012.md) | The record rail and the files rail | review | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0019](../testing/tc-0019.md) |
 | [ST-0013](st-0013.md) | Edit a file beside the conversation | review | [RQ-0005](../requirements/rq-0005.md) · [EP-0004](../epics/ep-0004.md) · [TC-0022](../testing/tc-0022.md), [TC-0023](../testing/tc-0023.md) |
 | [ST-0014](st-0014.md) | Author an artifact through its own profile | review | [RQ-0005](../requirements/rq-0005.md) · [EP-0004](../epics/ep-0004.md) · [TC-0024](../testing/tc-0024.md), [TC-0025](../testing/tc-0025.md), [TC-0026](../testing/tc-0026.md) |
+| [ST-0015](st-0015.md) | The rails follow the work as it happens | review | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0027](../testing/tc-0027.md) |
+| [ST-0016](st-0016.md) | The conversation looks like part of the application | review | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0028](../testing/tc-0028.md) |

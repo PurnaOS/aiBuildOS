@@ -2,6 +2,7 @@ import type { ChannelResponse } from "@aibuildos/ipc";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { eyebrow, focusRing, mono } from "../ui.js";
+import { useRevision } from "./revision.js";
 import type { Tab } from "./TabStrip.js";
 
 /**
@@ -43,9 +44,15 @@ export function RecordRail({
   onWorkOn: (artifact: { id: string; file: string }) => void;
 }): React.JSX.Element {
   const [record, setRecord] = useState<Record_ | null>(null);
+  // Re-read when the project has moved underneath this. What is expanded and what is filtered are
+  // this rail's own state and survive it, so a refresh does not throw away where the user was.
+  const revision = useRevision();
   const [filter, setFilter] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // `revision` is not read in here — it *is* the trigger. It moves when the project's files may
+  // have changed underneath what is on screen, and re-reading is the whole point of depending on it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the revision is a trigger, not a read
   useEffect(() => {
     let live = true;
     void window.aibuildos
@@ -59,7 +66,7 @@ export function RecordRail({
     return () => {
       live = false;
     };
-  }, [projectId]);
+  }, [projectId, revision]);
 
   const toggle = useCallback((id: string) => {
     setExpanded((current) => {

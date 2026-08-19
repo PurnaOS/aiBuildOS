@@ -36,12 +36,15 @@ export function ArtifactTab({
   projectId,
   artifactId,
   sessionId,
+  onSaved,
   onDirtyChange,
 }: {
   projectId: string;
   artifactId: string;
   /** Watched so a finished turn triggers a re-read: `docs/` is the agent's work too, not only ours. */
   sessionId: string | null;
+  /** Told when a save lands, so the rails stop showing the state this artifact used to have. */
+  onSaved?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
 }): React.JSX.Element {
   const [loaded, setLoaded] = useState<Artifact | null>(null);
@@ -187,6 +190,7 @@ export function ArtifactTab({
         if (result.markdown !== null) onDisk.current = result.markdown;
         original.current = { title, state, links, body };
         baseline.current = snapshot;
+        onSaved?.();
       }
     } finally {
       setSaving(false);

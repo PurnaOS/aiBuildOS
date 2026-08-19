@@ -2,6 +2,7 @@ import type { ChannelResponse } from "@aibuildos/ipc";
 import { ChevronDown, ChevronRight, File, Folder } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { eyebrow, focusRing, mono, relativeTime } from "../ui.js";
+import { useRevision } from "./revision.js";
 import type { Tab } from "./TabStrip.js";
 
 /**
@@ -81,7 +82,13 @@ function Directory({
 }): React.JSX.Element {
   const [tree, setTree] = useState<Tree | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // Every expanded directory is its own component, so each re-reads itself; a directory nobody has
+  // opened costs nothing, which is the same reason the tree expands lazily in the first place.
+  const revision = useRevision();
 
+  // `revision` is not read in here — it *is* the trigger. It moves when the project's files may
+  // have changed underneath what is on screen, and re-reading is the whole point of depending on it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the revision is a trigger, not a read
   useEffect(() => {
     let live = true;
     void window.aibuildos
@@ -95,7 +102,7 @@ function Directory({
     return () => {
       live = false;
     };
-  }, [projectId, path]);
+  }, [projectId, path, revision]);
 
   const toggle = useCallback((entryPath: string) => {
     setOpen((current) => {
@@ -198,7 +205,11 @@ function GitChanges({
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
 }): React.JSX.Element {
   const [changes, setChanges] = useState<Changes | null>(null);
+  const revision = useRevision();
 
+  // `revision` is not read in here — it *is* the trigger. It moves when the project's files may
+  // have changed underneath what is on screen, and re-reading is the whole point of depending on it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the revision is a trigger, not a read
   useEffect(() => {
     let live = true;
     void window.aibuildos
@@ -219,7 +230,7 @@ function GitChanges({
     return () => {
       live = false;
     };
-  }, [projectId]);
+  }, [projectId, revision]);
 
   if (changes === null) return <p className="px-3 py-2 text-xs text-neutral-500">Loading…</p>;
   if (changes.problem) {

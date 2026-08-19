@@ -1,7 +1,6 @@
 import { CopilotKit, useCopilotChatInternal } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import { type ComponentProps, useEffect, useState } from "react";
-import "@copilotkit/react-ui/styles.css";
 import { useHarnesses } from "../harness/HarnessPanel.js";
 import type { Session } from "../session/useSession.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
