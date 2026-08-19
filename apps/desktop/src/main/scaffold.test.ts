@@ -1,0 +1,153 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { validate } from "@aibuildos/knowledge-engine";
+import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { git, recentCommits, repoRoot } from "./git.js";
+import { bundleFiles, claimProjectDirectory, fillProject, scaffoldProject } from "./scaffold.js";
+
+/**
+ * TC-0006. A created project is a repository with one commit and a valid, empty OKF bundle.
+ *
+ * The bundle assertion runs the knowledge engine over the seed. That is what makes it impossible to
+ * ship a broken template: a bad seed fails here rather than in every project a user creates.
+ */
+describe("scaffolding a project", () => {
+  let parent: string;
+
+  const IDENTITY = {
+    GIT_AUTHOR_NAME: "Test",
+    GIT_AUTHOR_EMAIL: "test@example.com",
+    GIT_COMMITTER_NAME: "Test",
+    GIT_COMMITTER_EMAIL: "test@example.com",
+  };
+
+  beforeEach(() => {
+    parent = mkdtempSync(join(tmpdir(), "aibuildos-scaffold-"));
+    // Git needs an identity to commit, and CI has none configured globally.
+    Object.assign(process.env, IDENTITY);
+  });
+
+  afterEach(() => {
+    rmSync(parent, { recursive: true, force: true });
+    // Restored, not left set: these beat repo config, so leaking them would make `git.test.ts`'s
+    // missing-identity case commit successfully and fail for a reason nobody could see.
+    for (const key of Object.keys(IDENTITY)) delete process.env[key];
+  });
+
+  it("creates a repository with exactly one commit containing the seed", async () => {
+    const dir = await scaffoldProject(parent, "demo");
+
+    expect(await repoRoot(dir)).not.toBeNull();
+
+    const commits = await recentCommits(dir);
+    expect(commits).toHaveLength(1);
+    expect(commits[0]?.subject).toBe("chore: initial commit");
+
+    // Everything the seed wrote is *in* that commit, not left untracked beside it.
+    const tracked = (await git(dir, "ls-tree", "-r", "--name-only", "HEAD")).split("\n");
+    expect(tracked).toContain("README.md");
+    expect(tracked).toContain("docs/README.md");
+    expect(tracked).toContain("docs/profile/requirement.md");
+
+    expect(readFileSync(join(dir, "README.md"), "utf8")).toContain("# demo");
+  });
+
+  it("seeds the whole type profile and an index for every artifact directory", async () => {
+    const dir = await scaffoldProject(parent, "demo");
+
+    for (const type of [
+      "bug",
+      "decision",
+      "epic",
+      "profile",
+      "README",
+      "requirement",
+      "story",
+      "test-case",
+      "work-item",
+    ]) {
+      expect(existsSync(join(dir, "docs", "profile", `${type}.md`))).toBe(true);
+    }
+
+    for (const slug of [
+      "requirements",
+      "epics",
+      "user-stories",
+      "testing",
+      "bugs",
+      "decisions",
+      "architecture",
+    ]) {
+      expect(existsSync(join(dir, "docs", slug, "README.md"))).toBe(true);
+    }
+
+    expect(existsSync(join(dir, "docs", "guidelines", "okf-conventions.md"))).toBe(true);
+  });
+
+  it("seeds a bundle the knowledge engine reports no errors on (RQ-0002#AC-4)", async () => {
+    const dir = await scaffoldProject(parent, "demo");
+
+    const { bundle, parseErrors } = loadBundle(join(dir, "docs"), dir);
+
+    expect(parseErrors).toEqual([]);
+    expect(validate(bundle).filter((finding) => finding.severity === "error")).toEqual([]);
+  });
+
+  it("seeds no artifacts — a new project's backlog is empty, not broken", async () => {
+    const dir = await scaffoldProject(parent, "demo");
+
+    const { bundle } = loadBundle(join(dir, "docs"), dir);
+    const summary = summarize(bundle);
+
+    expect(summary.artifacts).toBe(0);
+    // The indexes are there waiting for the first requirement.
+    expect(summary.indexes).toBeGreaterThanOrEqual(8);
+  });
+
+  it("refuses a directory that already exists, and leaves it alone (RQ-0002#AC-3)", async () => {
+    const existing = join(parent, "demo");
+    mkdirSync(existing);
+    writeFileSync(join(existing, "mine.txt"), "do not touch", "utf8");
+
+    await expect(scaffoldProject(parent, "demo")).rejects.toMatchObject({ code: "EEXIST" });
+
+    expect(readFileSync(join(existing, "mine.txt"), "utf8")).toBe("do not touch");
+    expect(existsSync(join(existing, "docs"))).toBe(false);
+    expect(existsSync(join(existing, ".git"))).toBe(false);
+  });
+
+  /**
+   * The reason `project:create` registers the project the moment the directory exists. A machine with
+   * no Git identity configured is the ordinary first-run state, and the commit is the step it fails
+   * at — leaving a real repository with a real bundle and no commit. That has to stay usable, or the
+   * user is left with a folder the app made, will not list, and will not create again.
+   */
+  it("leaves a usable repository behind when the commit fails", async () => {
+    for (const key of Object.keys(IDENTITY)) delete process.env[key];
+
+    const dir = claimProjectDirectory(parent, "demo");
+    await git(dir, "init", "--quiet");
+    await git(dir, "config", "user.name", "");
+    await git(dir, "config", "user.email", "");
+
+    await expect(fillProject(dir, "demo")).rejects.toMatchObject({ code: "git_identity" });
+
+    // Not rolled back: the repository, the README and the bundle are all real.
+    expect(await repoRoot(dir)).not.toBeNull();
+    expect(existsSync(join(dir, "README.md"))).toBe(true);
+    expect(existsSync(join(dir, "docs", "profile", "requirement.md"))).toBe(true);
+    expect(await recentCommits(dir)).toEqual([]);
+  });
+
+  it("carries every template as a non-empty file", () => {
+    const files = bundleFiles();
+
+    expect(files.size).toBeGreaterThanOrEqual(20);
+    for (const [path, content] of files) {
+      expect(path.startsWith("docs/"), path).toBe(true);
+      expect(content.length, path).toBeGreaterThan(0);
+    }
+  });
+});
