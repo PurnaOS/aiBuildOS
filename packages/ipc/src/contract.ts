@@ -400,13 +400,6 @@ export const channels = {
    * one file the user asked for, which is the retrieval pattern `docs/README.md` prescribes:
    * load an index, then the one artifact you need.
    */
-  "project:artifact": {
-    request: z.object({ id: z.string(), artifactId: z.string() }),
-    response: z.object({
-      markdown: z.string().nullable(),
-      problem: z.string().nullable(),
-    }),
-  },
   /**
    * One changed path, as it was and as it is (ST-0012#AC-8).
    *
@@ -476,6 +469,67 @@ export const channels = {
   "project:save": {
     request: z.object({ id: z.string(), path: RepoPathSchema.min(1), text: z.string() }),
     response: z.object({ problem: z.string().nullable() }),
+  },
+  /**
+   * One artifact, as its own shape rather than as text (RQ-0005#AC-5, AC-6, AC-9).
+   *
+   * The vocabularies come with it: the states this type declares, and for each relationship the
+   * artifacts that are legal targets. The renderer offers what the profile allows and never a list
+   * it made up — the same rule the agent controls follow.
+   */
+  "project:artifact": {
+    request: z.object({ id: z.string(), artifactId: z.string() }),
+    response: z.object({
+      markdown: z.string().nullable(),
+      /** Frontmatter as read. Values are whatever YAML produced. */
+      frontmatter: z.record(z.string(), z.unknown()),
+      body: z.string(),
+      /** This type's own state vocabulary, empty when the profile does not describe it. */
+      states: z.array(z.string()),
+      links: z.array(
+        z.object({
+          relationship: z.string(),
+          current: z.array(z.string()),
+          /** Every artifact whose type this relationship declares as a legal target. */
+          candidates: z.array(z.object({ id: z.string(), title: z.string(), type: z.string() })),
+        }),
+      ),
+      /** Reported against the frontmatter key that caused them, where one can be identified. */
+      findings: z.array(
+        z.object({
+          rule: z.string(),
+          severity: z.string(),
+          message: z.string(),
+          key: z.string().nullable(),
+        }),
+      ),
+      problem: z.string().nullable(),
+    }),
+  },
+  /**
+   * Write an artifact back (RQ-0005#AC-8, AC-10).
+   *
+   * Only the named fields and the body change; everything else in the file is left byte-identical,
+   * and the artifact's row in its directory index is kept in step.
+   */
+  "project:artifact-save": {
+    request: z.object({
+      id: z.string(),
+      artifactId: z.string(),
+      frontmatter: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
+      body: z.string(),
+    }),
+    response: z.object({
+      problem: z.string().nullable(),
+      findings: z.array(
+        z.object({
+          rule: z.string(),
+          severity: z.string(),
+          message: z.string(),
+          key: z.string().nullable(),
+        }),
+      ),
+    }),
   },
 } as const satisfies Record<string, ChannelDefinition>;
 

@@ -15,7 +15,16 @@ import {
   type Handlers,
   type IpcMainLike,
 } from "@aibuildos/ipc";
-import { ArtifactGraph, type GraphNode } from "@aibuildos/knowledge-engine";
+import {
+  ArtifactGraph,
+  editArtifact,
+  type GraphNode,
+  type Profile,
+  parseOkfDocument,
+  resolveProfile,
+  updateIndexRow,
+  validate,
+} from "@aibuildos/knowledge-engine";
 import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
 import { app, BrowserWindow, dialog } from "electron";
 import {
@@ -180,6 +189,56 @@ function insideProject(root: string, path: string): string {
     throw new Error(`${path} is not inside this project`);
   }
   return real;
+}
+
+/**
+ * Load the type profile beside a bundle.
+ *
+ * `loadBundle` skips `profile/` because it holds type definitions rather than artifacts, so the
+ * dialect is read separately — by the engine, which is the only thing allowed to parse `docs/`.
+ */
+function loadProfile(root: string): { profile: Profile } {
+  const dir = join(root, "profile");
+  if (!isDirectory(dir)) return { profile: resolveProfile([]).profile };
+
+  const raw = readdirSync(dir)
+    .filter((name) => name.endsWith(".md"))
+    .flatMap((name) => {
+      try {
+        const parsed = parseOkfDocument(readFileSync(join(dir, name), "utf8"));
+        return [{ file: name, frontmatter: parsed.frontmatter }];
+      } catch {
+        // A profile document that will not parse is reported by `docs:check`, not by the editor.
+        return [];
+      }
+    });
+
+  return { profile: resolveProfile(raw).profile };
+}
+
+/**
+ * The findings for one artifact, each tied to the frontmatter key that caused it where possible.
+ *
+ * A finding carries a line; `keyLines` maps a key to its line. Inverting that is what turns "this
+ * file is wrong" into "this field is wrong", which is the difference between a validator and an
+ * editor (RQ-0005#AC-9).
+ */
+function findingsFor(
+  bundle: Parameters<typeof validate>[0],
+  profile: Profile,
+  file: string,
+  keyLines: ReadonlyMap<string, number>,
+): { rule: string; severity: string; message: string; key: string | null }[] {
+  const byLine = new Map([...keyLines].map(([key, line]) => [line, key]));
+
+  return validate(bundle, profile)
+    .filter((finding) => finding.file === file)
+    .map((finding) => ({
+      rule: finding.rule,
+      severity: finding.severity,
+      message: finding.message,
+      key: finding.line === undefined ? null : (byLine.get(finding.line) ?? null),
+    }));
 }
 
 /** Every handler that works on a project starts here. An unknown id is a renderer bug. */
@@ -485,24 +544,6 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       }
     },
 
-    "project:artifact": ({ id, artifactId }) => {
-      const project = requireProject(id);
-      const root = join(project.path, "docs");
-      if (!isDirectory(root)) return { markdown: null, problem: null };
-
-      try {
-        const { bundle } = loadBundle(root, project.path);
-        const found = bundle.artifacts.find(
-          (artifact) => (artifact.frontmatter as { id?: unknown }).id === artifactId,
-        );
-        if (!found) return { markdown: null, problem: `${artifactId} is not in this bundle.` };
-
-        return { markdown: readFileSync(join(project.path, found.file), "utf8"), problem: null };
-      } catch (cause) {
-        return { markdown: null, problem: failure(cause).message };
-      }
-    },
-
     "project:diff": async ({ id, path }) => {
       const project = requireProject(id);
 
@@ -527,8 +568,9 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         newText = readFileSync(absolute, "utf8");
       } catch (cause) {
         // Deleted in the working tree: there is still a previous version worth showing.
-        if (oldText === null)
+        if (oldText === null) {
           return { path, oldText: null, newText: "", problem: failure(cause).message };
+        }
       }
 
       return { path, oldText, newText, problem: null };
@@ -551,6 +593,129 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         return { problem: null };
       } catch (cause) {
         return { problem: failure(cause).message };
+      }
+    },
+
+    "project:artifact": ({ id, artifactId }) => {
+      const project = requireProject(id);
+      const empty = {
+        markdown: null,
+        frontmatter: {},
+        body: "",
+        states: [],
+        links: [],
+        findings: [],
+      };
+
+      const root = join(project.path, "docs");
+      if (!isDirectory(root)) return { ...empty, problem: null };
+
+      try {
+        const { bundle } = loadBundle(root, project.path);
+        const found = bundle.artifacts.find(
+          (artifact) => (artifact.frontmatter as { id?: unknown }).id === artifactId,
+        );
+        if (!found) return { ...empty, problem: `${artifactId} is not in this bundle.` };
+
+        const markdown = readFileSync(join(project.path, found.file), "utf8");
+        const parsed = parseOkfDocument(markdown);
+        const type = String((found.frontmatter as { type?: unknown }).type ?? "");
+
+        const { profile } = loadProfile(root);
+        const definition = profile.get(type);
+
+        // What the profile allows, never a list this application invented (RQ-0005#AC-6).
+        const states = definition?.states?.vocabulary ?? [];
+        const stored = (found.frontmatter as { links?: Record<string, string[]> }).links ?? {};
+        const links = Object.entries(definition?.links ?? {}).map(([relationship, def]) => ({
+          relationship,
+          current: stored[relationship] ?? [],
+          candidates: bundle.artifacts
+            .flatMap((candidate) => {
+              const front = candidate.frontmatter as {
+                id?: unknown;
+                title?: unknown;
+                type?: unknown;
+              };
+              if (typeof front.id !== "string" || typeof front.type !== "string") return [];
+              if (front.id === artifactId) return [];
+              // A link is satisfied by the target type or anything extending it (conventions §4).
+              if (!def.target.some((target) => profile.isA(front.type as string, target)))
+                return [];
+              return [
+                {
+                  id: front.id,
+                  title: typeof front.title === "string" ? front.title : front.id,
+                  type: front.type,
+                },
+              ];
+            })
+            .sort((a, b) => a.id.localeCompare(b.id)),
+        }));
+
+        return {
+          markdown,
+          frontmatter: found.frontmatter,
+          body: parsed.body,
+          states,
+          links,
+          findings: findingsFor(bundle, profile, found.file, parsed.keyLines),
+          problem: null,
+        };
+      } catch (cause) {
+        return { ...empty, problem: failure(cause).message };
+      }
+    },
+
+    "project:artifact-save": ({ id, artifactId, frontmatter, body }) => {
+      const project = requireProject(id);
+      const root = join(project.path, "docs");
+
+      try {
+        const { bundle } = loadBundle(root, project.path);
+        const found = bundle.artifacts.find(
+          (artifact) => (artifact.frontmatter as { id?: unknown }).id === artifactId,
+        );
+        if (!found) return { problem: `${artifactId} is not in this bundle.`, findings: [] };
+
+        const file = join(project.path, found.file);
+        // The profile is what knows which relationships this type declares, so it is what vouches
+        // for a link key the file does not carry yet. Anything else missing is still refused.
+        const { profile: dialect } = loadProfile(root);
+        const type = String((found.frontmatter as { type?: unknown }).type ?? "");
+        const create = Object.keys(dialect.get(type)?.links ?? {}).map((rel) => `links.${rel}`);
+
+        // Only the named keys and the body change; the rest of the file is byte-identical.
+        writeFileSync(
+          file,
+          editArtifact(readFileSync(file, "utf8"), { frontmatter, body, create }),
+          "utf8",
+        );
+
+        // The record must not disagree with itself: the index says what the artifact says (AC-10).
+        const indexFile = join(project.path, found.dir, "README.md");
+        if (existsSync(indexFile)) {
+          const title = frontmatter.title;
+          const state = frontmatter.state;
+          writeFileSync(
+            indexFile,
+            updateIndexRow(readFileSync(indexFile, "utf8"), artifactId, {
+              ...(typeof title === "string" ? { title } : {}),
+              ...(typeof state === "string" ? { state } : {}),
+            }),
+            "utf8",
+          );
+        }
+
+        // Re-read so what comes back is what the bundle now says, not what was hoped for.
+        const after = loadBundle(root, project.path);
+        const parsed = parseOkfDocument(readFileSync(file, "utf8"));
+        return {
+          problem: null,
+          findings: findingsFor(after.bundle, dialect, found.file, parsed.keyLines),
+        };
+      } catch (cause) {
+        return { problem: failure(cause).message, findings: [] };
       }
     },
 

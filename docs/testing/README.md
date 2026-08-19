@@ -31,3 +31,6 @@ back to [docs/README.md](../README.md)
 | [TC-0021](tc-0021.md) | Session controls come from the agent, and follow the agent when it changes them | active | [RQ-0004](../requirements/rq-0004.md)#AC-12, #AC-13 |
 | [TC-0022](tc-0022.md) | A file is edited and saved unchanged, and a collision with the agent loses nothing | active | [RQ-0005](../requirements/rq-0005.md)#AC-1, #AC-2, #AC-3, #AC-4 |
 | [TC-0023](tc-0023.md) | A path from the renderer never reaches outside the project | active | [RQ-0005](../requirements/rq-0005.md)#AC-11, [RQ-0004](../requirements/rq-0004.md)#AC-18 |
+| [TC-0024](tc-0024.md) | Saving an artifact rewrites only what changed, and the index with it | active | [RQ-0005](../requirements/rq-0005.md)#AC-8, #AC-10 |
+| [TC-0025](tc-0025.md) | Acceptance criterion numbers are append-only | active | [RQ-0005](../requirements/rq-0005.md)#AC-7 |
+| [TC-0026](tc-0026.md) | An artifact is authored as its own shape, from the profile | active | [RQ-0005](../requirements/rq-0005.md)#AC-5, #AC-6, #AC-9, #AC-10 |

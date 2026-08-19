@@ -1,3 +1,5 @@
+export type { ArtifactEdit, FieldValue } from "./edit.js";
+export { editArtifact, OkfEditError, updateIndexRow } from "./edit.js";
 export type { GraphEdge, GraphNode } from "./graph.js";
 export { ArtifactGraph } from "./graph.js";
 export type { OkfDocument } from "./parse.js";

@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Group, type Layout, Panel, Separator } from "react-resizable-panels";
 import { useSession } from "../session/useSession.js";
+import { ArtifactTab } from "./ArtifactTab.js";
 import { Chat } from "./Chat.js";
 import { DiffTab } from "./DiffTab.js";
 import { FilesRail } from "./FilesRail.js";
@@ -112,9 +113,13 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                   sessionId={session.state.status === "ready" ? session.state.sessionId : null}
                   onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
                 />
-              ) : (
-                <Placeholder tab={tab} />
-              )}
+              ) : tab.kind === "artifact" ? (
+                <ArtifactTab
+                  projectId={projectId}
+                  artifactId={tab.id}
+                  onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
+                />
+              ) : null}
             </div>
           ))}
         </div>
@@ -131,28 +136,5 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
 function Handle(): React.JSX.Element {
   return (
     <Separator className="w-px bg-neutral-200 transition-colors hover:bg-neutral-400 dark:bg-neutral-800 dark:hover:bg-neutral-600" />
-  );
-}
-
-/**
- * A tab whose editor has not been built yet.
- *
- * Says what it is rather than pretending — editing files and artifacts is
- * [RQ-0005](../../../../../docs/requirements/rq-0005.md), and a blank panel would read as a bug.
- */
-function Placeholder({
-  tab,
-}: {
-  tab: { kind: string; title: string } | undefined;
-}): React.JSX.Element {
-  return (
-    <div className="flex h-full items-center justify-center p-8 text-center">
-      <div>
-        <p className="font-mono text-sm">{tab?.title}</p>
-        <p className="mt-2 text-xs text-neutral-500">
-          {tab?.kind === "artifact" ? "Artifact" : "File"} editing arrives with RQ-0005.
-        </p>
-      </div>
-    </div>
   );
 }
