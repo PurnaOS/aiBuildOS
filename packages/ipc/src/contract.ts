@@ -177,6 +177,24 @@ export const ProjectSnapshotSchema = z.object({
   recordError: z.object({ code: z.string(), message: z.string() }).nullable(),
 });
 
+/**
+ * A path **inside** a project, relative to its root.
+ *
+ * The renderer is not trusted — that is the entire reason this boundary exists (AR-0001) — so a path
+ * it supplies is checked here before any handler sees it. Absolute paths and `..` segments are
+ * refused, because `join(project, "../../etc/passwd")` is otherwise an arbitrary read, and the same
+ * path through `project:save` is an arbitrary **write**.
+ *
+ * This is the boundary half of the defence. The main process resolves the path as well and refuses
+ * anything that lands outside the project, which catches what a string check cannot: a symlink.
+ */
+const RepoPathSchema = z
+  .string()
+  .max(4096)
+  .refine((path) => !path.includes("\0"), "must not contain a NUL byte")
+  .refine((path) => !/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(path), "must be relative to the project")
+  .refine((path) => !path.split(/[\\/]/).includes(".."), "must not climb out of the project");
+
 export const channels = {
   /** Runtime identity of the host process — the smallest useful real channel. */
   "app:info": {
@@ -349,7 +367,7 @@ export const channels = {
    * rail that stalls on a large repository.
    */
   "project:tree": {
-    request: z.object({ id: z.string(), path: z.string() }),
+    request: z.object({ id: z.string(), path: RepoPathSchema }),
     response: z.object({
       entries: z.array(
         z.object({
@@ -397,7 +415,7 @@ export const channels = {
    * carries, so one component draws both.
    */
   "project:diff": {
-    request: z.object({ id: z.string(), path: z.string() }),
+    request: z.object({ id: z.string(), path: RepoPathSchema.min(1) }),
     response: z.object({
       path: z.string(),
       /** `null` for a file that is new — there is no previous version to show. */
@@ -443,7 +461,7 @@ export const channels = {
   },
   /** One file's text, for the editor (RQ-0005#AC-1). */
   "project:file": {
-    request: z.object({ id: z.string(), path: z.string() }),
+    request: z.object({ id: z.string(), path: RepoPathSchema.min(1) }),
     response: z.object({
       text: z.string().nullable(),
       problem: z.string().nullable(),
@@ -456,7 +474,7 @@ export const channels = {
    * writer that tidies is a writer that produces a diff nobody asked for.
    */
   "project:save": {
-    request: z.object({ id: z.string(), path: z.string(), text: z.string() }),
+    request: z.object({ id: z.string(), path: RepoPathSchema.min(1), text: z.string() }),
     response: z.object({ problem: z.string().nullable() }),
   },
 } as const satisfies Record<string, ChannelDefinition>;

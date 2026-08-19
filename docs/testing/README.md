@@ -26,3 +26,4 @@ back to [docs/README.md](../README.md)
 | [TC-0020](tc-0020.md) | A live session's narration crosses the real boundary into a real renderer | active | [RQ-0004](../requirements/rq-0004.md)#AC-3, #AC-11, #AC-18 |
 | [TC-0021](tc-0021.md) | Session controls come from the agent, and follow the agent when it changes them | active | [RQ-0004](../requirements/rq-0004.md)#AC-12, #AC-13 |
 | [TC-0022](tc-0022.md) | A file is edited and saved unchanged, and a collision with the agent loses nothing | active | [RQ-0005](../requirements/rq-0005.md)#AC-1, #AC-2, #AC-3, #AC-4 |
+| [TC-0023](tc-0023.md) | A path from the renderer never reaches outside the project | active | [RQ-0005](../requirements/rq-0005.md)#AC-11, [RQ-0004](../requirements/rq-0004.md)#AC-18 |

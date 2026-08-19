@@ -1,5 +1,12 @@
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { probeHarness } from "@aibuildos/acp/probe";
 import {
   createEmitter,
@@ -142,6 +149,37 @@ async function rowFacts(project: Project): Promise<{
 function dirtyCount(tree: GitStatus): number {
   // `changed`, not the sum of the counters: a path that is both staged and unstaged is one change.
   return tree.changed;
+}
+
+/**
+ * Resolve a path inside a project, refusing anything that lands outside it.
+ *
+ * The second half of the defence the contract's `RepoPathSchema` begins. A string check cannot see a
+ * **symlink**: `docs/out` may be a perfectly ordinary relative path that points at `/`. Resolving
+ * both sides through `realpath` and comparing is the only answer that survives one.
+ *
+ * The target may not exist yet — a file being saved for the first time — so the nearest existing
+ * ancestor is what gets resolved, and the rest is appended to it.
+ */
+function insideProject(root: string, path: string): string {
+  const target = resolve(root, path);
+
+  let existing = target;
+  const trailing: string[] = [];
+  while (!existsSync(existing)) {
+    const parent = dirname(existing);
+    // Ran out of path without finding anything: nothing here is inside the project.
+    if (parent === existing) throw new Error(`${path} is not inside this project`);
+    trailing.unshift(existing.slice(parent.length + 1));
+    existing = parent;
+  }
+
+  const real = join(realpathSync(existing), ...trailing);
+  const away = relative(realpathSync(root), real);
+  if (away.startsWith("..") || isAbsolute(away)) {
+    throw new Error(`${path} is not inside this project`);
+  }
+  return real;
 }
 
 /** Every handler that works on a project starts here. An unknown id is a renderer bug. */
@@ -359,8 +397,13 @@ function createHandlers(sessions: SessionRegistry): Handlers {
 
     "project:tree": async ({ id, path }) => {
       const project = requireProject(id);
-      const root = join(project.path, path);
 
+      let root: string;
+      try {
+        root = insideProject(project.path, path);
+      } catch (cause) {
+        return { entries: [], problem: failure(cause).message };
+      }
       if (!isDirectory(root)) return { entries: [], problem: `${path || "."} is not a folder.` };
 
       // Which paths Git says changed, so a row can be marked without asking per file.
@@ -462,7 +505,13 @@ function createHandlers(sessions: SessionRegistry): Handlers {
 
     "project:diff": async ({ id, path }) => {
       const project = requireProject(id);
-      const absolute = join(project.path, path);
+
+      let absolute: string;
+      try {
+        absolute = insideProject(project.path, path);
+      } catch (cause) {
+        return { path, oldText: null, newText: "", problem: failure(cause).message };
+      }
 
       // `HEAD:<path>` is the committed version. A path that is not in HEAD is new, and `null` says
       // so rather than pretending it used to be empty.
@@ -488,7 +537,7 @@ function createHandlers(sessions: SessionRegistry): Handlers {
     "project:file": ({ id, path }) => {
       const project = requireProject(id);
       try {
-        return { text: readFileSync(join(project.path, path), "utf8"), problem: null };
+        return { text: readFileSync(insideProject(project.path, path), "utf8"), problem: null };
       } catch (cause) {
         return { text: null, problem: failure(cause).message };
       }
@@ -498,7 +547,7 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       const project = requireProject(id);
       try {
         // Exactly what was shown, byte for byte. Nothing is appended, trimmed or normalised.
-        writeFileSync(join(project.path, path), text, "utf8");
+        writeFileSync(insideProject(project.path, path), text, "utf8");
         return { problem: null };
       } catch (cause) {
         return { problem: failure(cause).message };
