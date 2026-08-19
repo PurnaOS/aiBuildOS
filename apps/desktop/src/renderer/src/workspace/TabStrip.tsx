@@ -1,5 +1,5 @@
 import { FileCode2, MessageSquare, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { eyebrow, focusRing, mono } from "../ui.js";
 
 /**
@@ -18,6 +18,8 @@ export interface Tab {
   readonly title: string;
   /** A preview tab is replaced by the next preview; a pinned one is not (VS Code's rule). */
   readonly preview: boolean;
+  /** Unsaved edits. Closing one asks first (RQ-0005#AC-2). */
+  readonly dirty?: boolean;
 }
 
 const CHAT: Tab = { id: "chat", kind: "chat", title: "Chat", preview: false };
@@ -29,11 +31,15 @@ export interface Tabs {
   open: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
   close: (id: string) => void;
   focus: (id: string) => void;
+  setDirty: (id: string, dirty: boolean) => void;
 }
 
 export function useTabs(): Tabs {
   const [tabs, setTabs] = useState<Tab[]>([CHAT]);
   const [active, setActive] = useState<string>(CHAT.id);
+  // Read by `close`, which must not depend on the tab list and be rebuilt on every change.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
 
   const open = useCallback<Tabs["open"]>((tab, options) => {
     const preview = options?.preview ?? true;
@@ -58,8 +64,21 @@ export function useTabs(): Tabs {
     // The conversation has no close control, and nothing else may close it either.
     if (id === CHAT.id) return;
 
+    // Asked *before* updating, never inside the updater: a state updater must be pure, and React
+    // may call it more than once — which would ask twice for one click.
+    const going = tabsRef.current.find((tab) => tab.id === id);
+    if (going?.dirty === true && !window.confirm(`Discard unsaved changes to ${going.title}?`)) {
+      return;
+    }
+
     setTabs((current) => current.filter((tab) => tab.id !== id));
     setActive((current) => (current === id ? CHAT.id : current));
+  }, []);
+
+  const setDirty = useCallback((id: string, dirty: boolean) => {
+    setTabs((current) =>
+      current.map((tab) => (tab.id === id && tab.dirty !== dirty ? { ...tab, dirty } : tab)),
+    );
   }, []);
 
   return {
@@ -69,6 +88,7 @@ export function useTabs(): Tabs {
     open,
     close,
     focus: setActive,
+    setDirty,
   };
 }
 
@@ -103,6 +123,14 @@ export function TabStrip({ tabs, active, close, focus }: Tabs): React.JSX.Elemen
                 <FileCode2 size={12} aria-hidden />
               )}
               <span className={tab.kind === "chat" ? "" : mono}>{tab.title}</span>
+              {tab.dirty === true && (
+                <span
+                  data-testid={`tab-dirty-${tab.id}`}
+                  role="img"
+                  aria-label="unsaved"
+                  className="h-1.5 w-1.5 rounded-full bg-neutral-500"
+                />
+              )}
             </button>
 
             {tab.id !== CHAT.id && (

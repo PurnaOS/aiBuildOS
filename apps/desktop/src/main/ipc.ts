@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { probeHarness } from "@aibuildos/acp/probe";
 import {
@@ -483,6 +483,26 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       }
 
       return { path, oldText, newText, problem: null };
+    },
+
+    "project:file": ({ id, path }) => {
+      const project = requireProject(id);
+      try {
+        return { text: readFileSync(join(project.path, path), "utf8"), problem: null };
+      } catch (cause) {
+        return { text: null, problem: failure(cause).message };
+      }
+    },
+
+    "project:save": ({ id, path, text }) => {
+      const project = requireProject(id);
+      try {
+        // Exactly what was shown, byte for byte. Nothing is appended, trimmed or normalised.
+        writeFileSync(join(project.path, path), text, "utf8");
+        return { problem: null };
+      } catch (cause) {
+        return { problem: failure(cause).message };
+      }
     },
 
     "session:start": async ({ projectId, harnessId }) => {

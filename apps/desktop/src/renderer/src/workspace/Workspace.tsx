@@ -4,6 +4,7 @@ import { useSession } from "../session/useSession.js";
 import { Chat } from "./Chat.js";
 import { DiffTab } from "./DiffTab.js";
 import { FilesRail } from "./FilesRail.js";
+import { FileTab } from "./FileTab.js";
 import { RecordRail } from "./RecordRail.js";
 import { TabStrip, useTabs } from "./TabStrip.js";
 
@@ -86,20 +87,36 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
       <Panel id="centre" defaultSize={55} minSize={30}>
         <div className="flex h-full flex-col">
           <TabStrip {...tabs} />
-          <div className="min-h-0 flex-1">
-            {tabs.active === "chat" ? (
-              <Chat
-                projectId={projectId}
-                session={session}
-                pending={pending}
-                onSent={() => setPending(null)}
-              />
-            ) : tabs.activeTab?.kind === "diff" ? (
-              <DiffTab projectId={projectId} path={tabs.active.replace(/^diff:/, "")} />
-            ) : (
-              <Placeholder tab={tabs.activeTab} />
-            )}
-          </div>
+          {/* Every open tab stays mounted; only the focused one is shown. Unmounting would throw
+              away an editor's unsaved work the moment someone glanced at the conversation, and would
+              drop the conversation's own scrollback on the way back. */}
+          {tabs.tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={tab.id === tabs.active ? "min-h-0 flex-1" : "hidden"}
+              aria-hidden={tab.id !== tabs.active}
+            >
+              {tab.kind === "chat" ? (
+                <Chat
+                  projectId={projectId}
+                  session={session}
+                  pending={pending}
+                  onSent={() => setPending(null)}
+                />
+              ) : tab.kind === "diff" ? (
+                <DiffTab projectId={projectId} path={tab.id.replace(/^diff:/, "")} />
+              ) : tab.kind === "file" ? (
+                <FileTab
+                  projectId={projectId}
+                  path={tab.id}
+                  sessionId={session.state.status === "ready" ? session.state.sessionId : null}
+                  onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
+                />
+              ) : (
+                <Placeholder tab={tab} />
+              )}
+            </div>
+          ))}
         </div>
       </Panel>
       <Handle />

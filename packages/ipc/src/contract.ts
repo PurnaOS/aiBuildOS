@@ -441,6 +441,24 @@ export const channels = {
       commands: z.array(z.looseObject({ name: z.string() })),
     }),
   },
+  /** One file's text, for the editor (RQ-0005#AC-1). */
+  "project:file": {
+    request: z.object({ id: z.string(), path: z.string() }),
+    response: z.object({
+      text: z.string().nullable(),
+      problem: z.string().nullable(),
+    }),
+  },
+  /**
+   * Write a file back (RQ-0005#AC-1, AC-11).
+   *
+   * What lands on disk is exactly what was shown — no trailing-newline fixing, no reformatting. A
+   * writer that tidies is a writer that produces a diff nobody asked for.
+   */
+  "project:save": {
+    request: z.object({ id: z.string(), path: z.string(), text: z.string() }),
+    response: z.object({ problem: z.string().nullable() }),
+  },
 } as const satisfies Record<string, ChannelDefinition>;
 
 /**
