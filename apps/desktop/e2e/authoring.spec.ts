@@ -245,6 +245,105 @@ test("edits the prose of the body as markdown", async () => {
   await app.close();
 });
 
+test("shows a state its own type does not declare, rather than the first one it does", async () => {
+  const { app, w } = await open();
+
+  await w.getByTestId("record-open-RQ-0003").click();
+  await expect(w.getByTestId("artifact-tab")).toBeVisible();
+
+  // The control must report what the file says. Leaving the value out of the options makes the
+  // select fall back to the first one, so the editor claims a state the artifact does not carry —
+  // and that first option becomes the one thing the user cannot pick to correct it.
+  await expect(w.getByTestId("artifact-state")).toHaveValue("nonsense");
+
+  await app.close();
+});
+
+test("does not hand out a criterion number it has already retired", async () => {
+  const { app, w, work } = await open();
+
+  // Delete both, then add: the next number appends above the high-water mark rather than reusing
+  // AC-1, because `RQ-0001#AC-1` elsewhere refers to the criterion that was deleted.
+  await w.getByTestId("criterion-remove-1").click();
+  await w.getByTestId("criterion-remove-2").click();
+  await w.getByTestId("criterion-add").click();
+  await w.getByTestId("artifact-save").click();
+  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+
+  const after = readFileSync(join(work, "docs/requirements/rq-0001.md"), "utf8");
+  expect(after).toContain("- [AC-3]");
+  expect(after).not.toContain("[AC-1]");
+  expect(after).not.toContain("[AC-2]");
+
+  await app.close();
+});
+
+test("keeps both versions when the agent changes an artifact being edited", async () => {
+  const { app, w, work } = await open();
+  const path = join(work, "docs/requirements/rq-0001.md");
+
+  // `open()` leaves the artifact focused, so the conversation is where the harness is attached from.
+  await w.getByTestId("tab-chat").click();
+  await w.getByTestId("start-h").click();
+  await w.getByTestId("chat").waitFor({ timeout: 20000 });
+  await w.getByTestId("tab-RQ-0001").click();
+  await w.getByTestId("artifact-title").fill("Mine");
+  await expect(w.getByTestId("artifact-dirty")).toBeVisible();
+
+  // `docs/` is the agent's work too, so this is a real collision rather than a hypothetical one.
+  writeFileSync(
+    path,
+    readFileSync(path, "utf8").replace('title: "The first thing"', 'title: "Theirs"'),
+  );
+
+  await w.getByTestId("tab-chat").click();
+  const composer = w.locator("textarea, [contenteditable=true]").first();
+  await composer.click();
+  await composer.fill("go");
+  await w.keyboard.press("Enter");
+  await w.getByTestId("tab-RQ-0001").click();
+
+  // Neither side is discarded, and the difference is on screen.
+  await expect(w.getByTestId("artifact-conflict")).toBeVisible({ timeout: 15000 });
+  await expect(w.getByTestId("artifact-title")).toHaveValue("Mine");
+  await expect(w.getByTestId("artifact-conflict")).toContainText("Theirs");
+
+  await w.getByTestId("artifact-conflict-take-theirs").click();
+  await expect(w.getByTestId("artifact-conflict")).toHaveCount(0);
+  await expect(w.getByTestId("artifact-title")).toHaveValue("Theirs");
+
+  await app.close();
+});
+
+test("takes the agent's version of an artifact nobody was editing", async () => {
+  const { app, w, work } = await open();
+  const path = join(work, "docs/requirements/rq-0001.md");
+
+  await w.getByTestId("tab-chat").click();
+  await w.getByTestId("start-h").click();
+  await w.getByTestId("chat").waitFor({ timeout: 20000 });
+  await w.getByTestId("tab-RQ-0001").click();
+  await expect(w.getByTestId("artifact-tab")).toBeVisible();
+
+  writeFileSync(
+    path,
+    readFileSync(path, "utf8").replace('title: "The first thing"', 'title: "Theirs"'),
+  );
+
+  await w.getByTestId("tab-chat").click();
+  const composer = w.locator("textarea, [contenteditable=true]").first();
+  await composer.click();
+  await composer.fill("go");
+  await w.keyboard.press("Enter");
+  await w.getByTestId("tab-RQ-0001").click();
+
+  await expect(w.getByTestId("artifact-title")).toHaveValue("Theirs", { timeout: 15000 });
+  // Nothing to resolve: there was nothing of the user's to lose.
+  await expect(w.getByTestId("artifact-conflict")).toHaveCount(0);
+
+  await app.close();
+});
+
 test("reports invalidity against the field that caused it", async () => {
   const { app, w } = await open();
 

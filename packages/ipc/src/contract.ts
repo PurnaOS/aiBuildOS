@@ -393,14 +393,6 @@ export const channels = {
     }),
   },
   /**
-   * One artifact's own text (ST-0012#AC-4).
-   *
-   * The rail lists artifacts; attaching one to the conversation needs what it actually *says* —
-   * its acceptance criteria above all. The bundle loader keeps only frontmatter, so this reads the
-   * one file the user asked for, which is the retrieval pattern `docs/README.md` prescribes:
-   * load an index, then the one artifact you need.
-   */
-  /**
    * One changed path, as it was and as it is (ST-0012#AC-8).
    *
    * Read-only. Editing a file is [RQ-0005](../../../docs/requirements/rq-0005.md); this is the

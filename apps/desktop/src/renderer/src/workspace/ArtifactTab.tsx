@@ -4,6 +4,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { AlertTriangle, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { button, eyebrow, field, focusRing, mono, primary } from "../ui.js";
+import { Diff } from "./Diff.js";
 
 /**
  * An artifact, edited as its own shape (RQ-0005#AC-5 to AC-10).
@@ -34,10 +35,13 @@ const CRITERIA_HEADING = "## Acceptance criteria";
 export function ArtifactTab({
   projectId,
   artifactId,
+  sessionId,
   onDirtyChange,
 }: {
   projectId: string;
   artifactId: string;
+  /** Watched so a finished turn triggers a re-read: `docs/` is the agent's work too, not only ours. */
+  sessionId: string | null;
   onDirtyChange?: (dirty: boolean) => void;
 }): React.JSX.Element {
   const [loaded, setLoaded] = useState<Artifact | null>(null);
@@ -53,6 +57,10 @@ export function ArtifactTab({
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
+  /** Set when the agent rewrote this artifact under unsaved edits; neither side is discarded. */
+  const [collision, setCollision] = useState(false);
+  /** The agent's version, held only so the difference can be shown before anything is chosen. */
+  const [theirs, setTheirs] = useState("");
 
   const baseline = useRef("");
   /** What was loaded, so a save can send the difference rather than the whole form. */
@@ -62,12 +70,27 @@ export function ArtifactTab({
     links: Record<string, string[]>;
     body: string;
   }>({ title: "", state: "", links: {}, body: "" });
+  /**
+   * The highest criterion number this artifact has shown since it was opened.
+   *
+   * A deleted criterion retires its number — `RQ-0007#AC-2` is how one is referred to from elsewhere
+   * (conventions §3) — so the next one appends above the high-water mark rather than filling the gap.
+   *
+   * ponytail: within the sitting. Once a deletion is saved the number is gone from the file, so a
+   * reopened artifact starts counting from what is left; recovering it would mean recording retired
+   * numbers somewhere, which is a field the profile does not have.
+   */
+  const highest = useRef(0);
+  /** The artifact as it was last read, so a change made elsewhere can be recognised as one. */
+  const onDisk = useRef("");
   const body = joinBody(parts);
   const snapshot = JSON.stringify({ title, state, links, body });
   const dirty = loaded !== null && snapshot !== baseline.current;
 
   const report = useRef(onDirtyChange);
   report.current = onDirtyChange;
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
   useEffect(() => {
     report.current?.(dirty);
   }, [dirty]);
@@ -75,6 +98,7 @@ export function ArtifactTab({
   const load = useCallback(async () => {
     const next = await window.aibuildos.invoke("project:artifact", { id: projectId, artifactId });
     setLoaded(next);
+    setCollision(false);
     setProblem(next.problem);
     setFindings(next.findings);
     if (next.markdown === null) return;
@@ -87,7 +111,13 @@ export function ArtifactTab({
     setTitle(nextTitle);
     setState(nextState);
     setLinks(nextLinks);
-    setParts(splitBody(next.body));
+    const nextParts = splitBody(next.body);
+    setParts(nextParts);
+    highest.current = nextParts.criteria.reduce(
+      (top, criterion) => Math.max(top, criterion.number),
+      0,
+    );
+    onDisk.current = next.markdown;
     original.current = { title: nextTitle, state: nextState, links: nextLinks, body: next.body };
     baseline.current = JSON.stringify({
       title: nextTitle,
@@ -100,6 +130,31 @@ export function ArtifactTab({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The agent edits `docs/` as part of its work, so an artifact open here while it writes is a real
+  // collision. When a turn ends it has stopped changing things, which is the moment to look.
+  useEffect(() => {
+    if (sessionId === null) return;
+
+    return window.aibuildos.subscribe("session:event", (payload) => {
+      if (payload.sessionId !== sessionId) return;
+      const type = (payload.event as { type: string }).type;
+      if (type !== "RUN_FINISHED" && type !== "RUN_ERROR") return;
+
+      void window.aibuildos
+        .invoke("project:artifact", { id: projectId, artifactId })
+        .then((next) => {
+          if (next.markdown === null || next.markdown === onDisk.current) return;
+          // Nothing edited here: take the agent's and say so. Edited here: keep both until someone
+          // chooses, because silently discarding either side is the outcome nobody can defend.
+          if (dirtyRef.current) {
+            setTheirs(next.markdown);
+            setCollision(true);
+          } else void load();
+        })
+        .catch(() => undefined);
+    });
+  }, [projectId, artifactId, sessionId, load]);
 
   const save = async (): Promise<void> => {
     if (loaded?.markdown == null) return;
@@ -175,6 +230,39 @@ export function ArtifactTab({
         </p>
       )}
 
+      {collision && (
+        <div
+          data-testid="artifact-conflict"
+          className="border-b border-neutral-200 bg-amber-50 px-3 py-2.5 dark:border-neutral-800 dark:bg-amber-950/30"
+        >
+          <p className="text-xs text-amber-800 dark:text-amber-300">
+            The agent changed this artifact while you were editing it. Nothing has been overwritten.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-testid="artifact-conflict-keep-mine"
+              onClick={() => setCollision(false)}
+              className={`${primary} ${focusRing}`}
+            >
+              Keep mine
+            </button>
+            <button
+              type="button"
+              data-testid="artifact-conflict-take-theirs"
+              onClick={() => void load()}
+              className={`${button} ${focusRing}`}
+            >
+              Take the agent's
+            </button>
+          </div>
+          <div className="mt-2">
+            {/* What the choice is between: this artifact as it was read, and as it is now on disk. */}
+            <Diff path={artifactId} oldText={onDisk.current} newText={theirs} />
+          </div>
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <Field label="title" findings={against("title")}>
           <input
@@ -202,6 +290,15 @@ export function ArtifactTab({
               value={state}
               onChange={(event) => setState(event.target.value)}
             >
+              {/* A state the vocabulary does not contain is still what this artifact says, so it is
+                  offered and labelled. Leaving it out makes the control display the first option
+                  instead — the editor reporting a value the file does not carry, and the one option
+                  the user cannot pick to correct it. */}
+              {!loaded.states.includes(state) && (
+                <option value={state}>
+                  {state === "" ? "(none)" : `${state} — not in the vocabulary`}
+                </option>
+              )}
               {/* This type's own vocabulary, from the profile. */}
               {loaded.states.map((candidate) => (
                 <option key={candidate} value={candidate}>
@@ -239,6 +336,7 @@ export function ArtifactTab({
         {parts.hasCriteria && (
           <Criteria
             criteria={parts.criteria}
+            highest={highest.current}
             onChange={(criteria) => setParts((current) => ({ ...current, criteria }))}
           />
         )}
@@ -392,12 +490,15 @@ function LinkPicker({
  */
 function Criteria({
   criteria,
+  highest,
   onChange,
 }: {
   criteria: readonly Criterion[];
+  /** The highest number this artifact has ever shown, so a deleted one is not handed out again. */
+  highest: number;
   onChange: (criteria: Criterion[]) => void;
 }): React.JSX.Element {
-  const next = criteria.reduce((highest, criterion) => Math.max(highest, criterion.number), 0) + 1;
+  const next = criteria.reduce((top, criterion) => Math.max(top, criterion.number), highest) + 1;
 
   return (
     <div className="mt-5">

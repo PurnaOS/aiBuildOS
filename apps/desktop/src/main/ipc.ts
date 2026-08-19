@@ -678,7 +678,10 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         );
         if (!found) return { problem: `${artifactId} is not in this bundle.`, findings: [] };
 
-        const file = join(project.path, found.file);
+        // The path comes from the bundle walk rather than from the renderer, so nothing untrusted
+        // reaches it — but this is a write, and every write in this process is contained the same
+        // way rather than each one arguing for itself (TC-0023).
+        const file = insideProject(project.path, found.file);
         // The profile is what knows which relationships this type declares, so it is what vouches
         // for a link key the file does not carry yet. Anything else missing is still refused.
         const { profile: dialect } = loadProfile(root);
@@ -699,6 +702,7 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         // The record must not disagree with itself: the index says what the artifact says (AC-10).
         const indexFile = join(project.path, found.dir, "README.md");
         if (existsSync(indexFile)) {
+          insideProject(project.path, join(found.dir, "README.md"));
           const title = frontmatter.title;
           const state = frontmatter.state;
           writeFileSync(

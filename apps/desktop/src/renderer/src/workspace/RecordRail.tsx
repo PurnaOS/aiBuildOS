@@ -40,7 +40,7 @@ export function RecordRail({
   projectId: string;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
   /** Attach this artifact to the conversation, with everything it says (ST-0012#AC-4). */
-  onWorkOn: (artifactId: string) => void;
+  onWorkOn: (artifact: { id: string; file: string }) => void;
 }): React.JSX.Element {
   const [record, setRecord] = useState<Record_ | null>(null);
   const [filter, setFilter] = useState("");
@@ -156,7 +156,7 @@ function Row({
   expanded: boolean;
   onToggle: () => void;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
-  onWorkOn: (artifactId: string) => void;
+  onWorkOn: (artifact: { id: string; file: string }) => void;
 }): React.JSX.Element {
   const hasInbound = artifact.inbound.length > 0;
 
@@ -194,7 +194,7 @@ function Row({
           <button
             type="button"
             data-testid={`work-on-${artifact.id}`}
-            onClick={() => onWorkOn(artifact.id)}
+            onClick={() => onWorkOn({ id: artifact.id, file: artifact.file })}
             className={`my-1 rounded border border-neutral-300 px-2 py-0.5 text-[11px] hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800 ${focusRing}`}
           >
             Work on this

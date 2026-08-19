@@ -127,6 +127,21 @@ describe("editing an artifact", () => {
     ).toThrow(OkfEditError);
   });
 
+  it("keeps a block sequence a block sequence, at the indentation it already uses", () => {
+    // Not this bundle's style, but an adopted project's may be — and converting between the two is a
+    // formatting change to a region nobody asked about.
+    const block = SOURCE.replace(
+      "  depends_on: [RQ-0001]",
+      "  depends_on:\n    - RQ-0001\n    - RQ-0004",
+    );
+
+    const after = editArtifact(block, {
+      frontmatter: { "links.depends_on": ["RQ-0002", "RQ-0003"] },
+    });
+
+    expect(after).toContain("  depends_on:\n    - RQ-0002\n    - RQ-0003\n  related_to: [DC-0009]");
+  });
+
   it("leaves a real artifact from this repository untouched but for the edit", () => {
     // A fixture cannot prove much on its own; this is a document the bundle actually contains,
     // comments, blank lines and all.
@@ -158,6 +173,16 @@ describe("keeping an index in step", () => {
 
     expect(after).toContain("| [RQ-0002](rq-0002.md) | Renamed | ready |");
     expect(after).toContain("[EP-0002](../epics/ep-0002.md) |");
+  });
+
+  it("leaves a row that merely links to the artifact alone", () => {
+    // A requirement's row names what it depends on, with exactly the same link. Matching anywhere in
+    // the line would rewrite that row's title and state with this artifact's.
+    const withDependant = `${INDEX}\n| [RQ-0003](rq-0003.md) | The third thing | draft | [RQ-0002](rq-0002.md) |`;
+
+    const after = updateIndexRow(withDependant, "RQ-0002", { title: "Renamed", state: "ready" });
+
+    expect(after).toContain("| [RQ-0003](rq-0003.md) | The third thing | draft |");
   });
 
   it("does nothing when the artifact is not listed, or nothing is asked", () => {

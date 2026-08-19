@@ -49,15 +49,17 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
   const [pending, setPending] = useState<string | null>(null);
 
   const workOn = useCallback(
-    async (artifactId: string) => {
-      const { markdown } = await window.aibuildos.invoke("project:artifact", {
+    // The rail already knows where the artifact lives, so this reads the one file rather than
+    // loading and validating the whole bundle to arrive at the same text.
+    async (artifact: { id: string; file: string }) => {
+      const { text } = await window.aibuildos.invoke("project:file", {
         id: projectId,
-        artifactId,
+        path: artifact.file,
       });
       setPending(
-        markdown === null
-          ? `Work on ${artifactId}.`
-          : `Work on ${artifactId}. This is what it says:\n\n${markdown}`,
+        text === null
+          ? `Work on ${artifact.id}.`
+          : `Work on ${artifact.id}. This is what it says:\n\n${text}`,
       );
     },
     [projectId],
@@ -81,7 +83,11 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
       onLayoutChanged={remember}
     >
       <Panel id="record" defaultSize={20} minSize={12} collapsible collapsedSize={0}>
-        <RecordRail projectId={projectId} onOpen={tabs.open} onWorkOn={(id) => void workOn(id)} />
+        <RecordRail
+          projectId={projectId}
+          onOpen={tabs.open}
+          onWorkOn={(artifact) => void workOn(artifact)}
+        />
       </Panel>
       <Handle />
 
@@ -117,6 +123,7 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                 <ArtifactTab
                   projectId={projectId}
                   artifactId={tab.id}
+                  sessionId={session.state.status === "ready" ? session.state.sessionId : null}
                   onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
                 />
               ) : null}

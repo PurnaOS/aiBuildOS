@@ -33,4 +33,4 @@ back to [docs/README.md](../README.md)
 | [TC-0023](tc-0023.md) | A path from the renderer never reaches outside the project | active | [RQ-0005](../requirements/rq-0005.md)#AC-11, [RQ-0004](../requirements/rq-0004.md)#AC-18 |
 | [TC-0024](tc-0024.md) | Saving an artifact rewrites only what changed, and the index with it | active | [RQ-0005](../requirements/rq-0005.md)#AC-8, #AC-10 |
 | [TC-0025](tc-0025.md) | An artifact's body survives being edited | active | [RQ-0005](../requirements/rq-0005.md)#AC-7, #AC-8 |
-| [TC-0026](tc-0026.md) | An artifact is authored as its own shape, from the profile | active | [RQ-0005](../requirements/rq-0005.md)#AC-5, #AC-6, #AC-8, #AC-9, #AC-10 |
+| [TC-0026](tc-0026.md) | An artifact is authored as its own shape, from the profile | active | [RQ-0005](../requirements/rq-0005.md)#AC-3 through #AC-10 |

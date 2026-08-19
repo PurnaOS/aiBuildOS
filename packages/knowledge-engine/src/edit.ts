@@ -26,9 +26,8 @@ const DELIMITER = "---";
 
 interface Split {
   readonly frontmatter: string;
+  /** Everything after the closing delimiter, its leading newline included. */
   readonly body: string;
-  /** The exact newline the file uses between the closing delimiter and the body. */
-  readonly separator: string;
 }
 
 /**
@@ -54,8 +53,9 @@ function split(source: string): Split {
 
   return {
     frontmatter: lines.slice(1, closing).join("\n"),
-    body: lines.slice(closing + 1).join("\n"),
-    separator: "\n",
+    // The newline that ended the delimiter line is put back by the caller, so the body starts with
+    // whatever followed it — usually the blank line before the title.
+    body: `\n${lines.slice(closing + 1).join("\n")}`,
   };
 }
 
@@ -71,12 +71,15 @@ export interface ArtifactEdit {
   /** Replaces everything after the closing delimiter. Left out, the body is untouched. */
   readonly body?: string;
   /**
-   * Paths this edit is allowed to **create** when the file does not carry them yet.
+   * Nested paths this edit is allowed to **create** when the file does not carry them yet.
    *
    * Adding `links.verified_by` to a requirement that has never had one is ordinary editing, but the
    * engine has no way to tell that apart from a typo — only the profile knows which relationships a
    * type declares. So the caller vouches for the paths it knows are legal, and every other missing
    * key is still refused rather than invented.
+   *
+   * Nested and list-valued because that is what the profile has to say about: `links.implements`. A
+   * missing top-level key is refused whatever it is named.
    */
   readonly create?: readonly string[];
 }
@@ -94,7 +97,7 @@ export function editArtifact(source: string, edit: ArtifactEdit): string {
       : setKeys(parts.frontmatter, edit.frontmatter, new Set(edit.create ?? []));
 
   const body = edit.body ?? parts.body;
-  return `${DELIMITER}\n${frontmatter}\n${DELIMITER}${parts.separator}${body}`;
+  return `${DELIMITER}\n${frontmatter}\n${DELIMITER}${body}`;
 }
 
 function setKeys(
@@ -116,32 +119,22 @@ function setKeys(
   return setExisting(source, remaining);
 }
 
-/**
- * Render a value as YAML source. A list becomes a flow sequence — the form every `links:` entry in
- * this bundle already uses — and a scalar is quoted only when leaving it bare would change its
- * meaning.
- */
-function render(value: FieldValue): string {
-  if (Array.isArray(value)) return `[${(value as readonly string[]).join(", ")}]`;
-  const text = String(value);
-  return /^[\w][\w .@/-]*$/.test(text) ? text : JSON.stringify(text);
+/** A list of IDs as a flow sequence — the form every `links:` entry in this bundle already uses. */
+function flow(ids: readonly string[]): string {
+  return `[${ids.join(", ")}]`;
 }
 
 /**
- * Insert `path` with its value if the frontmatter has no such key, returning `null` when it is
- * already there and the ordinary CST edit should handle it.
+ * Insert a nested `parent.child` path if the frontmatter has no such key, returning `null` when it
+ * is already there and the ordinary CST edit should handle it.
  */
 function insertMissing(yaml: string, path: string, value: FieldValue): string | null {
   const [key, nested] = path.split(".") as [string, string | undefined];
+  if (nested === undefined || !Array.isArray(value)) return null;
+
   const lines = yaml.split("\n");
   const parentAt = lines.findIndex((line) => line.startsWith(`${key}:`));
-
-  if (nested === undefined) {
-    if (parentAt !== -1) return null;
-    return `${yaml}\n${key}: ${render(value)}`;
-  }
-
-  if (parentAt === -1) return `${yaml}\n${key}:\n  ${nested}: ${render(value)}`;
+  if (parentAt === -1) return `${yaml}\n${key}:\n  ${nested}: ${flow(value)}`;
 
   // The parent's children are the indented lines that follow it.
   let last = parentAt;
@@ -149,12 +142,14 @@ function insertMissing(yaml: string, path: string, value: FieldValue): string | 
     const line = lines[at] ?? "";
     if (line.trim() === "") continue;
     if (!/^\s/.test(line)) break;
-    if (new RegExp(`^\\s+${nested}:`).test(line)) return null;
+    // Compared as text rather than as a pattern: a relationship name comes from the profile, and a
+    // name carrying regex punctuation would otherwise match something it is not.
+    if (line.trim().startsWith(`${nested}:`)) return null;
     last = at;
   }
 
   const indent = /^(\s+)/.exec(lines[parentAt + 1] ?? "")?.[1] ?? "  ";
-  lines.splice(last + 1, 0, `${indent}${nested}: ${render(value)}`);
+  lines.splice(last + 1, 0, `${indent}${nested}: ${flow(value)}`);
   return lines.join("\n");
 }
 
@@ -202,10 +197,11 @@ function findKey(map: BlockMap, key: string): Item | undefined {
 }
 
 /**
- * Replace one value.
+ * Replace one value, in the form the file already writes it.
  *
- * A list is written as a flow sequence, which is what every `links:` entry in this bundle already
- * uses; `CST.setScalarValue` then quotes and escapes whatever needs it.
+ * A list found as a flow sequence stays flow; a list found as a block sequence stays block, at the
+ * indentation it already uses. Converting between the two is a formatting change to a region nobody
+ * asked about, which is the whole thing this writer exists to avoid.
  */
 function write(item: Item, value: FieldValue): void {
   const target = item.value;
@@ -213,21 +209,21 @@ function write(item: Item, value: FieldValue): void {
     throw new OkfEditError("cannot set a key that has no value token");
   }
 
-  // `setScalarValue` does its own quoting, so a scalar is handed over raw; only a sequence has to
-  // arrive already written as source.
-  const text = Array.isArray(value) ? render(value) : String(value);
-
-  // A sequence has to be written as raw source: it is not a scalar, and `setScalarValue` would quote
-  // the brackets into a string.
   if (Array.isArray(value)) {
+    const ids = value as readonly string[];
+    if (target.type === "block-seq") {
+      rewriteBlockSequence(target, ids);
+      return;
+    }
+    // A flow sequence is a single token whose source is the whole `[a, b]`, so it is replaced as
+    // source rather than through `setScalarValue`, which would quote the brackets into a string.
     if ("source" in target) {
-      target.source = text;
+      target.source = flow(ids);
       if (target.type !== "scalar") (target as { type: string }).type = "scalar";
       return;
     }
-    // The existing value is a block sequence or a mapping: replace it wholesale with a flow one.
-    const replacement = CST.createScalarToken(text, { indent: 0 });
-    replacement.source = text;
+    const replacement = CST.createScalarToken(flow(ids), { indent: 0 });
+    replacement.source = flow(ids);
     item.value = replacement;
     return;
   }
@@ -235,7 +231,36 @@ function write(item: Item, value: FieldValue): void {
   if (!("source" in target)) {
     throw new OkfEditError("cannot set a key whose value is not a scalar");
   }
-  CST.setScalarValue(target, text);
+  // `setScalarValue` does its own quoting and escaping, so the text is handed over raw.
+  CST.setScalarValue(target, String(value));
+}
+
+type BlockSeq = Extract<NonNullable<Item["value"]>, { type: "block-seq" }>;
+
+/**
+ * Rewrite a block sequence's entries in place, keeping the indentation and the `- ` the file uses.
+ *
+ * The first entry sits on the line the key opened, so it carries no leading indent of its own; every
+ * later one begins with the sequence's own indentation. Each entry's newline belongs to its value.
+ */
+function rewriteBlockSequence(sequence: BlockSeq, ids: readonly string[]): void {
+  const first = sequence.items[0];
+  if (first === undefined) throw new OkfEditError("cannot rewrite an empty block sequence");
+
+  const pad = " ".repeat(sequence.indent);
+  const marker = first.start.filter((token) => token.type !== "space" || token.source !== pad);
+
+  sequence.items = ids.map((id, at) => ({
+    start:
+      at === 0 ? first.start : [{ type: "space", indent: 0, offset: -1, source: pad }, ...marker],
+    value: {
+      type: "scalar",
+      indent: sequence.indent,
+      offset: -1,
+      source: id,
+      end: [{ type: "newline", indent: 0, offset: -1, source: "\n" }],
+    },
+  }));
 }
 
 /**
@@ -245,8 +270,10 @@ function write(item: Item, value: FieldValue): void {
  * (conventions §8). Saving a state change without touching the index leaves the record disagreeing
  * with itself — the artifact says `built`, the table still says `draft`.
  *
- * The row is found by the artifact's own link and edited in place: its title and state cells, and
- * nothing else. Every other row, and the row's own trailing cells, are left exactly as they were.
+ * The row is found by the link in its **first cell** and edited in place: its title and state cells,
+ * and nothing else. Matching anywhere in the line would catch a sibling's row too — a requirement's
+ * row names the requirements it depends on, with exactly the same link — and rewrite that row's
+ * title and state with this artifact's.
  */
 export function updateIndexRow(
   index: string,
@@ -259,12 +286,12 @@ export function updateIndexRow(
   return index
     .split("\n")
     .map((line) => {
-      if (!line.startsWith("|") || !line.includes(link)) return line;
+      if (!line.startsWith("|")) return line;
 
       // `| ID | Title | State | …` — split on the pipes, keeping the leading and trailing empties so
       // the row rebuilds exactly as it was apart from the cells being set.
       const cells = line.split("|");
-      if (cells.length < 5) return line;
+      if (cells.length < 5 || !cells[1]?.includes(link)) return line;
 
       if (values.title !== undefined) cells[2] = ` ${values.title} `;
       if (values.state !== undefined) cells[3] = ` ${values.state} `;
