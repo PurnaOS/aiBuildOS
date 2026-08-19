@@ -3,6 +3,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import CodeMirror from "@uiw/react-codemirror";
 import { AlertTriangle, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { darkEditor, useDarkAppearance } from "../appearance.js";
 import { button, eyebrow, field, focusRing, mono, primary } from "../ui.js";
 import { Diff } from "./Diff.js";
 
@@ -384,6 +385,8 @@ function Markdown({
   value: string;
   onChange: (value: string) => void;
 }): React.JSX.Element {
+  const dark = useDarkAppearance();
+
   return (
     <div className="mt-5">
       <p className={`mb-1.5 ${eyebrow}`}>{label}</p>
@@ -391,6 +394,7 @@ function Markdown({
         data-testid={testId}
         value={value}
         onChange={onChange}
+        theme={dark ? darkEditor : "light"}
         extensions={[markdown()]}
         basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLine: false }}
         className="rounded border border-neutral-300 text-sm dark:border-neutral-700"

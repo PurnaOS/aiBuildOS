@@ -7,6 +7,7 @@ export type {
   EventPayload,
 } from "./contract.js";
 export {
+  AppearanceSchema,
   CHANNEL_NAMES,
   channels,
   EVENT_NAMES,
@@ -18,6 +19,7 @@ export {
   ProjectSnapshotSchema,
   ProjectSummarySchema,
   SessionEventSchema,
+  SettingsSchema,
 } from "./contract.js";
 export type {
   EventReceiverLike,

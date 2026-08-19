@@ -1,3 +1,4 @@
+import { AppearancePanel } from "./AppearancePanel.js";
 import { AttachHarnessDialog, HarnessPanel, useHarnesses } from "./harness/HarnessPanel.js";
 import { LaunchPage, type ProjectSummary, useProjects } from "./project/LaunchPage.js";
 import { useUiStore } from "./state/ui-store.js";
@@ -80,7 +81,10 @@ export function App(): React.JSX.Element {
           </h1>
 
           {view === "settings" ? (
-            <HarnessPanel {...harnessState} />
+            <div className="flex w-full flex-col gap-8">
+              <HarnessPanel {...harnessState} />
+              <AppearancePanel />
+            </div>
           ) : (
             <LaunchPage {...projectState} onOpen={openProject} />
           )}

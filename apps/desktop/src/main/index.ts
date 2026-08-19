@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
 import { registerIpc } from "./ipc.js";
+import { loadSettings, settingsFile } from "./settings.js";
 
 /**
  * Electron main. Runs on Electron's bundled Node, never on Bun (AR-0001, DC-0002).
@@ -35,6 +36,12 @@ function createWindow(): BrowserWindow {
 }
 
 void app.whenReady().then(() => {
+  // Before the window exists, so the chosen appearance is in force on the first frame rather than
+  // applied as a flash of the wrong one afterwards (RQ-0007#AC-4). `themeSource` is what makes
+  // `prefers-color-scheme` answer differently in the renderer, which is how every `dark:` utility and
+  // the conversation's own palette follow without a line of renderer code knowing about the setting.
+  nativeTheme.themeSource = loadSettings(settingsFile(app.getPath("userData"))).appearance;
+
   // The sender is resolved per emit, not captured: handlers are registered before any window exists,
   // and the window can be replaced while the application runs.
   const sessions = registerIpc(

@@ -30,7 +30,7 @@ import {
   validate,
 } from "@aibuildos/knowledge-engine";
 import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, nativeTheme } from "electron";
 import {
   changes,
   GitError,
@@ -46,6 +46,7 @@ import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
 import { addProject, loadProjects, markOpened, type Project, removeProject } from "./projects.js";
 import { claimProjectDirectory, fillProject } from "./scaffold.js";
 import { SessionRegistry } from "./sessions.js";
+import { loadSettings, saveSettings, settingsFile } from "./settings.js";
 
 /**
  * Bind the IPC contract to Electron's ipcMain.
@@ -850,6 +851,17 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       } catch (cause) {
         return { artifactId: null, problem: failure(cause).message };
       }
+    },
+
+    "settings:get": () => loadSettings(settingsFile(app.getPath("userData"))),
+
+    "settings:set-appearance": ({ appearance }) => {
+      const saved = saveSettings(settingsFile(app.getPath("userData")), { appearance });
+      // The platform is what applies it: `themeSource` changes `prefers-color-scheme` in every
+      // renderer, so the media query the stylesheets already read simply answers differently. There
+      // is nothing to hand back for the renderer to apply.
+      nativeTheme.themeSource = saved.appearance;
+      return saved;
     },
 
     "session:start": async ({ projectId, harnessId }) => {

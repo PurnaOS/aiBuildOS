@@ -195,6 +195,17 @@ const RepoPathSchema = z
   .refine((path) => !/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(path), "must be relative to the project")
   .refine((path) => !path.split(/[\\/]/).includes(".."), "must not climb out of the project");
 
+/**
+ * What the application's appearance follows: the operating system, or the user's own mind.
+ *
+ * `system` is the default and the state of a fresh installation — an application that insists on
+ * matching the desktop is one you have to change the desktop to change, but matching it is still the
+ * right thing to do until told otherwise.
+ */
+export const AppearanceSchema = z.enum(["system", "light", "dark"]);
+
+export const SettingsSchema = z.object({ appearance: AppearanceSchema });
+
 export const channels = {
   /** Runtime identity of the host process — the smallest useful real channel. */
   "app:info": {
@@ -566,6 +577,21 @@ export const channels = {
       artifactId: z.string().nullable(),
       problem: z.string().nullable(),
     }),
+  },
+  /**
+   * The installation's settings (RQ-0007).
+   *
+   * Appearance is set in the **main** process through `nativeTheme.themeSource`, which changes
+   * `prefers-color-scheme` in every renderer. So there is nothing to hand back to the renderer for it
+   * to apply: the media query it already reads simply answers differently.
+   */
+  "settings:get": {
+    request: z.object({}),
+    response: SettingsSchema,
+  },
+  "settings:set-appearance": {
+    request: z.object({ appearance: AppearanceSchema }),
+    response: SettingsSchema,
   },
 } as const satisfies Record<string, ChannelDefinition>;
 

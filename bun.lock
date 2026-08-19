@@ -22,6 +22,7 @@
         "@aibuildos/ipc": "workspace:*",
         "@aibuildos/knowledge-engine": "workspace:*",
         "@aibuildos/shared": "workspace:*",
+        "@codemirror/language": "^6",
         "zod": "^4.4.3",
       },
       "devDependencies": {

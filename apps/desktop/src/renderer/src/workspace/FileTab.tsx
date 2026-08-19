@@ -2,6 +2,7 @@ import { javascript } from "@codemirror/lang-javascript";
 import { markdown } from "@codemirror/lang-markdown";
 import CodeMirror from "@uiw/react-codemirror";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { darkEditor, useDarkAppearance } from "../appearance.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { Diff } from "./Diff.js";
 
@@ -31,6 +32,7 @@ export function FileTab({
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState<Conflict>(null);
+  const dark = useDarkAppearance();
 
   /** What is on disk as far as this tab knows. Dirty is a comparison, not a flag to keep in step. */
   const onDisk = useRef<string>("");
@@ -181,6 +183,7 @@ export function FileTab({
         <CodeMirror
           value={text}
           onChange={setText}
+          theme={dark ? darkEditor : "light"}
           extensions={
             path.endsWith(".md") ? [markdown()] : [javascript({ typescript: true, jsx: true })]
           }
