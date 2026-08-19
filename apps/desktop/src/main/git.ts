@@ -198,14 +198,25 @@ export async function recentCommits(dir: string, limit = 10): Promise<GitCommit[
     });
 }
 
+/** One path the working tree reports as changed. */
+export interface GitChange {
+  readonly path: string;
+  /** Git's own two letters: the staged status and the unstaged one, `.` meaning unchanged. */
+  readonly staged: string;
+  readonly unstaged: string;
+  readonly untracked: boolean;
+  readonly conflicted: boolean;
+}
+
 /**
- * Branch, upstream divergence and working-tree counts in one invocation — which is what lets the
- * launch page afford a status read per row.
+ * Branch and every changed path, from one invocation.
  *
  * `--porcelain=v2 -z`: NUL-terminated records, because a filename may contain a newline and the
  * line-based format quotes such paths instead of reporting them plainly.
  */
-export async function status(dir: string): Promise<GitStatus> {
+export async function changes(
+  dir: string,
+): Promise<{ branch: string | null; entries: GitChange[] }> {
   const stdout = await readGit(
     dir,
     "status",
@@ -220,11 +231,7 @@ export async function status(dir: string): Promise<GitStatus> {
 
   const records = stdout.split("\0");
   let branch: string | null = null;
-  let changed = 0;
-  let staged = 0;
-  let unstaged = 0;
-  let untracked = 0;
-  let conflicted = 0;
+  const entries: GitChange[] = [];
 
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index];
@@ -240,26 +247,83 @@ export async function status(dir: string): Promise<GitStatus> {
 
     const kind = record[0];
     if (kind === "?") {
-      changed += 1;
-      untracked += 1;
+      entries.push({
+        path: record.slice(2),
+        staged: ".",
+        unstaged: ".",
+        untracked: true,
+        conflicted: false,
+      });
       continue;
     }
-    if (kind === "u") {
-      changed += 1;
-      conflicted += 1;
-      continue;
-    }
-    if (kind === "1" || kind === "2") {
-      changed += 1;
-      // `<kind> <XY> ...` — X is the staged status, Y the unstaged one, `.` meaning unchanged.
-      const xy = record.slice(2, 4);
-      if (xy[0] !== undefined && xy[0] !== ".") staged += 1;
-      if (xy[1] !== undefined && xy[1] !== ".") unstaged += 1;
+
+    const fields = record.split(" ");
+    const xy = fields[1] ?? "..";
+    // The path is everything after the fixed fields, rejoined — a path may contain spaces.
+    const from = kind === "1" ? 8 : kind === "2" ? 9 : 10;
+    const path = fields.slice(from).join(" ");
+
+    if (kind === "1" || kind === "2" || kind === "u") {
+      entries.push({
+        path,
+        staged: xy[0] ?? ".",
+        unstaged: xy[1] ?? ".",
+        untracked: false,
+        conflicted: kind === "u",
+      });
       // A rename (`2`) is followed by a *second* NUL-terminated field holding the original path.
       // Not consuming it makes the next record parse as a path and throws every later count off.
       if (kind === "2") index += 1;
     }
   }
 
-  return { branch, changed, staged, unstaged, untracked, conflicted };
+  return { branch, entries };
+}
+
+/**
+ * Branch and working-tree counts, derived from the same read.
+ *
+ * Counts come from the entries rather than being tallied separately, so the number the launch page
+ * shows and the list the Git rail shows can never disagree.
+ */
+export async function status(dir: string): Promise<GitStatus> {
+  const { branch, entries } = await changes(dir);
+
+  return {
+    branch,
+    changed: entries.length,
+    staged: entries.filter((entry) => !entry.untracked && entry.staged !== ".").length,
+    unstaged: entries.filter((entry) => !entry.untracked && entry.unstaged !== ".").length,
+    untracked: entries.filter((entry) => entry.untracked).length,
+    conflicted: entries.filter((entry) => entry.conflicted).length,
+  };
+}
+
+/**
+ * Which of these paths the repository ignores.
+ *
+ * Asked of Git rather than guessed at: `.gitignore` composes global, repo and nested rules, and a
+ * hand-rolled matcher would disagree with the repository the user actually has.
+ *
+ * Paths go in on **stdin**, because `check-ignore` refuses `-z` any other way — and `-z` is what
+ * keeps a path containing a newline from being read as two paths, the same reason `status` uses it.
+ *
+ * Deliberately lenient. `check-ignore` exits 1 when nothing matches, which is not a failure, and if
+ * Git cannot answer at all the honest result is "nothing is known to be ignored" — listing too much
+ * beats hiding a project.
+ */
+export async function ignored(dir: string, paths: readonly string[]): Promise<Set<string>> {
+  if (paths.length === 0) return new Set();
+
+  const stdout = await new Promise<string>((resolve) => {
+    const child = execFile(
+      "git",
+      ["-C", dir, ...UNTRUSTED_READ, "check-ignore", "-z", "--stdin"],
+      { maxBuffer: 16 * 1024 * 1024, windowsHide: true },
+      (_error, out) => resolve(out),
+    );
+    child.stdin?.end(paths.join("\0"));
+  });
+
+  return new Set(stdout.split("\0").filter((path) => path !== ""));
 }

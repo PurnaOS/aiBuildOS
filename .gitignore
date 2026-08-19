@@ -118,3 +118,4 @@ out/
 # playwright
 test-results/
 playwright-report/
+.design-workspace/

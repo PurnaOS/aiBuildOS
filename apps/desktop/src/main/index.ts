@@ -9,8 +9,10 @@ import { registerIpc } from "./ipc.js";
  */
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    // Three panes need the room: at 1280 the conversation is squeezed between two rails
+    // (ST-0011#AC-6).
+    width: 1440,
+    height: 900,
     show: false,
     title: "aiBuildOS",
     webPreferences: {
@@ -33,8 +35,19 @@ function createWindow(): BrowserWindow {
 }
 
 void app.whenReady().then(() => {
-  registerIpc(ipcMain);
+  // The sender is resolved per emit, not captured: handlers are registered before any window exists,
+  // and the window can be replaced while the application runs.
+  const sessions = registerIpc(
+    ipcMain,
+    () => BrowserWindow.getAllWindows()[0]?.webContents ?? null,
+  );
   createWindow();
+
+  // No agent outlives the application that started it. `before-quit` rather than
+  // `window-all-closed`, because on macOS closing the window does not quit.
+  app.on("before-quit", () => {
+    void sessions.closeAll();
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

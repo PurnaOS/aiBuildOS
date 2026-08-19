@@ -1,8 +1,8 @@
 import { AttachHarnessDialog, HarnessPanel, useHarnesses } from "./harness/HarnessPanel.js";
 import { LaunchPage, type ProjectSummary, useProjects } from "./project/LaunchPage.js";
-import { ProjectWorkspace } from "./project/ProjectWorkspace.js";
 import { useUiStore } from "./state/ui-store.js";
 import { focusRing, mono } from "./ui.js";
+import { Workspace } from "./workspace/Workspace.js";
 
 /**
  * The shell: a sidebar, a view, and the first-run prompt to attach a coding harness (RQ-0001).
@@ -64,19 +64,28 @@ export function App(): React.JSX.Element {
         )}
       </aside>
 
-      <main className="flex flex-1 flex-col items-start gap-4 overflow-auto p-8">
-        <h1 data-testid="title" className="text-xl font-semibold tracking-tight">
-          aiBuildOS
-        </h1>
+      {/* The workspace owns its own full height and lays out its own panes; every other view is a
+          page inside the padded column the shell has always used. */}
+      {view === "home" && activeProjectId !== null ? (
+        <div className="flex min-w-0 flex-1 flex-col">
+          <h1 data-testid="title" className="sr-only">
+            aiBuildOS
+          </h1>
+          <Workspace projectId={activeProjectId} />
+        </div>
+      ) : (
+        <main className="flex flex-1 flex-col items-start gap-4 overflow-auto p-8">
+          <h1 data-testid="title" className="text-xl font-semibold tracking-tight">
+            aiBuildOS
+          </h1>
 
-        {view === "settings" ? (
-          <HarnessPanel {...harnessState} />
-        ) : activeProjectId === null ? (
-          <LaunchPage {...projectState} onOpen={openProject} />
-        ) : (
-          <ProjectWorkspace id={activeProjectId} onRefreshed={projectState.refresh} />
-        )}
-      </main>
+          {view === "settings" ? (
+            <HarnessPanel {...harnessState} />
+          ) : (
+            <LaunchPage {...projectState} onOpen={openProject} />
+          )}
+        </main>
+      )}
 
       <AttachHarnessDialog
         open={harnesses !== null && harnesses.length === 0}

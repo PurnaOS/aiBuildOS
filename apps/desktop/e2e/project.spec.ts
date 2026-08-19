@@ -29,6 +29,11 @@ async function launch(config: string, chooses: string): Promise<ElectronApplicat
     },
   });
 
+  // Wait for the window before reaching into the main process. Evaluating while Electron is still
+  // starting races its readiness, and the call is lost with "resulting promise was garbage
+  // collected" — intermittently, and more often the more the main bundle has to load.
+  await app.firstWindow();
+
   /**
    * Replace the native directory picker for the duration of the run.
    *
@@ -75,12 +80,15 @@ test("creates, lists, opens and closes a project, and survives a restart", async
     await window.getByTestId("project-name").fill("demo");
     await window.getByTestId("project-create").click();
 
-    // Creating opens it: branch, one commit, and a bundle with no artifacts in it yet.
+    // Creating opens it into the workspace: the record on the left, the conversation in the middle,
+    // the files on the right. The branch and commit list that the old status page showed now live on
+    // the Git tab of the right rail (ST-0011).
     await expect(window.getByTestId("workspace")).toBeVisible();
-    await expect(window.getByTestId("workspace-name")).toHaveText("demo");
-    await expect(window.getByTestId("workspace-branch")).not.toBeEmpty();
-    await expect(window.getByTestId("workspace-commits").getByRole("listitem")).toHaveCount(1);
-    await expect(window.getByTestId("workspace-record")).toContainText("No artifacts yet");
+    await expect(window.getByTestId("record-rail")).toBeVisible();
+    await expect(window.getByTestId("files-rail")).toBeVisible();
+    await expect(window.getByTestId("tab-chat")).toBeVisible();
+    // A freshly created project has a bundle and no artifacts in it, which is not an error.
+    await expect(window.getByTestId("record-empty")).toBeVisible();
 
     // Closing returns to the ledger without a restart (ST-0004#AC-6).
     await window.getByTestId("project-close").click();

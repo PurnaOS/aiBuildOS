@@ -1,13 +1,31 @@
-import { statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { probeHarness } from "@aibuildos/acp/probe";
-import { createRouter, type Handlers, type IpcMainLike } from "@aibuildos/ipc";
+import {
+  createEmitter,
+  createRouter,
+  type EventSenderLike,
+  type Handlers,
+  type IpcMainLike,
+} from "@aibuildos/ipc";
+import { ArtifactGraph, type GraphNode } from "@aibuildos/knowledge-engine";
 import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
 import { app, BrowserWindow, dialog } from "electron";
-import { GitError, type GitStatus, initRepo, recentCommits, repoRoot, status } from "./git.js";
+import {
+  changes,
+  GitError,
+  type GitStatus,
+  git,
+  ignored,
+  initRepo,
+  recentCommits,
+  repoRoot,
+  status,
+} from "./git.js";
 import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
 import { addProject, loadProjects, markOpened, type Project, removeProject } from "./projects.js";
 import { claimProjectDirectory, fillProject } from "./scaffold.js";
+import { SessionRegistry } from "./sessions.js";
 
 /**
  * Bind the IPC contract to Electron's ipcMain.
@@ -126,143 +144,405 @@ function dirtyCount(tree: GitStatus): number {
   return tree.changed;
 }
 
-const handlers: Handlers = {
-  "app:info": () => ({
-    name: "aiBuildOS",
-    version: app.getVersion(),
-    runtime: {
-      node: process.versions.node,
-      ...(process.versions.electron === undefined ? {} : { electron: process.versions.electron }),
-      ...(process.versions.chrome === undefined ? {} : { chrome: process.versions.chrome }),
+/** Every handler that works on a project starts here. An unknown id is a renderer bug. */
+function requireProject(id: string) {
+  const project = loadProjects(projectFile()).find((candidate) => candidate.id === id);
+  if (!project) throw new Error(`no project with id ${id}`);
+  return project;
+}
+
+function createHandlers(sessions: SessionRegistry): Handlers {
+  return {
+    "app:info": () => ({
+      name: "aiBuildOS",
+      version: app.getVersion(),
+      runtime: {
+        node: process.versions.node,
+        ...(process.versions.electron === undefined ? {} : { electron: process.versions.electron }),
+        ...(process.versions.chrome === undefined ? {} : { chrome: process.versions.chrome }),
+      },
+    }),
+
+    "harness:list": () => loadHarnesses(harnessFile()),
+
+    "harness:save": (harness) => saveHarness(harnessFile(), harness),
+
+    "harness:remove": ({ id }) => removeHarness(harnessFile(), id),
+
+    "harness:test": async ({ id }) => {
+      const harness = loadHarnesses(harnessFile()).find((candidate) => candidate.id === id);
+      if (!harness) {
+        return {
+          ok: false,
+          stage: "spawn",
+          code: "unknown_harness",
+          message: `no harness with id ${id}`,
+          stderr: "",
+          authMethods: [],
+        };
+      }
+
+      return await probeHarness(harness, {
+        cwd: harness.cwd ?? app.getPath("home"),
+        clientVersion: app.getVersion(),
+      });
     },
-  }),
 
-  "harness:list": () => loadHarnesses(harnessFile()),
+    "project:list": async () => {
+      const projects = loadProjects(projectFile());
+      // One Git read per row, concurrently. `status --porcelain=v2 --branch` answers both questions in
+      // a single invocation, which is what makes this affordable at all.
+      const facts = await Promise.all(projects.map(rowFacts));
+      return projects.map((project, index) => ({
+        ...project,
+        // biome-ignore lint/style/noNonNullAssertion: same length by construction.
+        ...facts[index]!,
+      }));
+    },
 
-  "harness:save": (harness) => saveHarness(harnessFile(), harness),
-
-  "harness:remove": ({ id }) => removeHarness(harnessFile(), id),
-
-  "harness:test": async ({ id }) => {
-    const harness = loadHarnesses(harnessFile()).find((candidate) => candidate.id === id);
-    if (!harness) {
-      return {
-        ok: false,
-        stage: "spawn",
-        code: "unknown_harness",
-        message: `no harness with id ${id}`,
-        stderr: "",
-        authMethods: [],
+    /**
+     * The native picker. `dialog.showOpenDialog` is called as a **property of `dialog`**, never
+     * destructured: TC-0008 replaces it on the module object from the test process, and a destructured
+     * reference would keep pointing at the real one and hang the suite on a window nobody can click.
+     */
+    "project:choose-directory": async ({ title }) => {
+      const parent = BrowserWindow.getFocusedWindow();
+      const options = {
+        title: title ?? "Choose a folder",
+        properties: ["openDirectory" as const, "createDirectory" as const],
       };
-    }
 
-    return await probeHarness(harness, {
-      cwd: harness.cwd ?? app.getPath("home"),
-      clientVersion: app.getVersion(),
-    });
-  },
+      const result = parent
+        ? await dialog.showOpenDialog(parent, options)
+        : await dialog.showOpenDialog(options);
 
-  "project:list": async () => {
-    const projects = loadProjects(projectFile());
-    // One Git read per row, concurrently. `status --porcelain=v2 --branch` answers both questions in
-    // a single invocation, which is what makes this affordable at all.
-    const facts = await Promise.all(projects.map(rowFacts));
-    return projects.map((project, index) => ({
-      ...project,
-      // biome-ignore lint/style/noNonNullAssertion: same length by construction.
-      ...facts[index]!,
-    }));
-  },
+      const [path] = result.filePaths;
+      return { path: result.canceled || path === undefined ? null : path };
+    },
 
-  /**
-   * The native picker. `dialog.showOpenDialog` is called as a **property of `dialog`**, never
-   * destructured: TC-0008 replaces it on the module object from the test process, and a destructured
-   * reference would keep pointing at the real one and hang the suite on a window nobody can click.
-   */
-  "project:choose-directory": async ({ title }) => {
-    const parent = BrowserWindow.getFocusedWindow();
-    const options = {
-      title: title ?? "Choose a folder",
-      properties: ["openDirectory" as const, "createDirectory" as const],
-    };
+    "project:create": async ({ parentDir, name }) => {
+      if (!isDirectory(parentDir)) {
+        return { ok: false, code: "not_a_directory", message: `${parentDir} is not a folder.` };
+      }
 
-    const result = parent
-      ? await dialog.showOpenDialog(parent, options)
-      : await dialog.showOpenDialog(options);
+      let path: string;
+      try {
+        path = claimProjectDirectory(parentDir, name);
+      } catch (cause) {
+        return failure(cause);
+      }
 
-    const [path] = result.filePaths;
-    return { path: result.canceled || path === undefined ? null : path };
-  },
+      // Registered the moment the directory is real, *before* the steps that can fail. Otherwise a
+      // failed first commit — the ordinary state of a machine with no Git identity configured — leaves
+      // a folder the app created, refuses to list, and then refuses to create again as `path_exists`.
+      const project = addProject(projectFile(), { name, path });
 
-  "project:create": async ({ parentDir, name }) => {
-    if (!isDirectory(parentDir)) {
-      return { ok: false, code: "not_a_directory", message: `${parentDir} is not a folder.` };
-    }
+      try {
+        await fillProject(path, name);
+        return { ok: true, project };
+      } catch (cause) {
+        return failure(cause);
+      }
+    },
 
-    let path: string;
-    try {
-      path = claimProjectDirectory(parentDir, name);
-    } catch (cause) {
-      return failure(cause);
-    }
+    "project:add": async ({ path }) => {
+      if (!isDirectory(path)) {
+        return { ok: false, code: "not_found", message: `${path} is not a folder.` };
+      }
 
-    // Registered the moment the directory is real, *before* the steps that can fail. Otherwise a
-    // failed first commit — the ordinary state of a machine with no Git identity configured — leaves
-    // a folder the app created, refuses to list, and then refuses to create again as `path_exists`.
-    const project = addProject(projectFile(), { name, path });
+      try {
+        // A subdirectory of an existing repository must not become a nested repository, so ask Git
+        // where the root is rather than looking for a `.git` entry (RQ-0002#AC-5).
+        if ((await repoRoot(path)) === null) await initRepo(path);
 
-    try {
-      await fillProject(path, name);
-      return { ok: true, project };
-    } catch (cause) {
-      return failure(cause);
-    }
-  },
+        const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+        return { ok: true, project: addProject(projectFile(), { name, path }) };
+      } catch (cause) {
+        return failure(cause);
+      }
+    },
 
-  "project:add": async ({ path }) => {
-    if (!isDirectory(path)) {
-      return { ok: false, code: "not_found", message: `${path} is not a folder.` };
-    }
+    "project:remove": ({ id }) => removeProject(projectFile(), id),
 
-    try {
-      // A subdirectory of an existing repository must not become a nested repository, so ask Git
-      // where the root is rather than looking for a `.git` entry (RQ-0002#AC-5).
-      if ((await repoRoot(path)) === null) await initRepo(path);
+    "project:open": async ({ id }) => {
+      const file = projectFile();
+      // An unknown id is a renderer bug, not something a user did, so it throws rather than earning a
+      // wire code of its own.
+      const project = markOpened(file, id, new Date().toISOString());
+      if (!project) throw new Error(`no project with id ${id}`);
 
-      const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-      return { ok: true, project: addProject(projectFile(), { name, path }) };
-    } catch (cause) {
-      return failure(cause);
-    }
-  },
+      if (!isDirectory(project.path)) {
+        return {
+          project,
+          exists: false,
+          git: null,
+          gitError: null,
+          record: null,
+          recordError: null,
+        };
+      }
 
-  "project:remove": ({ id }) => removeProject(projectFile(), id),
+      let git = null;
+      let gitError = null;
+      try {
+        const tree = await status(project.path);
+        git = { ...tree, commits: await recentCommits(project.path, RECENT_COMMITS) };
+      } catch (cause) {
+        const { code, message } = failure(cause);
+        gitError = { code, message };
+      }
 
-  "project:open": async ({ id }) => {
-    const file = projectFile();
-    // An unknown id is a renderer bug, not something a user did, so it throws rather than earning a
-    // wire code of its own.
-    const project = markOpened(file, id, new Date().toISOString());
-    if (!project) throw new Error(`no project with id ${id}`);
+      return { project, exists: true, git, gitError, ...readRecord(project.path) };
+    },
 
-    if (!isDirectory(project.path)) {
-      return { project, exists: false, git: null, gitError: null, record: null, recordError: null };
-    }
+    "project:record": ({ id }) => {
+      const project = requireProject(id);
+      const root = join(project.path, "docs");
+      if (!isDirectory(root)) return { artifacts: null, problem: null };
 
-    let git = null;
-    let gitError = null;
-    try {
-      const tree = await status(project.path);
-      git = { ...tree, commits: await recentCommits(project.path, RECENT_COMMITS) };
-    } catch (cause) {
-      const { code, message } = failure(cause);
-      gitError = { code, message };
-    }
+      try {
+        const { bundle } = loadBundle(root, project.path);
 
-    return { project, exists: true, git, gitError, ...readRecord(project.path) };
-  },
-};
+        // The engine builds a graph only inside `validate` today, so the rail builds its own. Three
+        // lines, and it is what turns stored links into the reverse the rail actually shows.
+        const nodes: GraphNode[] = bundle.artifacts.flatMap((artifact) => {
+          const {
+            id: artifactId,
+            type,
+            links,
+          } = artifact.frontmatter as {
+            id?: unknown;
+            type?: unknown;
+            links?: unknown;
+          };
+          if (typeof artifactId !== "string" || typeof type !== "string") return [];
+          return [{ id: artifactId, type, links: (links ?? {}) as Record<string, string[]> }];
+        });
+        const graph = new ArtifactGraph(nodes);
 
-export function registerIpc(ipcMain: IpcMainLike): void {
-  createRouter(ipcMain, handlers);
+        const artifacts = bundle.artifacts.flatMap((artifact) => {
+          const front = artifact.frontmatter as Record<string, unknown>;
+          const artifactId = front.id;
+          if (typeof artifactId !== "string") return [];
+
+          return [
+            {
+              id: artifactId,
+              type: typeof front.type === "string" ? front.type : "",
+              title: typeof front.title === "string" ? front.title : artifactId,
+              state: typeof front.state === "string" ? front.state : "",
+              file: artifact.file,
+              // Deduplicated: a test that verifies two criteria of one requirement
+              // (`verifies: [RQ-0004#AC-3, RQ-0004#AC-18]`) is one relationship, not two. The graph
+              // flattens `#AC-n` to the artifact, so without this the rail lists it once per
+              // criterion — four TC-0017s under one requirement.
+              inbound: [
+                ...new Map(
+                  graph
+                    .incoming(artifactId)
+                    .map((edge) => [
+                      `${edge.relationship}:${edge.from}`,
+                      { relationship: edge.relationship, id: edge.from },
+                    ]),
+                ).values(),
+              ],
+            },
+          ];
+        });
+
+        artifacts.sort((a, b) => a.id.localeCompare(b.id));
+        return { artifacts, problem: null };
+      } catch (cause) {
+        return { artifacts: null, problem: failure(cause).message };
+      }
+    },
+
+    "project:tree": async ({ id, path }) => {
+      const project = requireProject(id);
+      const root = join(project.path, path);
+
+      if (!isDirectory(root)) return { entries: [], problem: `${path || "."} is not a folder.` };
+
+      // Which paths Git says changed, so a row can be marked without asking per file.
+      let changed = new Set<string>();
+      try {
+        const { entries } = await changes(project.path);
+        changed = new Set(entries.map((entry) => entry.path));
+      } catch {
+        // No repository, or no Git. The tree still lists; it just says nothing about change.
+      }
+
+      try {
+        const listed = readdirSync(root, { withFileTypes: true })
+          // `.git` is machinery, not the project.
+          .filter((entry) => entry.name !== ".git");
+
+        const relativeOf = (name: string) => (path === "" ? name : `${path}/${name}`);
+        // What the repository ignores, asked of Git so the answer matches the repository the user
+        // actually has: `.gitignore` composes global, repo and nested rules, and a hand-rolled
+        // matcher would disagree with the one thing that counts.
+        const hidden = await ignored(
+          project.path,
+          listed.map((entry) => relativeOf(entry.name)),
+        );
+
+        const entries = listed
+          .filter((entry) => !hidden.has(relativeOf(entry.name)))
+          .map((entry) => {
+            const relative = path === "" ? entry.name : `${path}/${entry.name}`;
+            return {
+              name: entry.name,
+              path: relative,
+              directory: entry.isDirectory(),
+              changed: entry.isDirectory()
+                ? [...changed].some((c) => c.startsWith(`${relative}/`))
+                : changed.has(relative),
+            };
+          });
+
+        // Folders first, then by name — the order a person expects, since `readdir` guarantees none.
+        entries.sort((a, b) =>
+          a.directory === b.directory ? a.name.localeCompare(b.name) : a.directory ? -1 : 1,
+        );
+        return { entries, problem: null };
+      } catch (cause) {
+        return { entries: [], problem: failure(cause).message };
+      }
+    },
+
+    "project:changes": async ({ id }) => {
+      const project = requireProject(id);
+      const empty = { staged: [], unstaged: [], untracked: [], commits: [] };
+
+      if (!isDirectory(project.path)) {
+        return { ...empty, problem: "That folder is not there any more." };
+      }
+
+      try {
+        const { entries } = await changes(project.path);
+        return {
+          staged: entries
+            .filter((entry) => !entry.untracked && entry.staged !== ".")
+            .map((entry) => ({ path: entry.path, status: entry.staged })),
+          unstaged: entries
+            .filter((entry) => !entry.untracked && entry.unstaged !== ".")
+            .map((entry) => ({ path: entry.path, status: entry.unstaged })),
+          untracked: entries
+            .filter((entry) => entry.untracked)
+            .map((entry) => ({ path: entry.path, status: "?" })),
+          commits: (await recentCommits(project.path, RECENT_COMMITS)).map((commit) => ({
+            hash: commit.hash,
+            subject: commit.subject,
+            date: commit.date,
+          })),
+          problem: null,
+        };
+      } catch (cause) {
+        return { ...empty, problem: failure(cause).message };
+      }
+    },
+
+    "project:artifact": ({ id, artifactId }) => {
+      const project = requireProject(id);
+      const root = join(project.path, "docs");
+      if (!isDirectory(root)) return { markdown: null, problem: null };
+
+      try {
+        const { bundle } = loadBundle(root, project.path);
+        const found = bundle.artifacts.find(
+          (artifact) => (artifact.frontmatter as { id?: unknown }).id === artifactId,
+        );
+        if (!found) return { markdown: null, problem: `${artifactId} is not in this bundle.` };
+
+        return { markdown: readFileSync(join(project.path, found.file), "utf8"), problem: null };
+      } catch (cause) {
+        return { markdown: null, problem: failure(cause).message };
+      }
+    },
+
+    "project:diff": async ({ id, path }) => {
+      const project = requireProject(id);
+      const absolute = join(project.path, path);
+
+      // `HEAD:<path>` is the committed version. A path that is not in HEAD is new, and `null` says
+      // so rather than pretending it used to be empty.
+      let oldText: string | null = null;
+      try {
+        oldText = await git(project.path, "show", `HEAD:${path}`);
+      } catch {
+        oldText = null;
+      }
+
+      let newText = "";
+      try {
+        newText = readFileSync(absolute, "utf8");
+      } catch (cause) {
+        // Deleted in the working tree: there is still a previous version worth showing.
+        if (oldText === null)
+          return { path, oldText: null, newText: "", problem: failure(cause).message };
+      }
+
+      return { path, oldText, newText, problem: null };
+    },
+
+    "session:start": async ({ projectId, harnessId }) => {
+      const project = loadProjects(projectFile()).find((candidate) => candidate.id === projectId);
+      if (!project) {
+        return {
+          ok: false,
+          code: "not_found",
+          message: "that project is not registered.",
+          authMethods: [],
+        };
+      }
+
+      const harness = loadHarnesses(harnessFile()).find((candidate) => candidate.id === harnessId);
+      if (!harness) {
+        return {
+          ok: false,
+          code: "not_found",
+          message: "that harness is not configured.",
+          authMethods: [],
+        };
+      }
+
+      // The session runs in the project, not in the harness's own working directory: the agent is
+      // being asked to work on *this* repository.
+      return await sessions.start(harness, project.path, app.getVersion());
+    },
+
+    "session:prompt": async ({ sessionId, text }) => await sessions.prompt(sessionId, text),
+
+    "session:cancel": async ({ sessionId }) => {
+      await sessions.cancel(sessionId);
+    },
+
+    "session:permission": ({ sessionId, requestId, optionId }) => {
+      sessions.answerPermission(sessionId, requestId, optionId);
+    },
+
+    "session:close": async ({ sessionId }) => {
+      await sessions.close(sessionId);
+    },
+  };
+}
+
+/**
+ * Bind the contract to Electron.
+ *
+ * `sender` is resolved on each emit rather than captured, because handlers are registered before the
+ * window exists and the window can be replaced while the application runs. An event with nowhere to
+ * go is dropped rather than thrown on: a session narrating into a closed window is not an error.
+ */
+export function registerIpc(
+  ipcMain: IpcMainLike,
+  sender: () => EventSenderLike | null,
+): SessionRegistry {
+  const emitter = createEmitter({
+    send: (channel, payload) => sender()?.send(channel, payload),
+  });
+
+  const sessions = new SessionRegistry((event, payload) => emitter.emit(event, payload));
+  createRouter(ipcMain, createHandlers(sessions));
+  return sessions;
 }

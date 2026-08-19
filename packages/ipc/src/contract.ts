@@ -254,7 +254,198 @@ export const channels = {
     request: z.object({ id: z.string() }),
     response: ProjectSnapshotSchema,
   },
+  /**
+   * Open a live session on a project, with one of the configured harnesses (ST-0009).
+   *
+   * Returns what the agent advertised when the session opened — its modes, its models, its effort
+   * levels. Empty when the agent advertises none, which the interface must render as *absent*
+   * rather than as an empty menu (RQ-0004#AC-12).
+   */
+  "session:start": {
+    request: z.object({ projectId: z.string(), harnessId: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({
+        ok: z.literal(true),
+        sessionId: z.string(),
+        /** `NewSessionResponse` as the agent sent it: modes, config options, whatever else. */
+        offered: z.looseObject({}),
+      }),
+      z.object({
+        ok: z.literal(false),
+        /** `command_not_found` · `auth_required` · `exited` · `protocol_error` · `cwd_not_found`. */
+        code: z.string(),
+        message: z.string(),
+        /** How to log in, when the agent refused for want of it — the agent's own methods. */
+        authMethods: z.array(z.object({ id: z.string(), name: z.string() })),
+      }),
+    ]),
+  },
+  /**
+   * Send a prompt and wait for the turn to stop. Slow by nature — the narration arrives as events,
+   * not in this response, which carries only how the turn ended.
+   */
+  "session:prompt": {
+    request: z.object({ sessionId: z.string(), text: z.string().min(1) }),
+    response: z.object({ stopReason: z.string() }),
+  },
+  /** Ask the agent to stop the turn in progress. Returns as soon as it has been asked. */
+  "session:cancel": {
+    request: z.object({ sessionId: z.string() }),
+    response: z.void(),
+  },
+  /**
+   * Answer a permission request the agent made.
+   *
+   * `optionId: null` declines by cancelling — which is also what a cancelled turn does to any
+   * request still outstanding, because the protocol requires it.
+   */
+  "session:permission": {
+    request: z.object({
+      sessionId: z.string(),
+      requestId: z.string(),
+      optionId: z.string().nullable(),
+    }),
+    response: z.void(),
+  },
+  /** Close the session and reap the agent. */
+  "session:close": {
+    request: z.object({ sessionId: z.string() }),
+    response: z.void(),
+  },
+  /**
+   * The project's record, for the left rail (RQ-0004#AC-14).
+   *
+   * Counts are not enough here as they were for the status page: the rail lists artifacts. It still
+   * never sends frontmatter — only the fields a row shows — because parsing `docs/` belongs to the
+   * knowledge engine alone (AR-0002).
+   */
+  "project:record": {
+    request: z.object({ id: z.string() }),
+    response: z.object({
+      /** `null` when the project has no bundle at all, which reads differently from an empty one. */
+      artifacts: z
+        .array(
+          z.object({
+            id: z.string(),
+            type: z.string(),
+            title: z.string(),
+            state: z.string(),
+            file: z.string(),
+            /**
+             * The reverse of links stored elsewhere — what implements this, what verifies it.
+             * Derived, never stored: a written backlink is a second source of truth that drifts.
+             */
+            inbound: z.array(z.object({ relationship: z.string(), id: z.string() })),
+          }),
+        )
+        .nullable(),
+      problem: z.string().nullable(),
+    }),
+  },
+  /**
+   * One directory of the working tree, for the right rail (RQ-0004#AC-15, AC-16).
+   *
+   * One directory, not the tree: a rail that reads the whole working tree to show one folder is a
+   * rail that stalls on a large repository.
+   */
+  "project:tree": {
+    request: z.object({ id: z.string(), path: z.string() }),
+    response: z.object({
+      entries: z.array(
+        z.object({
+          name: z.string(),
+          /** Repo-relative, so it is the same key Git reports a change against. */
+          path: z.string(),
+          directory: z.boolean(),
+          changed: z.boolean(),
+        }),
+      ),
+      problem: z.string().nullable(),
+    }),
+  },
+  /** The working tree as changes, and recent history — the right rail's second tab. */
+  "project:changes": {
+    request: z.object({ id: z.string() }),
+    response: z.object({
+      staged: z.array(z.object({ path: z.string(), status: z.string() })),
+      unstaged: z.array(z.object({ path: z.string(), status: z.string() })),
+      untracked: z.array(z.object({ path: z.string(), status: z.string() })),
+      commits: z.array(z.object({ hash: z.string(), subject: z.string(), date: z.string() })),
+      problem: z.string().nullable(),
+    }),
+  },
+  /**
+   * One artifact's own text (ST-0012#AC-4).
+   *
+   * The rail lists artifacts; attaching one to the conversation needs what it actually *says* —
+   * its acceptance criteria above all. The bundle loader keeps only frontmatter, so this reads the
+   * one file the user asked for, which is the retrieval pattern `docs/README.md` prescribes:
+   * load an index, then the one artifact you need.
+   */
+  "project:artifact": {
+    request: z.object({ id: z.string(), artifactId: z.string() }),
+    response: z.object({
+      markdown: z.string().nullable(),
+      problem: z.string().nullable(),
+    }),
+  },
+  /**
+   * One changed path, as it was and as it is (ST-0012#AC-8).
+   *
+   * Read-only. Editing a file is [RQ-0005](../../../docs/requirements/rq-0005.md); this is the
+   * viewer the Git rail opens, and it uses the same two-sides shape a tool call's diff already
+   * carries, so one component draws both.
+   */
+  "project:diff": {
+    request: z.object({ id: z.string(), path: z.string() }),
+    response: z.object({
+      path: z.string(),
+      /** `null` for a file that is new — there is no previous version to show. */
+      oldText: z.string().nullable(),
+      newText: z.string(),
+      problem: z.string().nullable(),
+    }),
+  },
 } as const satisfies Record<string, ChannelDefinition>;
+
+/**
+ * One AG-UI event, on its way from the bridge in main to the renderer (DC-0017).
+ *
+ * Deliberately **not** a discriminated union of AG-UI's own event shapes. AG-UI owns that vocabulary
+ * and versions it; restating all twenty-odd variants here would be a second copy of someone else's
+ * schema, drifting from the day it was written. What this boundary guarantees is what it can actually
+ * enforce: the envelope is well-formed and the session it belongs to is named. The renderer hands the
+ * body to `@ag-ui/client`, which is the thing that does know those shapes.
+ */
+export const SessionEventSchema = z.object({
+  sessionId: z.string(),
+  /** An AG-UI `BaseEvent`. Every one carries a `type`; the rest is AG-UI's business. */
+  event: z.looseObject({ type: z.string() }),
+});
+
+/**
+ * The one-way half of the boundary: notifications main sends without being asked (ST-0009).
+ *
+ * Anything that needs an answer is a channel above, not an event here.
+ */
+export const events = {
+  /** One bridged AG-UI event from a live agent session. */
+  "session:event": SessionEventSchema,
+  /**
+   * A session's lifecycle, which is not part of the agent's own narration: it covers the states an
+   * agent cannot report because it is not running yet, or no longer is.
+   */
+  "session:state": z.object({
+    sessionId: z.string(),
+    state: z.enum(["starting", "ready", "busy", "closed", "failed"]),
+    /** Present only on `failed`, and written to be shown to a person. */
+    error: z.object({ code: z.string(), message: z.string() }).nullable(),
+  }),
+} as const satisfies Record<string, z.ZodType>;
+
+export type EventName = keyof typeof events;
+export type EventPayload<E extends EventName> = z.infer<(typeof events)[E]>;
+export const EVENT_NAMES = Object.keys(events) as EventName[];
 
 export interface ChannelDefinition {
   readonly request: z.ZodType;
