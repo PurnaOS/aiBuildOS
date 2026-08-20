@@ -66,3 +66,4 @@ back to [docs/README.md](../README.md)
 | [TC-0056](tc-0056.md) | The Git tab commits, and accepting a story offers to | draft | [RQ-0018](../requirements/rq-0018.md)#AC-1, #AC-2, #AC-4, #AC-5 |
 | [TC-0057](tc-0057.md) | Fenced check commands run, stream, and answer by exit code | draft | [RQ-0019](../requirements/rq-0019.md)#AC-1, #AC-2, #AC-3, #AC-5 |
 | [TC-0058](tc-0058.md) | The checks run beside the review, and a failure goes to the agent | draft | [RQ-0019](../requirements/rq-0019.md)#AC-1 through #AC-4 |
+| [TC-0059](tc-0059.md) | The whole loop, in one sitting | draft | [RQ-0014](../requirements/rq-0014.md), [RQ-0015](../requirements/rq-0015.md) |
