@@ -24,7 +24,6 @@ import type { SessionUpdate, StopReason } from "@agentclientprotocol/sdk";
 
 /** The `name` on every `CUSTOM` event this bridge emits, so a renderer can switch on one field. */
 export const CUSTOM = {
-  toolCall: "acp.tool_call",
   toolCallUpdate: "acp.tool_call_update",
   plan: "acp.plan",
   commands: "acp.commands",

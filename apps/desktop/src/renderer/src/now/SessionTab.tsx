@@ -1,15 +1,24 @@
 import { useEffect, useState } from "react";
 import { button, eyebrow, focusRing, mono } from "../ui.js";
 import { Activity } from "../workspace/Activity.js";
+import { getSessionToolCalls } from "../workspace/toolCall.js";
 
-/** The `name`s a build session's own narration carries beyond AG-UI's standard vocabulary — matched
- * against `packages/acp/src/bridge.ts`'s `CUSTOM` and `builds.ts`'s checkpoint note. */
-const TOOL_CALL = "acp.tool_call";
+/** The `name` a build session's own narration carries beyond AG-UI's standard vocabulary — matched
+ * against `builds.ts`'s checkpoint note. Tool calls need no such name of their own any more (BG-0008):
+ * they are the standard `TOOL_CALL_*` events every other surface already reads. */
 const CHECKPOINT = "aibuildos.checkpoint";
 
 interface Line {
   readonly id: string;
   readonly text: string;
+}
+
+/** "completed"/"failed" in the words this tab already uses elsewhere; still running or pending says
+ * nothing yet, since a second line reports the outcome once one exists. */
+function outcomeWord(status: string | undefined): string | null {
+  if (status === "completed") return "succeeded";
+  if (status === "failed") return "failed";
+  return null;
 }
 
 /**
@@ -32,8 +41,22 @@ export function SessionTab({
 
   useEffect(() => {
     setState(null);
-    setLines([]);
+    // Seeded from the shared store rather than starting empty: `session:event` is never replayed
+    // for a late subscriber, and every tab a human opens is late for a fast build's calls
+    // (BG-0008). Whatever ran before this mount is history the store already holds.
+    setLines(
+      getSessionToolCalls(sessionId).map((call, index) => ({
+        id: `tool-seed-${index}`,
+        text:
+          call.outcome && call.outcome !== "running"
+            ? `Ran: ${call.title ?? "a tool"} — ${call.outcome}`
+            : `Ran: ${call.title ?? "a tool"}`,
+      })),
+    );
     const open = new Map<string, number>();
+    // A tool call's title, kept from its start so the line its result closes can still name it —
+    // the result event itself carries only the id.
+    const titles = new Map<string, string>();
 
     return window.aibuildos.subscribe("session:event", (payload) => {
       if (payload.sessionId !== sessionId) return;
@@ -43,6 +66,8 @@ export function SessionTab({
         messageId?: string;
         delta?: string;
         value?: unknown;
+        toolCallId?: string;
+        content?: string;
       };
 
       if (event.type === "TEXT_MESSAGE_CONTENT" && typeof event.messageId === "string") {
@@ -61,11 +86,44 @@ export function SessionTab({
         return;
       }
 
-      if (event.type === "CUSTOM" && event.name === TOOL_CALL) {
-        const title = (event.value as { title?: string })?.title ?? "a tool";
+      // The standard events every other surface already reads (BG-0008) — the dead `acp.tool_call`
+      // name this branch used to listen for was never once emitted.
+      if (event.type === "TOOL_CALL_ARGS" && typeof event.delta === "string") {
+        let args: { title?: string; status?: string } | null;
+        try {
+          args = JSON.parse(event.delta);
+        } catch {
+          args = null;
+        }
+        const title = args?.title ?? "a tool";
+        if (typeof event.toolCallId === "string") titles.set(event.toolCallId, title);
+        // A call already terminal by the time it starts (the common case for a single scripted
+        // edit) never gets a separate result event, so its outcome is said here or not at all.
+        const outcome = outcomeWord(args?.status);
         setLines((current) => [
           ...current,
-          { id: `tool-${current.length}`, text: `Ran: ${title}` },
+          {
+            id: `tool-${current.length}`,
+            text: outcome ? `Ran: ${title} — ${outcome}` : `Ran: ${title}`,
+          },
+        ]);
+        return;
+      }
+
+      if (event.type === "TOOL_CALL_RESULT" && typeof event.content === "string") {
+        let result: { status?: string } | null;
+        try {
+          result = JSON.parse(event.content);
+        } catch {
+          result = null;
+        }
+        const title =
+          (typeof event.toolCallId === "string" ? titles.get(event.toolCallId) : undefined) ??
+          "The tool call";
+        const outcome = outcomeWord(result?.status) ?? "finished";
+        setLines((current) => [
+          ...current,
+          { id: `tool-result-${current.length}`, text: `${title} — ${outcome}` },
         ]);
         return;
       }

@@ -189,10 +189,19 @@ test("two builds run side by side, and cancelling one leaves the other running",
   await w.getByTestId("board-card-build-worktree-ST-0001-slow").click();
   await w.getByTestId("board-card-build-worktree-ST-0002-writer").click();
 
+  // TC-0074 (BG-0008): open the writer's session tab right away. Its single file-writer turn has no
+  // artificial delay, so subscribing any later risks its tool call's event having already come and
+  // gone with nobody listening — `session:event` is live, never replayed for a late subscriber.
+  await w.getByTestId("tab-now").click();
+  await w.getByTestId("now-row-open-ST-0002").click();
+  await expect(w.getByTestId("session-transcript")).toContainText("Ran: Edit notes.md", {
+    timeout: 20000,
+  });
+
   // The slow build holds `building` long enough to observe; the writer's turn ends so fast that
-  // its `building` is a blink the turn-end walk correctly flips before any poll can see it — its
-  // parallelism is proven by the simultaneous worktrees and live Now rows below, and its terminal
-  // truth (`review`) is asserted at the end.
+  // its `building` is a blink `builds.ts`'s own turn-end flip (ST-0041) correctly lands before any
+  // poll can see it — its parallelism is proven by the simultaneous worktrees and live Now rows
+  // below, and its terminal truth (`review`) is asserted at the end.
   await expect.poll(() => readFileSync(story1File, "utf8")).toContain("state: building");
   await expect.poll(() => existsSync(wt1)).toBe(true);
   await expect.poll(() => existsSync(wt2)).toBe(true);

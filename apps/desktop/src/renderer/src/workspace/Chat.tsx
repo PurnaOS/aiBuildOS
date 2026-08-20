@@ -9,6 +9,7 @@ import { Controls } from "./Controls.js";
 import { PlaybookStrip } from "./PlaybookStrip.js";
 import { AsksAssistantMessage } from "./QuestionCard.js";
 import { ToolCallCard } from "./ToolCallCard.js";
+import { ToolSessionContext } from "./toolCall.js";
 
 /**
  * The conversation (ST-0011).
@@ -45,6 +46,9 @@ export function Chat({
   // it is RQ-0013#AC-6's fallback: what a playbook button runs with when its own preference matches
   // nothing configured.
   const [startedWith, setStartedWith] = useState<string | null>(null);
+  // Feeds ToolCallCard's terminal cards the streamed `acp.tool_call_update` content CopilotKit never
+  // sees (ST-0047) — one subscription for the whole conversation, called unconditionally so it stays
+  // ahead of the conditional returns below rather than becoming a conditional hook itself.
   const pick = async (harnessId: string): Promise<void> => {
     setStartedWith(harnessId);
     await start(harnessId);
@@ -81,7 +85,11 @@ export function Chat({
             attachedHarness={attachedHarness}
           />
           <div className="min-h-0 flex-1">
-            <CopilotChat className="h-full" AssistantMessage={AsksAssistantMessage} />
+            {/* The cards CopilotKit renders carry no session of their own; this is how a
+                ToolCallCard knows which session's stream to read (BG-0008's store). */}
+            <ToolSessionContext value={state.sessionId}>
+              <CopilotChat className="h-full" AssistantMessage={AsksAssistantMessage} />
+            </ToolSessionContext>
           </div>
           {/* The plan and any question the agent is waiting on, kept above the composer rather than
               left to scroll away. */}
