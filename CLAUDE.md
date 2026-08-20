@@ -70,3 +70,7 @@ build step. Tests are colocated as `*.test.ts`. Full rationale in
 
 Start at [`docs/README.md`](docs/README.md), open the relevant index, load the **one** artifact you
 need, then follow its links. The bundle is written for just-in-time retrieval — do not read it whole.
+
+## Agent state discipline
+
+@AGENTS.md

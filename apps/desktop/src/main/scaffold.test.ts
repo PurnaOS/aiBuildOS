@@ -162,8 +162,36 @@ describe("scaffolding a project", () => {
 
     expect(files.size).toBeGreaterThanOrEqual(20);
     for (const [path, content] of files) {
-      expect(path.startsWith("docs/"), path).toBe(true);
+      // Every template file lives under `docs/`, except the two root instruction files RQ-0028
+      // seeds at the project root — not a stray file the glob picked up by accident.
+      expect(path.startsWith("docs/") || path === "AGENTS.md" || path === "CLAUDE.md", path).toBe(
+        true,
+      );
       expect(content.length, path).toBeGreaterThan(0);
     }
+  });
+
+  /**
+   * TC-0079 (RQ-0028#AC-1, AC-2). A created project carries root instructions any agent reads —
+   * `AGENTS.md` with the substance, `CLAUDE.md` as an import of it — with the owner's state
+   * discipline written into `AGENTS.md` word for word where it matters.
+   */
+  it("seeds root AGENTS.md and CLAUDE.md, CLAUDE.md importing AGENTS.md rather than duplicating it", async () => {
+    const dir = await scaffoldProject(parent, "demo");
+
+    const agents = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    const claude = readFileSync(join(dir, "CLAUDE.md"), "utf8");
+
+    // AC-2: an import, not a second copy that can drift.
+    expect(claude).toContain("@AGENTS.md");
+    expect(claude.toLowerCase()).not.toContain("ready → queued");
+
+    // AC-2 (ST-0045#AC-2): the owner's state discipline, word for word where it matters.
+    expect(agents).toContain("work states only");
+    expect(agents).toContain("ready → queued → building → review");
+    expect(agents.toLowerCase()).toContain("draft → ready");
+    expect(agents.toLowerCase()).toContain("scheduling is the person's");
+    expect(agents.toLowerCase()).toContain("worktree");
+    expect(agents).toContain("leave every `state:` field exactly as");
   });
 });

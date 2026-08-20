@@ -5,18 +5,23 @@ import { loadProfile } from "@aibuildos/knowledge-engine/load";
 import { bundleFiles, OWNER_PLACEHOLDER } from "./scaffold.js";
 
 /**
- * The standard playbooks, written into a project that has none (RQ-0013#AC-4).
+ * The standard instructions, written into a project that has none: the playbooks (RQ-0013#AC-4)
+ * and the root `AGENTS.md`/`CLAUDE.md` an adopted project was scaffolded without (RQ-0028#AC-3).
  *
  * DC-0019: a playbook is a record artifact, so "seeding" is writing the same files the scaffold
  * template ships — with the same identity rule minting has (`project:create-artifact`), because
- * these artifacts need an `owner` and it cannot be baked into a static template.
+ * these artifacts need an `owner` and it cannot be baked into a static template. `AGENTS.md` and
+ * `CLAUDE.md` carry no frontmatter and need no owner, so they follow a simpler rule of their own:
+ * write whichever is missing, touch neither if it is already there.
  *
  * Two refusals and one heal, chosen to be the smallest thing that leaves a valid bundle behind:
  *   - any `PB-…` file already under `docs/playbooks/` refuses outright. Seeding is for a project
  *     that has none; deciding whether a partial set should be topped up is a question nobody has
  *     asked yet, and inventing an answer now would be a guess wearing the shape of a feature.
  *   - no configured `user.name` refuses for the same reason `project:create-artifact` does — an
- *     artifact needs a real owner, and this process has no way to invent one.
+ *     artifact needs a real owner, and this process has no way to invent one. (`AGENTS.md`/
+ *     `CLAUDE.md` need no owner, but this refusal happens before either is written, so a project
+ *     with no identity gets neither on this call — the next successful seed still catches them.)
  *   - a project adopted before DC-0019 has no `Playbook` in its `docs/profile/` at all, so writing
  *     only the three artifacts would leave `type: Playbook` resolving against nothing — a bundle
  *     `docs:check` would flag the moment it ran. That is not refused: seeding also writes
@@ -47,9 +52,13 @@ export function seedPlaybooks(projectPath: string): string | null {
   for (const [relative, content] of bundleFiles()) {
     const isPlaybookArtifact = relative.startsWith("docs/playbooks/");
     const healsProfile = relative === "docs/profile/playbook.md" && !hasPlaybookType;
-    if (!isPlaybookArtifact && !healsProfile) continue;
+    const isInstructions = relative === "AGENTS.md" || relative === "CLAUDE.md";
+    if (!isPlaybookArtifact && !healsProfile && !isInstructions) continue;
 
     const target = join(projectPath, relative);
+    // RQ-0028#AC-3: never overwrite an instructions file that is already there.
+    if (isInstructions && existsSync(target)) continue;
+
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, content.replaceAll(OWNER_PLACEHOLDER, owner), "utf8");
   }

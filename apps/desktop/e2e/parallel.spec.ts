@@ -185,8 +185,11 @@ test("two builds run side by side, and cancelling one leaves the other running",
   await w.getByTestId("tab-board").click();
   await w.getByTestId("board-view-work").click();
 
-  // AC-1: two stories build at once, each its own worktree, no shared working directory.
+  // AC-1: two stories build at once, each its own worktree, no shared working directory. The
+  // worktree entries sit behind the Build control's caret (ST-0044#AC-4), one menu per card.
+  await w.getByTestId("board-card-build-menu-ST-0001").click();
   await w.getByTestId("board-card-build-worktree-ST-0001-slow").click();
+  await w.getByTestId("board-card-build-menu-ST-0002").click();
   await w.getByTestId("board-card-build-worktree-ST-0002-writer").click();
 
   // TC-0074 (BG-0008): open the writer's session tab right away. Its single file-writer turn has no

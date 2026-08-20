@@ -177,6 +177,9 @@ test("a worktree build leaves the workspace free, and lands on accept", async ()
   // pressed before any turn ran, so the flips land deterministically.
   await w.getByTestId("tab-board").click();
   await w.getByTestId("board-view-work").click();
+  // ST-0044#AC-4: the worktree entries sit behind the Build control's caret, one menu rather than
+  // a button per harness.
+  await w.getByTestId("board-card-build-menu-ST-0001").click();
   await w.getByTestId("board-card-build-worktree-ST-0001-h").click();
 
   await expect.poll(() => readFileSync(storyFile, "utf8")).toContain("state: building");
@@ -235,6 +238,7 @@ test("restart lists a survivor without picking it up on its own", async () => {
   const first = await open(config, worktrees);
   await first.w.getByTestId("tab-board").click();
   await first.w.getByTestId("board-view-work").click();
+  await first.w.getByTestId("board-card-build-menu-ST-0001").click();
   await first.w.getByTestId("board-card-build-worktree-ST-0001-h").click();
 
   // `build:start` creates the worktree before the renderer ever writes `state: building` — seeing

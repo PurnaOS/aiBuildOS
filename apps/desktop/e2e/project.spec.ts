@@ -92,6 +92,10 @@ test("creates, lists, opens and closes a project, and survives a restart", async
     // (RQ-0013#AC-4): an empty backlog, not an empty record.
     await expect(window.getByTestId("record-open-PB-0001")).toBeVisible();
     await expect(window.getByTestId("record-empty")).toHaveCount(0);
+    // TC-0080 (RQ-0028#AC-1): the instructions any agent reads are already on disk, at the root
+    // the files rail shows.
+    await expect(window.getByTestId("file-row").filter({ hasText: "AGENTS.md" })).toBeVisible();
+    await expect(window.getByTestId("file-row").filter({ hasText: "CLAUDE.md" })).toBeVisible();
 
     // Closing returns to the ledger without a restart (ST-0004#AC-6).
     await window.getByTestId("project-close").click();

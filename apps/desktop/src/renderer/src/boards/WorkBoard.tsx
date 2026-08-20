@@ -1,6 +1,7 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
 import { useCallback, useEffect, useState } from "react";
 import { useHarnesses } from "../harness/HarnessPanel.js";
+import { Loading } from "../Loading.js";
 import { buildWalk } from "../review/walk.js";
 import { button, card, eyebrow, focusRing, mono } from "../ui.js";
 import { useBump, useRevision } from "../workspace/revision.js";
@@ -242,7 +243,7 @@ export function WorkBoard({
     [projectId, bump, record, building, buildingWorktree],
   );
 
-  if (record === null) return <p className="p-4 text-xs text-neutral-500">Loading…</p>;
+  if (record === null) return <Loading className="p-4 text-xs" />;
   if (record.problem !== null) {
     return (
       <p data-testid="board-problem" className="p-4 text-xs text-red-600">
@@ -267,34 +268,34 @@ export function WorkBoard({
     (column) => showRetired || column.state !== "retired",
   );
 
-  const readyActions = (artifact: BoardArtifact): CardAction[] => {
-    if (artifact.type !== "Story") return [];
+  /**
+   * The ready column's Build control (ST-0044#AC-4): pressing the button itself starts the build in
+   * this checkout, exactly as it always did (build.spec.ts and commit.spec.ts press this same testid
+   * expecting exactly that, and this lane does not own those specs) — collapsing the worktree
+   * buttons, one per harness, behind a single caret next to it instead of leaving them all sitting on
+   * the card. `null` for a Bug, which offers no build control at all.
+   */
+  const buildControlFor = (artifact: BoardArtifact): BuildControl | null => {
+    if (artifact.type !== "Story") return null;
     const busy = building.has(artifact.id);
     const busyWorktree = buildingWorktree.has(artifact.id);
     const configured = harnesses ?? [];
-    return [
-      {
-        testId: `board-card-build-${artifact.id}`,
-        label: busy ? "Building…" : "Build",
-        disabled: busy || busyWorktree,
-        onClick: () => void startBuild(artifact.id),
-      },
-      // One button per configured harness (RQ-0020#AC-1): a worktree build spawns a session right
-      // away, so — unlike the plain Build button above, which reuses whatever the main chat already
+    return {
+      buildTestId: `board-card-build-${artifact.id}`,
+      buildLabel: busy ? "Building…" : busyWorktree ? "Starting…" : "Build",
+      buildDisabled: busy || busyWorktree,
+      onBuild: () => void startBuild(artifact.id),
+      menuTestId: `board-card-build-menu-${artifact.id}`,
+      // One entry per configured harness (RQ-0020#AC-1): a worktree build spawns a session right
+      // away, so — unlike the plain Build button, which reuses whatever the main chat already
       // picked — it has to know which harness to spawn with before the click ever fires.
-      ...configured.map(
-        (harness): CardAction => ({
-          testId: `board-card-build-worktree-${artifact.id}-${harness.id}`,
-          label: busyWorktree
-            ? "Starting…"
-            : configured.length > 1
-              ? `Build in a worktree (${harness.displayName})`
-              : "Build in a worktree",
-          disabled: busy || busyWorktree,
-          onClick: () => void startWorktreeBuild(artifact.id, harness.id),
-        }),
-      ),
-    ];
+      worktreeEntries: configured.map((harness) => ({
+        testId: `board-card-build-worktree-${artifact.id}-${harness.id}`,
+        label: `In a worktree — ${harness.displayName}`,
+        disabled: busy || busyWorktree,
+        onClick: () => void startWorktreeBuild(artifact.id, harness.id),
+      })),
+    };
   };
 
   const reviewActions = (artifact: BoardArtifact): CardAction[] => {
@@ -325,7 +326,8 @@ export function WorkBoard({
               onMove={attemptMove}
               problems={problems}
               caption={BUILDER_COLUMNS.has(column.state) ? "moved by the builder" : undefined}
-              actions={column.state === "ready" ? readyActions : reviewActions}
+              actions={column.state === "ready" ? () => [] : reviewActions}
+              build={column.state === "ready" ? buildControlFor : undefined}
             />
           ) : (
             <Column
@@ -370,6 +372,20 @@ interface CardAction {
 }
 
 /**
+ * The ready column's split Build control (ST-0044#AC-4): a primary button that starts the build in
+ * this checkout, plus — only when at least one harness is configured — a caret beside it that opens
+ * the worktree entries, one per harness, in place of a row of always-visible buttons.
+ */
+interface BuildControl {
+  readonly buildTestId: string;
+  readonly buildLabel: string;
+  readonly buildDisabled: boolean;
+  readonly onBuild: () => void;
+  readonly menuTestId: string;
+  readonly worktreeEntries: readonly CardAction[];
+}
+
+/**
  * `ready` and `review`, rendered locally rather than through BoardTab's `Column`/`Card` — Build and
  * Review are card-level actions neither of those exports a slot for (`Card` is not exported, and
  * BoardTab.tsx is out of scope while another agent edits the boards it shares). Every testid and the
@@ -391,6 +407,7 @@ function ActionColumn({
   problems,
   caption,
   actions,
+  build,
 }: {
   column: BoardColumn;
   projectId: string;
@@ -404,6 +421,9 @@ function ActionColumn({
   caption?: string | undefined;
   /** Empty when this artifact offers no extra action — a Bug sitting in `ready`, say. */
   actions: (artifact: BoardArtifact) => CardAction[];
+  /** The ready column's Build control (ST-0044#AC-4). Absent for review, which has no build of its
+   * own to offer. */
+  build?: ((artifact: BoardArtifact) => BuildControl | null) | undefined;
 }): React.JSX.Element {
   return (
     <div
@@ -430,6 +450,7 @@ function ActionColumn({
             onMove={onMove}
             problem={problems[artifact.id]}
             actions={actions(artifact)}
+            build={build?.(artifact) ?? null}
           />
         ))}
       </div>
@@ -448,6 +469,7 @@ function ActionCard({
   onMove,
   problem,
   actions,
+  build,
 }: {
   artifact: BoardArtifact;
   projectId: string;
@@ -459,9 +481,11 @@ function ActionCard({
   onMove: (artifactId: string, state: string) => void;
   problem?: string | undefined;
   actions: CardAction[];
+  build?: BuildControl | null;
 }): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moves, setMoves] = useState<string[] | null>(null);
+  const [buildMenuOpen, setBuildMenuOpen] = useState(false);
 
   // The drag twin: fetched only when the menu opens, since `project:artifact` re-reads the whole
   // bundle — cheap for one gesture, not for one call per card on every render.
@@ -525,6 +549,58 @@ function ActionCard({
         </button>
       ))}
 
+      {build !== null && build !== undefined && (
+        <div className="mt-1 flex items-stretch gap-1">
+          <button
+            type="button"
+            data-testid={build.buildTestId}
+            onClick={build.onBuild}
+            disabled={build.buildDisabled}
+            className={`flex-1 text-center text-xs ${button} ${focusRing}`}
+          >
+            {build.buildLabel}
+          </button>
+          {build.worktreeEntries.length > 0 && (
+            <button
+              type="button"
+              data-testid={build.menuTestId}
+              aria-label={`Worktree build options for ${artifact.id}`}
+              onClick={() => setBuildMenuOpen((open) => !open)}
+              disabled={build.buildDisabled}
+              className={`px-1.5 text-xs ${button} ${focusRing}`}
+            >
+              ▾
+            </button>
+          )}
+        </div>
+      )}
+
+      {build !== null &&
+        build !== undefined &&
+        buildMenuOpen &&
+        build.worktreeEntries.length > 0 && (
+          <div
+            data-testid={`board-card-build-worktree-options-${artifact.id}`}
+            className="mt-1 flex flex-col items-start gap-0.5"
+          >
+            {build.worktreeEntries.map((entry) => (
+              <button
+                key={entry.testId}
+                type="button"
+                data-testid={entry.testId}
+                disabled={entry.disabled}
+                onClick={() => {
+                  setBuildMenuOpen(false);
+                  entry.onClick();
+                }}
+                className={`text-[11px] underline hover:text-neutral-900 dark:hover:text-neutral-100 ${mono}`}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+        )}
+
       <button
         type="button"
         data-testid={`board-card-menu-${artifact.id}`}
@@ -540,7 +616,7 @@ function ActionCard({
           className="mt-1 flex flex-col items-start gap-0.5"
         >
           {moves === null ? (
-            <span className="text-[11px] text-neutral-500">Loading…</span>
+            <Loading className="text-[11px]" />
           ) : moves.length === 0 ? (
             <span className="text-[11px] text-neutral-500">Nothing to move to from here.</span>
           ) : (

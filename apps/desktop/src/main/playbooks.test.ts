@@ -31,11 +31,20 @@ describe("seeding playbooks into an adopted project", () => {
     for (const key of Object.keys(NO_GLOBAL)) delete process.env[key];
   });
 
-  /** Writes the template bundle, dropping playbook pieces the caller does not want present. */
-  function adopt(options: { playbooks?: boolean; profileType?: boolean } = {}): void {
+  /** Writes the template bundle, dropping playbook pieces — and, opted out, the root instruction
+   * files RQ-0028 seeds — the caller does not want present. */
+  function adopt(
+    options: { playbooks?: boolean; profileType?: boolean; instructions?: boolean } = {},
+  ): void {
     for (const [relative, content] of bundleFiles()) {
       if (options.playbooks === false && relative.startsWith("docs/playbooks/")) continue;
       if (options.profileType === false && relative === "docs/profile/playbook.md") continue;
+      if (
+        options.instructions === false &&
+        (relative === "AGENTS.md" || relative === "CLAUDE.md")
+      ) {
+        continue;
+      }
       const target = join(dir, relative);
       mkdirSync(dirname(target), { recursive: true });
       // Nothing here calls `seedPlaybooks` yet, so the `{{OWNER}}` token is never resolved by
@@ -68,6 +77,52 @@ describe("seeding playbooks into an adopted project", () => {
       expect(text).toContain("owner: Adopter\n");
       expect(text).not.toContain("{{OWNER}}");
     }
+  });
+
+  /**
+   * TC-0079 (RQ-0028#AC-3). Seeding an adopted project also seeds the root instruction files it was
+   * scaffolded without, and never overwrites one that is already there.
+   */
+  it("writes AGENTS.md and CLAUDE.md when the project has neither", () => {
+    adopt({ playbooks: false, profileType: false, instructions: false });
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+    execFileSync("git", ["-C", dir, "config", "user.email", "adopter@example.com"]);
+
+    expect(seedPlaybooks(dir)).toBeNull();
+
+    const agents = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    const claude = readFileSync(join(dir, "CLAUDE.md"), "utf8");
+    expect(agents).toContain("ready → queued → building → review");
+    expect(claude).toContain("@AGENTS.md");
+    // Neither carries frontmatter, so unlike the playbooks the owner token never applies.
+    expect(agents).not.toContain("{{OWNER}}");
+  });
+
+  it("never overwrites an existing CLAUDE.md, even while it seeds everything else", () => {
+    adopt({ playbooks: false, profileType: false, instructions: false });
+    writeFileSync(join(dir, "CLAUDE.md"), "# This project's own CLAUDE.md\n", "utf8");
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+    execFileSync("git", ["-C", dir, "config", "user.email", "adopter@example.com"]);
+
+    expect(seedPlaybooks(dir)).toBeNull();
+
+    // The project's own file, untouched — not the template's.
+    expect(readFileSync(join(dir, "CLAUDE.md"), "utf8")).toBe("# This project's own CLAUDE.md\n");
+    // AGENTS.md was genuinely absent, so it is still written.
+    expect(existsSync(join(dir, "AGENTS.md"))).toBe(true);
+  });
+
+  it("seeding a second time overwrites nothing, instructions included", () => {
+    adopt({ playbooks: false, profileType: false, instructions: false });
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+    execFileSync("git", ["-C", dir, "config", "user.email", "adopter@example.com"]);
+    expect(seedPlaybooks(dir)).toBeNull();
+    const agentsAfterFirstSeed = readFileSync(join(dir, "AGENTS.md"), "utf8");
+
+    const problem = seedPlaybooks(dir);
+
+    expect(problem).toContain("already has playbook");
+    expect(readFileSync(join(dir, "AGENTS.md"), "utf8")).toBe(agentsAfterFirstSeed);
   });
 
   it("leaves an already-declared profile type alone", () => {
