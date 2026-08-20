@@ -210,6 +210,24 @@ function Row({
           <span className={`shrink-0 text-xs ${mono}`}>{artifact.id}</span>
           <span className="min-w-0 flex-1 truncate text-xs">{artifact.title}</span>
           <span className={`shrink-0 text-[10px] text-neutral-500 ${mono}`}>{artifact.state}</span>
+          {/* Words carry the signal, not the colour (RQ-0012#AC-1). A clean artifact renders nothing
+              here — no zero-count badge (RQ-0012#AC-4). */}
+          {(artifact.problems.errors > 0 || artifact.problems.warnings > 0) && (
+            <span
+              data-testid={`record-problems-${artifact.id}`}
+              className={`shrink-0 text-[10px] ${mono}`}
+            >
+              {artifact.problems.errors > 0 && (
+                <span className="text-red-600">{plural(artifact.problems.errors, "error")}</span>
+              )}
+              {artifact.problems.errors > 0 && artifact.problems.warnings > 0 && ", "}
+              {artifact.problems.warnings > 0 && (
+                <span className="text-amber-700">
+                  {plural(artifact.problems.warnings, "warning")}
+                </span>
+              )}
+            </span>
+          )}
         </button>
       </div>
 
@@ -240,6 +258,10 @@ function Row({
       )}
     </div>
   );
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
 function group(inbound: Artifact["inbound"]): [string, string[]][] {

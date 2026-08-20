@@ -376,6 +376,14 @@ export const channels = {
             state: z.string(),
             file: z.string(),
             /**
+             * From the same `validate()` run `docs:check` performs, carried over this channel rather
+             * than a new one (ST-0025). Counts, not the findings themselves — a list mark needs to say
+             * "2 errors", not what they are; opening the artifact is where each one is named
+             * (RQ-0012#AC-1, AC-2). Always present, `{ errors: 0, warnings: 0 }` for a clean artifact —
+             * the rail renders that as nothing (RQ-0012#AC-4).
+             */
+            problems: z.object({ errors: z.number().int(), warnings: z.number().int() }),
+            /**
              * The reverse of links stored elsewhere — what implements this, what verifies it.
              * Derived, never stored: a written backlink is a second source of truth that drifts.
              */
@@ -566,7 +574,16 @@ export const channels = {
   "project:artifact-types": {
     request: z.object({ id: z.string() }),
     response: z.object({
-      types: z.array(z.object({ type: z.string(), prefix: z.string(), dir: z.string() })),
+      types: z.array(
+        z.object({
+          type: z.string(),
+          prefix: z.string(),
+          dir: z.string(),
+          /** The type's whole state vocabulary, in declared order — what a board's columns are
+           * (RQ-0011#AC-1). Empty when the type declares no states. */
+          states: z.array(z.string()),
+        }),
+      ),
       problem: z.string().nullable(),
     }),
   },

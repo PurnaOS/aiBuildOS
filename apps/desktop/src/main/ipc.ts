@@ -261,6 +261,29 @@ function findingsFor(
     }));
 }
 
+/**
+ * Error/warning counts per artifact file, from one `validate()` run.
+ *
+ * Grouped after the fact rather than asked per artifact — RQ-0012#AC-1 wants this beside every row
+ * in the rail, and running the validator once per row is the difference between a record read and a
+ * record read that stalls on a large bundle. A finding whose `file` is not an artifact's own (an
+ * index-level complaint, or a dangling link resolved by an ID rather than a path) has no row to land
+ * on and is silently dropped rather than forced onto one.
+ */
+function problemsFor(
+  bundle: Parameters<typeof validate>[0],
+  profile: Profile,
+): Map<string, { errors: number; warnings: number }> {
+  const counts = new Map<string, { errors: number; warnings: number }>();
+  for (const finding of validate(bundle, profile)) {
+    const current = counts.get(finding.file) ?? { errors: 0, warnings: 0 };
+    if (finding.severity === "error") current.errors += 1;
+    else current.warnings += 1;
+    counts.set(finding.file, current);
+  }
+  return counts;
+}
+
 /** Every handler that works on a project starts here. An unknown id is a renderer bug. */
 function requireProject(id: string) {
   const project = loadProjects(projectFile()).find((candidate) => candidate.id === id);
@@ -419,6 +442,8 @@ function createHandlers(sessions: SessionRegistry): Handlers {
 
       try {
         const { bundle } = loadBundle(root, project.path);
+        const { profile } = loadProfile(root);
+        const problems = problemsFor(bundle, profile);
 
         // The engine builds a graph only inside `validate` today, so the rail builds its own. Three
         // lines, and it is what turns stored links into the reverse the rail actually shows.
@@ -449,6 +474,7 @@ function createHandlers(sessions: SessionRegistry): Handlers {
               title: typeof front.title === "string" ? front.title : artifactId,
               state: typeof front.state === "string" ? front.state : "",
               file: artifact.file,
+              problems: problems.get(artifact.file) ?? { errors: 0, warnings: 0 },
               // Deduplicated: a test that verifies two criteria of one requirement
               // (`verifies: [RQ-0004#AC-3, RQ-0004#AC-18]`) is one relationship, not two. The graph
               // flattens `#AC-n` to the artifact, so without this the rail lists it once per
@@ -788,7 +814,14 @@ function createHandlers(sessions: SessionRegistry): Handlers {
           const definition = profile.get(name);
           if (!definition || definition.abstract) return [];
           if (!definition.prefix || !definition.dir) return [];
-          return [{ type: name, prefix: definition.prefix, dir: definition.dir }];
+          return [
+            {
+              type: name,
+              prefix: definition.prefix,
+              dir: definition.dir,
+              states: definition.states?.vocabulary ?? [],
+            },
+          ];
         })
         .sort((a, b) => a.type.localeCompare(b.type));
 
