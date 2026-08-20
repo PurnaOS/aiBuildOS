@@ -20,8 +20,14 @@ import type { Harness } from "./harnesses.js";
  */
 export type Emit = <E extends EventName>(event: E, payload: EventPayload<E>) => void;
 
+/** RQ-0022. `hands-off` answers a permission request with the agent's own allow option; `closest`
+ * blocks for a person, as every session did before this setting existed. */
+export type SupervisionLevel = "closest" | "hands-off";
+
 interface Held {
   readonly session: AgentSession;
+  /** Which project this session belongs to — what the supervision level is read against. */
+  readonly projectId: string;
   /** Permission requests this session is waiting on, by the id we gave them. */
   readonly pending: Map<string, (optionId: string | null) => void>;
   /**
@@ -46,9 +52,22 @@ export type StartResult =
 export class SessionRegistry {
   private readonly held = new Map<string, Held>();
 
-  constructor(private readonly emit: Emit) {}
+  constructor(
+    private readonly emit: Emit,
+    /**
+     * The project's current supervision level. Called fresh on every permission request rather than
+     * read once at start, so a level changed mid-session applies from the next request and nothing
+     * already answered is revisited (RQ-0022#AC-5).
+     */
+    private readonly supervisionOf: (projectId: string) => SupervisionLevel,
+  ) {}
 
-  async start(harness: Harness, cwd: string, clientVersion: string): Promise<StartResult> {
+  async start(
+    harness: Harness,
+    projectId: string,
+    cwd: string,
+    clientVersion: string,
+  ): Promise<StartResult> {
     // The id the pending map is keyed by has to exist before the session does, because the agent can
     // ask for permission during the very first turn.
     const pending = new Map<string, (optionId: string | null) => void>();
@@ -71,7 +90,7 @@ export class SessionRegistry {
               event: event as unknown as { type: string },
             });
           },
-          onPermission: (request) => this.ask(() => sessionId, pending, request),
+          onPermission: (request) => this.ask(() => sessionId, pending, projectId, request),
         },
       );
 
@@ -80,7 +99,7 @@ export class SessionRegistry {
       if (controls.configOptions.length === 0) {
         controls.configOptions = (session.offered.configOptions ?? []) as { id: string }[];
       }
-      this.held.set(sessionId, { session, pending, controls });
+      this.held.set(sessionId, { session, projectId, pending, controls });
       this.emit("session:state", { sessionId, state: "ready", error: null });
 
       return {
@@ -182,28 +201,40 @@ export class SessionRegistry {
   }
 
   /**
-   * Put a permission request on screen and wait for the answer.
-   *
-   * It travels as an AG-UI `CUSTOM` event so the renderer still consumes AG-UI and nothing else
-   * (DC-0008). The `requestId` is what the answer comes back on.
+   * Put a permission request on screen and wait for the answer — unless the project is hands-off, in
+   * which case the agent's own allow option answers it at once (RQ-0022#AC-3). Either way it travels
+   * as an AG-UI `CUSTOM` event so the renderer still consumes AG-UI and nothing else (DC-0008); the
+   * `requestId` is what a live answer comes back on, and an automatic one carries `automatic: true`
+   * so the card can say so instead of drawing buttons for a decision already made.
    */
   private ask(
     sessionId: () => string,
     pending: Map<string, (optionId: string | null) => void>,
+    projectId: string,
     request: PermissionRequest,
   ): Promise<string | null> {
     const requestId = randomUUID();
+    const automatic =
+      this.supervisionOf(projectId) === "hands-off" ? allowOption(request.options) : null;
+
+    this.emit("session:event", {
+      sessionId: sessionId(),
+      event: {
+        type: EventType.CUSTOM,
+        name: CUSTOM.permission,
+        value: {
+          requestId,
+          toolCall: request.toolCall,
+          options: request.options,
+          ...(automatic === null ? {} : { automatic: true }),
+        },
+      } as unknown as { type: string },
+    });
+
+    if (automatic !== null) return Promise.resolve(automatic);
 
     return new Promise<string | null>((resolve) => {
       pending.set(requestId, resolve);
-      this.emit("session:event", {
-        sessionId: sessionId(),
-        event: {
-          type: EventType.CUSTOM,
-          name: CUSTOM.permission,
-          value: { requestId, toolCall: request.toolCall, options: request.options },
-        } as unknown as { type: string },
-      });
     });
   }
 
@@ -213,6 +244,20 @@ export class SessionRegistry {
     if (!held) throw new Error(`no open session with id ${sessionId}`);
     return held;
   }
+}
+
+/**
+ * Which option answers a hands-off request: the agent's own "allow once" first, "allow always"
+ * otherwise, and `null` when it offered no way to allow at all — which keeps the request blocking for
+ * a person even at hands-off, because there is nothing honest to answer it with (RQ-0022#AC-3).
+ */
+function allowOption(options: PermissionRequest["options"]): string | null {
+  return (
+    (
+      options.find((option) => option.kind === "allow_once") ??
+      options.find((option) => option.kind === "allow_always")
+    )?.optionId ?? null
+  );
 }
 
 /** Keep the remembered controls in step with what the agent announces. */

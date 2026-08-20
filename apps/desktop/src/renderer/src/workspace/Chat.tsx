@@ -56,6 +56,10 @@ export function Chat({
       "the attached harness";
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="chat">
+        {/* Project-scoped, so it sits above the agent's own controls rather than among them. Not
+            wrapped in a bordered row of its own: while the level is still loading it renders
+            nothing at all, rather than an empty strip flashing above the conversation. */}
+        <Supervision projectId={projectId} />
         {/* What the agent is set to, above the conversation it applies to. */}
         <Controls
           sessionId={state.sessionId}
@@ -134,6 +138,7 @@ export function Chat({
   return (
     <Centred>
       <div className="max-w-md">
+        <Supervision projectId={projectId} />
         <p className="text-sm">Nothing has been asked yet.</p>
         <p className="mt-1 text-xs text-neutral-500">
           Pick a coding agent to work on this project. It runs in{" "}
@@ -214,4 +219,55 @@ function HarnessButtons({
 
 function Centred({ children }: { children: React.ReactNode }): React.JSX.Element {
   return <div className="flex h-full items-center justify-center p-8 text-center">{children}</div>;
+}
+
+type SupervisionLevel = "closest" | "hands-off";
+
+/**
+ * How closely this project's sessions are supervised (RQ-0022#AC-1).
+ *
+ * Project-scoped rather than session-scoped, so it reads and writes independent of whether a session
+ * is even open — on screen before one starts, on the start surface, and again once one is running.
+ * A two-word toggle rather than a menu: there are exactly two levels today, and the vision names more
+ * only as their own requirement arrives.
+ */
+function Supervision({ projectId }: { projectId: string }): React.JSX.Element | null {
+  const [level, setLevel] = useState<SupervisionLevel | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void window.aibuildos.invoke("project:list", undefined).then((projects) => {
+      if (!live) return;
+      setLevel(projects.find((project) => project.id === projectId)?.supervision ?? "closest");
+    });
+    return () => {
+      live = false;
+    };
+  }, [projectId]);
+
+  if (level === null) return null;
+
+  const change = async (next: SupervisionLevel): Promise<void> => {
+    const previous = level;
+    setLevel(next);
+    const { problem } = await window.aibuildos.invoke("project:set-supervision", {
+      id: projectId,
+      level: next,
+    });
+    // A change that did not actually persist must not be shown as though it had.
+    if (problem) setLevel(previous);
+  };
+
+  return (
+    <button
+      type="button"
+      data-testid="supervision"
+      title="How closely permission requests are supervised"
+      onClick={() => void change(level === "hands-off" ? "closest" : "hands-off")}
+      className={`mt-2 mb-3 flex shrink-0 items-center gap-1.5 self-start rounded border border-neutral-200 px-2 py-1 text-xs dark:border-neutral-800 ${focusRing}`}
+    >
+      <span className={eyebrow}>supervision</span>
+      <span>{level}</span>
+    </button>
+  );
 }

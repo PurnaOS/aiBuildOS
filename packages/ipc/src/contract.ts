@@ -90,6 +90,16 @@ const ProjectNameSchema = z
     "not a usable folder name",
   );
 
+/**
+ * How closely a project's sessions are supervised (RQ-0022).
+ *
+ * A **permission request** is the harness's own tool gating, answerable from the options the agent
+ * itself offered; `hands-off` answers that and only that. An **ask** ([RQ-0016](../../../docs/requirements/rq-0016.md))
+ * is a question needing a person's judgement — renderer-detected message content this setting never
+ * touches, by construction. There is no third level yet; each arrives with its own requirement.
+ */
+export const SupervisionSchema = z.enum(["closest", "hands-off"]);
+
 /** One registered project. The directory is the project; this record is only how we find it again. */
 export const ProjectSchema = z.object({
   id: z.string(),
@@ -97,6 +107,8 @@ export const ProjectSchema = z.object({
   path: AbsolutePathSchema,
   /** ISO-8601 UTC, or `null` for a project that has been added but never opened. */
   lastOpened: z.string().nullable(),
+  /** Absent reads as `closest` — the discipline every session had before this setting existed. */
+  supervision: SupervisionSchema.optional(),
 });
 
 /**
@@ -297,6 +309,17 @@ export const channels = {
   "project:open": {
     request: z.object({ id: z.string() }),
     response: ProjectSnapshotSchema,
+  },
+  /**
+   * Set how closely this project's sessions are supervised (RQ-0022#AC-1).
+   *
+   * Read fresh on every permission request rather than cached at session start, so a change made
+   * mid-session applies from the next request and nothing already answered is revisited (AC-5) — that
+   * reading happens in `sessions.ts`, not here.
+   */
+  "project:set-supervision": {
+    request: z.object({ id: z.string(), level: SupervisionSchema }),
+    response: z.object({ problem: z.string().nullable() }),
   },
   /**
    * Open a live session on a project, with one of the configured harnesses (ST-0009).

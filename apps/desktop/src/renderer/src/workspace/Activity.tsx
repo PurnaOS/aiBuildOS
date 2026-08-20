@@ -20,6 +20,8 @@ interface Permission {
   requestId: string;
   toolCall?: { title?: string };
   options: { optionId: string; name: string; kind?: string }[];
+  /** Set when hands-off supervision answered this one before it ever reached the screen (RQ-0022#AC-3). */
+  automatic?: boolean;
 }
 
 /** The `name` the bridge puts on each custom event. Kept in step with `packages/acp/src/bridge.ts`. */
@@ -39,8 +41,12 @@ export function Activity({ sessionId }: { sessionId: string }): React.JSX.Elemen
 
       const event = payload.event as { type: string; name?: string; value?: unknown };
       if (event.type !== "CUSTOM") {
-        // A turn that ends with a question still open is a question nobody can answer any more.
-        if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR") setPermission(null);
+        // A turn that ends with a *live* request still open is a question nobody can answer any
+        // more; one hands-off already answered is a settled record RQ-0022#AC-3 asks to stay
+        // visible, not something the turn ending should hide.
+        if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR") {
+          setPermission((current) => (current?.automatic ? current : null));
+        }
         return;
       }
 
@@ -75,31 +81,53 @@ export function Activity({ sessionId }: { sessionId: string }): React.JSX.Elemen
       {permission && (
         <div
           data-testid="permission"
-          className="border-b border-neutral-200 bg-amber-50 px-4 py-3 dark:border-neutral-800 dark:bg-amber-950/30"
+          className={`border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 ${
+            permission.automatic
+              ? "bg-neutral-50 dark:bg-neutral-900"
+              : "bg-amber-50 dark:bg-amber-950/30"
+          }`}
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle size={13} className="shrink-0 text-amber-600" aria-hidden />
-            <span className={`${eyebrow} text-amber-700 dark:text-amber-500`}>waiting for you</span>
+            {permission.automatic ? (
+              <Check size={13} className="shrink-0 text-neutral-500" aria-hidden />
+            ) : (
+              <AlertTriangle size={13} className="shrink-0 text-amber-600" aria-hidden />
+            )}
+            <span
+              className={`${eyebrow} ${
+                permission.automatic ? "text-neutral-500" : "text-amber-700 dark:text-amber-500"
+              }`}
+            >
+              {permission.automatic ? "answered automatically" : "waiting for you"}
+            </span>
           </div>
           <p className="mt-1.5 text-sm">
             {permission.toolCall?.title ?? "The agent needs permission."}
           </p>
 
-          {/* One control per option the agent sent, in the agent's own words. Nothing invented. */}
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            {permission.options.map((option, index) => (
-              <button
-                key={option.optionId}
-                type="button"
-                data-testid={`permission-${option.optionId}`}
-                disabled={answering}
-                onClick={() => void answer(option.optionId)}
-                className={`${index === 0 ? primary : button} ${focusRing}`}
-              >
-                {option.name}
-              </button>
-            ))}
-          </div>
+          {permission.automatic ? (
+            // Settled, not a decision left to make — a line, not buttons for a click that already
+            // happened (RQ-0022#AC-3).
+            <p data-testid="permission-automatic" className="mt-2.5 text-xs text-neutral-500">
+              Allowed automatically — hands-off supervision.
+            </p>
+          ) : (
+            // One control per option the agent sent, in the agent's own words. Nothing invented.
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {permission.options.map((option, index) => (
+                <button
+                  key={option.optionId}
+                  type="button"
+                  data-testid={`permission-${option.optionId}`}
+                  disabled={answering}
+                  onClick={() => void answer(option.optionId)}
+                  className={`${index === 0 ? primary : button} ${focusRing}`}
+                >
+                  {option.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

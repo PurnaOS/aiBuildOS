@@ -52,7 +52,14 @@ import {
 import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
 import { fileMenuTarget } from "./menus.js";
 import { seedPlaybooks } from "./playbooks.js";
-import { addProject, loadProjects, markOpened, type Project, removeProject } from "./projects.js";
+import {
+  addProject,
+  loadProjects,
+  markOpened,
+  type Project,
+  removeProject,
+  setSupervision,
+} from "./projects.js";
 import { claimProjectDirectory, fillProject } from "./scaffold.js";
 import { SessionRegistry } from "./sessions.js";
 import { DEFAULTS, readSettings, saveSettings, settingsFile } from "./settings.js";
@@ -442,6 +449,16 @@ function createHandlers(
       return { project, exists: true, git, gitError, ...readRecord(project.path) };
     },
 
+    "project:set-supervision": ({ id, level }) => {
+      requireProject(id); // an unknown id is a renderer bug, not something a user did
+      try {
+        setSupervision(projectFile(), id, level);
+        return { problem: null };
+      } catch (cause) {
+        return { problem: failure(cause).message };
+      }
+    },
+
     "project:record": ({ id }) => {
       const project = requireProject(id);
       const root = join(project.path, "docs");
@@ -750,7 +767,12 @@ function createHandlers(
         const { profile: dialect } = loadProfile(root);
         const type = String((found.frontmatter as { type?: unknown }).type ?? "");
         const definition = dialect.get(type);
-        const create = Object.keys(definition?.links ?? {}).map((rel) => `links.${rel}`);
+        // Declared fields are vouched the same way links are: a manual test case that has never
+        // been walked carries no `last_result` until its first walk writes one (RQ-0023#AC-2).
+        const create = [
+          ...Object.keys(definition?.links ?? {}).map((rel) => `links.${rel}`),
+          ...Object.keys(definition?.fields ?? {}),
+        ];
 
         const before = readFileSync(file, "utf8");
 
@@ -1050,7 +1072,7 @@ function createHandlers(
 
       // The session runs in the project, not in the harness's own working directory: the agent is
       // being asked to work on *this* repository.
-      return await sessions.start(harness, project.path, app.getVersion());
+      return await sessions.start(harness, project.id, project.path, app.getVersion());
     },
 
     "session:prompt": async ({ sessionId, text }) => await sessions.prompt(sessionId, text),
@@ -1094,7 +1116,14 @@ export function registerIpc(
     send: (channel, payload) => sender()?.send(channel, payload),
   });
 
-  const sessions = new SessionRegistry((event, payload) => emitter.emit(event, payload));
+  const sessions = new SessionRegistry(
+    (event, payload) => emitter.emit(event, payload),
+    // Read fresh from disk on every permission request, never cached — a level change applies from
+    // the next request (RQ-0022#AC-5).
+    (projectId) =>
+      loadProjects(projectFile()).find((project) => project.id === projectId)?.supervision ??
+      "closest",
+  );
   createRouter(
     ipcMain,
     createHandlers(sessions, (payload) => emitter.emit("check:output", payload)),
