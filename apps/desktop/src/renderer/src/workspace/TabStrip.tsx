@@ -1,5 +1,6 @@
 import { FileCode2, LayoutGrid, MessageSquare, X } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { getNowBadge, subscribeNowBadge } from "../now/badge.js";
 import { eyebrow, focusRing, mono } from "../ui.js";
 
 /**
@@ -109,6 +110,9 @@ export function useTabs(): Tabs {
 
 export function TabStrip({ tabs, active, close, focus }: Tabs): React.JSX.Element {
   const open = tabs.filter((tab) => !PINNED.has(tab.id)).length;
+  // The Now tab's needs-you count (RQ-0021#AC-3, ST-0038#AC-2): NowTab is the only thing that knows
+  // it, and this label is drawn outside NowTab's own subtree — `now/badge.ts` is the bridge.
+  const needsYou = useSyncExternalStore(subscribeNowBadge, getNowBadge);
   return (
     <div
       data-testid="tab-strip"
@@ -143,6 +147,14 @@ export function TabStrip({ tabs, active, close, focus }: Tabs): React.JSX.Elemen
               <span className={tab.kind === "chat" || tab.kind === "board" ? "" : mono}>
                 {tab.title}
               </span>
+              {tab.kind === "now" && needsYou > 0 && (
+                <span
+                  data-testid="now-badge"
+                  className="rounded-full bg-amber-500 px-1.5 text-[10px] font-medium text-white"
+                >
+                  {needsYou} needs you
+                </span>
+              )}
               {tab.dirty === true && (
                 <span
                   data-testid={`tab-dirty-${tab.id}`}

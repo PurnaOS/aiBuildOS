@@ -1,15 +1,281 @@
+import type { ChannelResponse } from "@aibuildos/ipc";
+import { useEffect, useState } from "react";
+import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
+import { useBump, useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
+import { setNowBadge } from "./badge.js";
+import { deriveNow, emptyMessage, type LiveSession, needsYouCount } from "./now.js";
+
+type Record_ = ChannelResponse<"project:record">;
+type BuildRow = ChannelResponse<"build:list">["builds"][number];
+
+/** The `name` a permission `CUSTOM` event carries (matches `Activity.tsx`'s own local copy — the
+ * bridge's vocabulary is main-only, DC-0017, so both keep their own name for the one event a
+ * renderer component needs to recognise). */
+const PERMISSION = "acp.permission";
+
+interface Permission {
+  requestId: string;
+  toolCall?: { title?: string };
+  options: { optionId: string; name: string; kind?: string }[];
+}
+
+/** RQ-0021's stated ceiling — a number to raise deliberately, not one discovered under load. */
+const CONCURRENCY_CAP = 3;
 
 /**
  * Now: every running build, live, and what waits on a person (RQ-0021, ST-0038).
  *
- * A placeholder until ST-0038 lands — pinned and wired now so the lane building it never edits
- * the shared files.
+ * Pinned, so it is always mounted — which is also why the turn-end half of the build/review walk for
+ * a *worktree* build lives here rather than in `useTurnEnd.ts` (Workspace.tsx, off-limits): that hook
+ * watches only the main chat session, and a build session's stream never reaches it. This subscribes
+ * to `session:event` for every session `build:list` names and flips only the one story a finished
+ * session belongs to — never every `building` story at once, the way `turnEndWalk` does, because with
+ * several builds running side by side (RQ-0021#AC-1) that would flip one still mid-turn.
  */
-export function NowTab(_props: {
+export function NowTab({
+  projectId,
+  onOpen,
+}: {
   projectId: string;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
   onPrompt: (text: string) => void;
 }): React.JSX.Element {
-  return <p className="p-6 text-sm text-neutral-500">Nothing is building right now.</p>;
+  const revision = useRevision();
+  const bump = useBump();
+  const [builds, setBuilds] = useState<BuildRow[]>([]);
+  const [record, setRecord] = useState<Record_ | null>(null);
+  const [sessions, setSessions] = useState<Map<string, Omit<LiveSession, "waiting">>>(new Map());
+  const [permissions, setPermissions] = useState<Map<string, Permission>>(new Map());
+  const [cancelled, setCancelled] = useState<Set<string>>(new Set());
+  const [answering, setAnswering] = useState<string | null>(null);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision is a trigger, not a read
+  useEffect(() => {
+    let live = true;
+    void Promise.all([
+      window.aibuildos.invoke("build:list", { projectId }),
+      window.aibuildos.invoke("project:record", { id: projectId }),
+    ]).then(([nextBuilds, nextRecord]) => {
+      if (!live) return;
+      setBuilds(nextBuilds.builds);
+      setRecord(nextRecord);
+    });
+    return () => {
+      live = false;
+    };
+  }, [projectId, revision]);
+
+  useEffect(() => {
+    return window.aibuildos.subscribe("session:event", (payload) => {
+      const event = payload.event as { type: string; name?: string; value?: unknown };
+      const activity = event.type === "CUSTOM" ? (event.name ?? "CUSTOM") : event.type;
+
+      setSessions((current) => {
+        const next = new Map(current);
+        const existing = next.get(payload.sessionId) ?? { state: null, activity: null };
+        next.set(payload.sessionId, { ...existing, activity });
+        return next;
+      });
+
+      if (event.type === "CUSTOM" && event.name === PERMISSION) {
+        const value = event.value as Permission & { automatic?: boolean };
+        setPermissions((current) => {
+          const next = new Map(current);
+          if (value.automatic) next.delete(payload.sessionId);
+          else next.set(payload.sessionId, value);
+          return next;
+        });
+      }
+
+      if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR") {
+        // A turn that ends with a request still open is nobody's to answer any more.
+        setPermissions((current) => {
+          if (!current.has(payload.sessionId)) return current;
+          const next = new Map(current);
+          next.delete(payload.sessionId);
+          return next;
+        });
+
+        // Resolved fresh from the registry, not from the last `build:list` this component happened
+        // to have loaded: a worktree build's very first turn can finish before that snapshot (a
+        // git-backed `build:list` plus a full record walk) has even resolved, and `session:list` is
+        // an in-memory read with no such race. `storyId` is `null` for the main chat session, which
+        // correctly no-ops below rather than flipping anything.
+        void window.aibuildos
+          .invoke("session:list", {})
+          .then(
+            (result) =>
+              result.sessions.find((row) => row.sessionId === payload.sessionId)?.storyId ?? null,
+          )
+          .then((storyId) => {
+            if (storyId === null) return { problem: null as string | null };
+            return window.aibuildos
+              .invoke("project:artifact", { id: projectId, artifactId: storyId })
+              .then((artifact) => {
+                const state = String((artifact.frontmatter as { state?: unknown }).state ?? "");
+                if (state !== "building") return { problem: null as string | null };
+                return window.aibuildos.invoke("project:artifact-save", {
+                  id: projectId,
+                  artifactId: storyId,
+                  frontmatter: { state: "review" },
+                });
+              });
+          })
+          .then((result) => {
+            if (result.problem === null) bump();
+          })
+          .catch(() => undefined);
+      }
+    });
+  }, [projectId, bump]);
+
+  useEffect(() => {
+    return window.aibuildos.subscribe("session:state", (payload) => {
+      setSessions((current) => {
+        const next = new Map(current);
+        const existing = next.get(payload.sessionId) ?? { state: null, activity: null };
+        next.set(payload.sessionId, { ...existing, state: payload.state });
+        return next;
+      });
+    });
+  }, []);
+
+  const withWaiting = new Map(
+    [...sessions.entries()].map(([id, info]) => [id, { ...info, waiting: permissions.has(id) }]),
+  );
+  const rows = deriveNow(
+    builds,
+    withWaiting,
+    (id) => record?.artifacts?.find((a) => a.id === id)?.title ?? id,
+  ).map((row) =>
+    row.sessionId !== null && cancelled.has(row.sessionId) ? { ...row, state: "cancelled" } : row,
+  );
+  const needsYou = needsYouCount(rows);
+
+  useEffect(() => {
+    setNowBadge(needsYou);
+  }, [needsYou]);
+  // Only on unmount — a badge reset on every render would fight the effect above every commit.
+  useEffect(() => () => setNowBadge(0), []);
+
+  const cancel = async (sessionId: string): Promise<void> => {
+    setCancelled((current) => new Set(current).add(sessionId));
+    await window.aibuildos.invoke("session:cancel", { sessionId });
+  };
+
+  const answer = async (
+    sessionId: string,
+    requestId: string,
+    optionId: string | null,
+  ): Promise<void> => {
+    setAnswering(sessionId);
+    try {
+      await window.aibuildos.invoke("session:permission", { sessionId, requestId, optionId });
+    } finally {
+      setAnswering(null);
+    }
+  };
+
+  return (
+    <div data-testid="now-tab" className="flex h-full min-h-0 flex-col overflow-auto p-4">
+      <p className={eyebrow}>Up to {CONCURRENCY_CAP} builds run at once</p>
+
+      {rows.length === 0 ? (
+        <p data-testid="now-empty" className="mt-3 text-sm text-neutral-500">
+          {emptyMessage(record?.artifacts ?? [])}
+        </p>
+      ) : (
+        <div className="mt-3 flex flex-col gap-2">
+          {rows.map((row) => {
+            const permission = row.sessionId === null ? undefined : permissions.get(row.sessionId);
+            return (
+              <div
+                key={row.storyId}
+                data-testid={`now-row-${row.storyId}`}
+                className="rounded border border-neutral-200 p-3 dark:border-neutral-800"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className={`${mono} text-xs text-neutral-500`}>{row.storyId}</p>
+                    <p className="text-sm font-medium">{row.title}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      data-testid={`now-row-state-${row.storyId}`}
+                      className={`text-xs ${row.needsYou ? "text-amber-600 dark:text-amber-500" : "text-neutral-500"}`}
+                    >
+                      {row.state}
+                    </span>
+                    {row.sessionId !== null && (
+                      <button
+                        type="button"
+                        data-testid={`now-row-open-${row.storyId}`}
+                        onClick={() =>
+                          onOpen(
+                            { id: `session:${row.sessionId}`, kind: "session", title: row.storyId },
+                            { preview: false },
+                          )
+                        }
+                        className={`${button} ${focusRing} text-xs`}
+                      >
+                        Open
+                      </button>
+                    )}
+                    {row.sessionId !== null && (
+                      <button
+                        type="button"
+                        data-testid={`now-row-cancel-${row.storyId}`}
+                        onClick={() => void cancel(row.sessionId as string)}
+                        className={`${button} ${focusRing} text-xs`}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {row.activity !== null && (
+                  <p
+                    data-testid={`now-row-activity-${row.storyId}`}
+                    className="mt-1.5 text-xs text-neutral-500"
+                  >
+                    {row.activity}
+                  </p>
+                )}
+
+                {permission !== undefined && row.sessionId !== null && (
+                  <div data-testid={`now-row-waiting-${row.storyId}`} className="mt-2">
+                    <p className="text-xs text-amber-700 dark:text-amber-500">
+                      {permission.toolCall?.title ?? "The agent needs permission."}
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {permission.options.map((option, index) => (
+                        <button
+                          key={option.optionId}
+                          type="button"
+                          data-testid={`now-row-answer-${row.storyId}-${option.optionId}`}
+                          disabled={answering === row.sessionId}
+                          onClick={() =>
+                            void answer(
+                              row.sessionId as string,
+                              permission.requestId,
+                              option.optionId,
+                            )
+                          }
+                          className={`${index === 0 ? primary : button} ${focusRing} text-xs`}
+                        >
+                          {option.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
