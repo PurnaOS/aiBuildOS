@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULTS, loadSettings, saveSettings, settingsFile } from "./settings.js";
+import { DEFAULTS, loadSettings, readSettings, saveSettings, settingsFile } from "./settings.js";
 
 /**
  * TC-0032's other half: the store itself, on Node, with no Electron.
@@ -36,11 +36,22 @@ describe("the settings store", () => {
     }
   });
 
-  it("does not overwrite a file it could not read", () => {
-    // Reads treat a broken file as empty; writes must not. Someone's mistake is recoverable until
-    // something deliberately saves over it.
+  it("tells an absent file apart from one it cannot use", () => {
+    // Both end up following the system, but only one is worth saying anything about: a stray comma
+    // that silently reverts a saved choice is how someone concludes the setting does not work.
+    expect(readSettings(join(dir, "absent.json"))).toEqual(DEFAULTS);
+
+    writeFileSync(file, "not json at all", "utf8");
+    expect(readSettings(file)).toBeNull();
+    expect(loadSettings(file)).toEqual(DEFAULTS);
+  });
+
+  it("leaves a file it could not read exactly as it was", () => {
+    // Reading is not writing. The mistake stays recoverable until something deliberately saves over
+    // it — which a click in Settings is, and this does not pretend otherwise.
     writeFileSync(file, "not json at all", "utf8");
     loadSettings(file);
+    readSettings(file);
 
     expect(readFileSync(file, "utf8")).toBe("not json at all");
   });

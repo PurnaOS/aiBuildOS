@@ -587,7 +587,12 @@ export const channels = {
    */
   "settings:get": {
     request: z.object({}),
-    response: SettingsSchema,
+    response: z.object({
+      /** What is **in force**, which is the platform's own value rather than what is on disk. */
+      appearance: AppearanceSchema,
+      /** Set when a settings file exists but cannot be used, so the fallback is not silent. */
+      problem: z.string().nullable(),
+    }),
   },
   "settings:set-appearance": {
     request: z.object({ appearance: AppearanceSchema }),

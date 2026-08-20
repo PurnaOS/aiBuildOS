@@ -71,6 +71,12 @@ test("chooses an appearance, and keeps it across a restart", async () => {
   expect(await root.getAttribute("class")).toBe(null);
   expect(await root.getAttribute("data-theme")).toBe(null);
 
+  // Following the system means deferring to it, which is a statement about the platform rather than
+  // about any one colour: with `system` chosen there is no override in place for the desktop to lose
+  // to (RQ-0007#AC-5).
+  await w.getByTestId("appearance-system").click();
+  expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("system");
+
   await w.getByTestId("appearance-dark").click();
   await expect(sidebar).toHaveCSS("border-right-color", DARK_BORDER);
   await app.close();

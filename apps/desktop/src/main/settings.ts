@@ -23,14 +23,36 @@ export type Appearance = ReturnType<typeof AppearanceSchema.parse>;
 /** Following the system is what a fresh installation does, and what an unreadable file falls back to. */
 export const DEFAULTS: Settings = { appearance: "system" };
 
-export function loadSettings(file: string): Settings {
+/**
+ * The settings as the file has them: `DEFAULTS` when there is no file, and **`null`** when there is
+ * one that cannot be used.
+ *
+ * The two are told apart on purpose, exactly as the harness store tells them apart. A fresh install
+ * and someone's stray comma both end up following the system, but only one of them is worth saying
+ * anything about — and silently reverting a saved choice with nothing on screen is how a person
+ * concludes the setting does not work.
+ */
+export function readSettings(file: string): Settings | null {
+  let raw: string;
   try {
-    return SettingsSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+    raw = readFileSync(file, "utf8");
   } catch {
-    // Absent is a fresh install; unreadable is someone's broken edit. Neither is worth refusing to
-    // start over, and neither is worth overwriting until something is deliberately saved.
     return DEFAULTS;
   }
+
+  try {
+    return SettingsSchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The settings, whatever the file says. Never throws: an application that will not start because of
+ * one bad character in a file nobody remembers editing is worse than one that ignores it.
+ */
+export function loadSettings(file: string): Settings {
+  return readSettings(file) ?? DEFAULTS;
 }
 
 export function saveSettings(file: string, settings: Settings): Settings {

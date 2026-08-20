@@ -28,7 +28,11 @@ export function AppearancePanel(): React.JSX.Element {
     void window.aibuildos
       .invoke("settings:get", {})
       .then((settings) => {
-        if (live) setAppearance(settings.appearance);
+        if (!live) return;
+        setAppearance(settings.appearance);
+        // A settings file that exists and cannot be used reverts a saved choice; saying nothing is
+        // how someone concludes the setting does not work.
+        setProblem(settings.problem);
       })
       .catch((cause: unknown) => {
         if (!live) return;

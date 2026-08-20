@@ -46,7 +46,7 @@ import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
 import { addProject, loadProjects, markOpened, type Project, removeProject } from "./projects.js";
 import { claimProjectDirectory, fillProject } from "./scaffold.js";
 import { SessionRegistry } from "./sessions.js";
-import { loadSettings, saveSettings, settingsFile } from "./settings.js";
+import { readSettings, saveSettings, settingsFile } from "./settings.js";
 
 /**
  * Bind the IPC contract to Electron's ipcMain.
@@ -853,7 +853,19 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       }
     },
 
-    "settings:get": () => loadSettings(settingsFile(app.getPath("userData"))),
+    "settings:get": () => {
+      const stored = readSettings(settingsFile(app.getPath("userData")));
+      return {
+        // What is in force, not what was persisted. The two can disagree — the appearance is applied
+        // before it is written, so a failed write leaves the window changed and the file behind — and
+        // a panel that reported the file would then show the wrong choice as current.
+        appearance: nativeTheme.themeSource,
+        problem:
+          stored === null
+            ? "Your settings file could not be read, so the appearance below is not what it says."
+            : null,
+      };
+    },
 
     "settings:set-appearance": ({ appearance }) => {
       // Applied before it is written, so a disk that will not take the setting is a failure to
