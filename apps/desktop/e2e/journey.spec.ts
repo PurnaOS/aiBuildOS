@@ -135,14 +135,21 @@ test("an idea picked on the board is planned, approved, built and accepted", asy
     timeout: 30000,
   });
 
-  // Accept what came back, beside what was asked for.
+  // Accept what came back, beside what was asked for — the checks section stands beside the
+  // criteria (RQ-0019#AC-4; the template's placeholder playbook is enough for it to exist).
   await w.getByTestId("board-card-review-ST-0001").click();
   await expect(w.getByTestId("review-tab")).toBeVisible();
+  await expect(w.getByTestId("checks")).toBeVisible();
   await expect(w.getByTestId("review-diffs")).toContainText("notes.md");
   await w.getByTestId("review-accept").click();
   await expect
     .poll(() => readFileSync(join(work, "docs/user-stories/st-0001.md"), "utf8"))
     .toContain("state: accepted");
+
+  // Accept offers a commit and declining it commits nothing (RQ-0018#AC-4, AC-5).
+  await expect(w.getByTestId("review-commit-offer")).toBeVisible();
+  await w.getByTestId("review-commit-decline").click();
+  await expect(w.getByTestId("review-commit-offer")).toHaveCount(0);
 
   // The record the loop leaves behind is one docs:check accepts, and Git holds only the seed.
   expect(() => execFileSync("bun", [okfCli, "docs"], { cwd: work })).not.toThrow();

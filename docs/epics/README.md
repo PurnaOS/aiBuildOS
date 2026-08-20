@@ -14,6 +14,6 @@ back to [docs/README.md](../README.md)
 | [EP-0004](ep-0004.md) | The project workspace | done | [RQ-0004](../requirements/rq-0004.md), [RQ-0005](../requirements/rq-0005.md), [RQ-0006](../requirements/rq-0006.md) |
 | [EP-0005](ep-0005.md) | The record runs the process | done | [RQ-0010](../requirements/rq-0010.md), [RQ-0011](../requirements/rq-0011.md), [RQ-0012](../requirements/rq-0012.md) |
 | [EP-0006](ep-0006.md) | The loop: pick, plan, build, accept | done | [RQ-0013](../requirements/rq-0013.md), [RQ-0014](../requirements/rq-0014.md), [RQ-0015](../requirements/rq-0015.md) |
-| [EP-0007](ep-0007.md) | The conversation asks and listens | active | [RQ-0016](../requirements/rq-0016.md), [RQ-0017](../requirements/rq-0017.md) |
-| [EP-0008](ep-0008.md) | Proving it works | active | [RQ-0019](../requirements/rq-0019.md) |
-| [EP-0009](ep-0009.md) | Work lands, and scales out | active | [RQ-0018](../requirements/rq-0018.md) |
+| [EP-0007](ep-0007.md) | The conversation asks and listens | active | [RQ-0016](../requirements/rq-0016.md), [RQ-0017](../requirements/rq-0017.md), [RQ-0022](../requirements/rq-0022.md) |
+| [EP-0008](ep-0008.md) | Proving it works | active | [RQ-0019](../requirements/rq-0019.md), [RQ-0023](../requirements/rq-0023.md), [RQ-0025](../requirements/rq-0025.md) |
+| [EP-0009](ep-0009.md) | Work lands, and scales out | active | [RQ-0018](../requirements/rq-0018.md), [RQ-0020](../requirements/rq-0020.md), [RQ-0021](../requirements/rq-0021.md) |
