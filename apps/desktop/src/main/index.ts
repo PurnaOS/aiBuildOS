@@ -5,6 +5,7 @@ import { registerIpc } from "./ipc.js";
 import { commandTarget, installMenu } from "./menu.js";
 import { killPreviews } from "./previews.js";
 import { loadSettings, settingsFile } from "./settings.js";
+import { stopAllWatching } from "./watch.js";
 
 /**
  * Electron main. Runs on Electron's bundled Node, never on Bun (AR-0001, DC-0002).
@@ -68,6 +69,7 @@ void app.whenReady().then(() => {
   app.on("before-quit", () => {
     void sessions.closeAll();
     killChecks();
+    stopAllWatching();
     killPreviews();
   });
 

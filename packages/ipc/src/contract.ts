@@ -623,6 +623,14 @@ export const channels = {
     response: z.object({ problem: z.string().nullable() }),
   },
   /**
+   * Close an open project: stops its watcher (RQ-0026#AC-7). The renderer's view state is its
+   * own; this is the main-process half of "nobody has it open any more".
+   */
+  "project:close": {
+    request: z.object({ id: z.string() }),
+    response: z.void(),
+  },
+  /**
    * Seed the standard playbooks into a project that has none (RQ-0013#AC-4, DC-0019).
    *
    * The template ships with the application, so writing it is main's job; the renderer only asks.
@@ -870,6 +878,9 @@ export const events = {
    * guess at them; what a command *means* is the renderer's, because only it knows what is on screen.
    */
   "app:command": z.object({ command: z.enum(["save", "toggle-sidebar"]) }),
+  /** The open project's files moved — whoever wrote them (RQ-0026, DC-0022). One debounced
+   * event per burst; the renderer's answer is one bump. */
+  "project:changed": z.object({ projectId: z.string() }),
   /** One chunk of a running check command's output, as it arrives (RQ-0019#AC-2). */
   "check:output": z.object({
     projectId: z.string(),

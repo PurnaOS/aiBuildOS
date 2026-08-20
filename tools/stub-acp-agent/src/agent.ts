@@ -22,6 +22,7 @@
  *   --mode=question       asks one fenced aibuildos-question, then echoes the answer back
  *   --mode=interview      two scripted questions, then writes one draft requirement
  *   --mode=journey        first prompt plans like plan-writer, later prompts build like file-writer
+ *   --mode=exec-streamer  one execute tool call whose output streams in chunks before it ends
  *
  * The last four exist because a live agent does far more than stream text, and a stub that only
  * streams text can only test streaming text.
@@ -52,7 +53,8 @@ type Mode =
   | "file-writer"
   | "question"
   | "interview"
-  | "journey";
+  | "journey"
+  | "exec-streamer";
 
 interface Message {
   jsonrpc: "2.0";
@@ -356,6 +358,41 @@ function interviewTurn(): string {
 /** How many prompts the journey has seen: the first plans, the rest build. */
 let journeyTurns = 0;
 
+/**
+ * One execute tool call whose output arrives in streamed chunks (RQ-0031): the command in the
+ * call's raw input, four content updates spaced out enough for a test to observe streaming, a
+ * completed result carrying the raw output — the exact wire shape a terminal card must read.
+ */
+async function execStreamerTurn(): Promise<string> {
+  update({
+    sessionUpdate: "tool_call",
+    toolCallId: "exec-1",
+    title: "Run the tests",
+    kind: "execute",
+    status: "in_progress",
+    rawInput: { command: "bun run test" },
+  });
+  const chunks = ["line one\n", "line two\n", "line three\n", "line four\n"];
+  for (const [index, text] of chunks.entries()) {
+    await sleep(120);
+    update({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "exec-1",
+      status: "in_progress",
+      content: [{ type: "content", content: { type: "text", text } }],
+    });
+    if (index === 1 && cancelled) break;
+  }
+  update({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "exec-1",
+    status: "completed",
+    rawOutput: { exitCode: 0, output: chunks.join("") },
+  });
+  chunk("Ran the tests.");
+  return "end_turn";
+}
+
 /** One scripted file change per turn — the smallest thing a build produces. */
 let buildTurns = 0;
 function fileWriterTurn(): string {
@@ -526,7 +563,8 @@ async function handle(line: string): Promise<void> {
         mode === "file-writer" ||
         mode === "question" ||
         mode === "interview" ||
-        mode === "journey"
+        mode === "journey" ||
+        mode === "exec-streamer"
       ) {
         const blocks = (message.params as { prompt?: { type?: string; text?: string }[] })?.prompt;
         const text = (blocks ?? []).map((block) => block.text ?? "").join("");
@@ -540,9 +578,11 @@ async function handle(line: string): Promise<void> {
                 ? questionTurn(text)
                 : mode === "interview"
                   ? interviewTurn()
-                  : journeyTurns === 1
-                    ? planWriterTurn(text)
-                    : fileWriterTurn();
+                  : mode === "exec-streamer"
+                    ? await execStreamerTurn()
+                    : journeyTurns === 1
+                      ? planWriterTurn(text)
+                      : fileWriterTurn();
       } else chunk("ok");
 
       respond(message.id, { stopReason });
