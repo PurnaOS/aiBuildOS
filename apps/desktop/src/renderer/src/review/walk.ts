@@ -72,8 +72,13 @@ export interface RecordEntry {
 export async function turnEndWalk(
   save: Save,
   artifacts: readonly RecordEntry[],
+  exclude: ReadonlySet<string> = new Set(),
 ): Promise<string[]> {
-  const building = artifacts.filter((a) => a.type === "Story" && a.state === "building");
+  // `exclude` is the worktree builds' stories (RQ-0020): each of those flips when its *own*
+  // session's turn ends — the main conversation ending a turn must not flip a sibling mid-build.
+  const building = artifacts.filter(
+    (a) => a.type === "Story" && a.state === "building" && !exclude.has(a.id.toUpperCase()),
+  );
   const flipped: string[] = [];
   for (const story of building) {
     const result = await save(story.id, { state: "review" });

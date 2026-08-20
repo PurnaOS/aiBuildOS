@@ -28,6 +28,9 @@ interface Held {
   readonly session: AgentSession;
   /** Which project this session belongs to — what the supervision level is read against. */
   readonly projectId: string;
+  /** The story this is a build session for; `null` for the workspace's own conversation
+   * (RQ-0021 — what `session:list` and the concurrency cap distinguish on). */
+  readonly storyId: string | null;
   /** Permission requests this session is waiting on, by the id we gave them. */
   readonly pending: Map<string, (optionId: string | null) => void>;
   /**
@@ -37,6 +40,13 @@ interface Held {
    * has mounted to hear it. Events carry the changes; this carries the starting point.
    */
   controls: Controls;
+}
+
+/** One row of `session:list` (RQ-0021) — what the Now surface derives from. */
+export interface SessionRow {
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly storyId: string | null;
 }
 
 export interface Controls {
@@ -50,7 +60,14 @@ export type StartResult =
   | { ok: false; code: string; message: string; authMethods: { id: string; name: string }[] };
 
 export class SessionRegistry {
+  /** See `start`: the registry keys sessions itself, because agent ids collide across processes. */
+  private static minted = 1;
+
   private readonly held = new Map<string, Held>();
+  /** Listeners for one session's turn ending, keyed by session id (RQ-0020#AC-3) — how a build
+   * session's checkpoint gets wired without `builds.ts` holding a `session:event` subscription of
+   * its own; main has no event bus a second module could listen on except what this offers. */
+  private readonly turnEndListeners = new Map<string, Set<() => void>>();
 
   constructor(
     private readonly emit: Emit,
@@ -67,6 +84,8 @@ export class SessionRegistry {
     projectId: string,
     cwd: string,
     clientVersion: string,
+    /** Set only for a build session (RQ-0020); `null` for the workspace's own conversation. */
+    storyId: string | null = null,
   ): Promise<StartResult> {
     // The id the pending map is keyed by has to exist before the session does, because the agent can
     // ask for permission during the very first turn.
@@ -89,17 +108,29 @@ export class SessionRegistry {
               sessionId,
               event: event as unknown as { type: string },
             });
+            // A turn's end, for whoever registered to hear it (builds.ts's checkpoint). Cancelled
+            // included: DC-0021 checkpoints "each turn's end", and a cancelled turn still ends one —
+            // only a genuine protocol failure never reaches `runFinished` at all.
+            const type = (event as unknown as { type?: string }).type;
+            if (type === "RUN_FINISHED" || type === "RUN_ERROR") {
+              for (const listener of this.turnEndListeners.get(sessionId) ?? []) listener();
+            }
           },
           onPermission: (request) => this.ask(() => sessionId, pending, projectId, request),
         },
       );
 
-      sessionId = session.sessionId;
+      // The registry's own key, never the agent's: an ACP session id is unique only within one
+      // agent process, and two builds running two stubs proved two processes can answer with the
+      // same one — the second registration silently clobbering the first (RQ-0021#AC-1). The
+      // `AgentSession` keeps speaking ACP with the agent's id; everything on this side of the
+      // boundary — the held map, events, turn-end listeners — speaks this one.
+      sessionId = `s${SessionRegistry.minted++}-${session.sessionId}`;
       controls.modeId ??= session.offered.modes?.currentModeId ?? null;
       if (controls.configOptions.length === 0) {
         controls.configOptions = (session.offered.configOptions ?? []) as { id: string }[];
       }
-      this.held.set(sessionId, { session, projectId, pending, controls });
+      this.held.set(sessionId, { session, projectId, storyId, pending, controls });
       this.emit("session:state", { sessionId, state: "ready", error: null });
 
       return {
@@ -162,6 +193,39 @@ export class SessionRegistry {
     return this.require(sessionId).controls;
   }
 
+  /** Every live session, for `session:list` (RQ-0021) and for `builds.ts`'s concurrency cap — the
+   * registry is the one place that knows about every session, build or not. */
+  list(): SessionRow[] {
+    return [...this.held.entries()].map(([sessionId, held]) => ({
+      sessionId,
+      projectId: held.projectId,
+      storyId: held.storyId,
+    }));
+  }
+
+  /** Hear this session's turns end (RQ-0020#AC-3). Returns the unsubscribe; `close()` also clears
+   * every listener for a session that is gone, so a caller that forgets to call it back is not a
+   * leak. */
+  onTurnEnd(sessionId: string, listener: () => void): () => void {
+    const listeners = this.turnEndListeners.get(sessionId) ?? new Set();
+    listeners.add(listener);
+    this.turnEndListeners.set(sessionId, listeners);
+    return () => listeners.delete(listener);
+  }
+
+  /**
+   * Push a `CUSTOM` event into a session's own stream, in the same envelope a permission question
+   * uses — for narration that originates outside the agent itself, such as a checkpoint's hook
+   * rejection (RQ-0020#AC-3). The wire's `BuildRow` carries no field for prose like this; the
+   * session's own event stream is where it can actually be said.
+   */
+  noteCustom(sessionId: string, name: string, value: unknown): void {
+    this.emit("session:event", {
+      sessionId,
+      event: { type: EventType.CUSTOM, name, value } as unknown as { type: string },
+    });
+  }
+
   async setMode(sessionId: string, modeId: string): Promise<void> {
     await this.require(sessionId).session.setMode(modeId);
   }
@@ -190,6 +254,7 @@ export class SessionRegistry {
     if (!held) return;
 
     this.held.delete(sessionId);
+    this.turnEndListeners.delete(sessionId);
     for (const [, answer] of held.pending) answer(null);
     await held.session.close();
     this.emit("session:state", { sessionId, state: "closed", error: null });

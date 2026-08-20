@@ -19,9 +19,13 @@ export function useTurnEnd(projectId: string, sessionId: string | null, bump: ()
       const type = (payload.event as { type: string }).type;
       if (type !== "RUN_FINISHED" && type !== "RUN_ERROR") return;
 
-      void window.aibuildos
-        .invoke("project:record", { id: projectId })
-        .then(async (record) => {
+      void Promise.all([
+        window.aibuildos.invoke("project:record", { id: projectId }),
+        window.aibuildos.invoke("build:list", { projectId }),
+      ])
+        .then(async ([record, builds]) => {
+          // A worktree build's story flips when its own session's turn ends (NowTab owns that);
+          // the main conversation ending a turn must not flip a sibling still mid-build.
           const flipped = await turnEndWalk(
             (artifactId, frontmatter) =>
               window.aibuildos.invoke("project:artifact-save", {
@@ -30,6 +34,7 @@ export function useTurnEnd(projectId: string, sessionId: string | null, bump: ()
                 frontmatter,
               }),
             record.artifacts ?? [],
+            new Set(builds.builds.map((build) => build.storyId.toUpperCase())),
           );
           if (flipped.length > 0) bump();
         })

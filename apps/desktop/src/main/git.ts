@@ -352,3 +352,96 @@ export async function commitStaged(cwd: string, message: string): Promise<string
   await git(cwd, "commit", "-m", message);
   return (await git(cwd, "rev-parse", "HEAD")).trim();
 }
+
+/**
+ * Worktree verbs (RQ-0020, DC-0021): the branch is the binding, `git worktree list` is the
+ * enumeration, and every operation here is exactly what a person would type — no second
+ * implementation of what a worktree is.
+ *
+ * `list`/`prune` are reads, run with the same `core.fsmonitor` carve-out as `status`/`log`: they run
+ * on every `build:list`, the same read-heavy path those already sit on. `add`/`remove` and the merge
+ * verbs are writes, for the same reason `commitAll` is: they run under the user's own hooks and
+ * signing, and forcing `fsmonitor` off for them would be forcing it off for a write DC-0010 never
+ * asked to touch.
+ */
+export interface Worktree {
+  readonly path: string;
+  /** `null` for a detached worktree — not one this application ever creates, but Git's own state
+   * can hold one, and pretending otherwise would misreport it as `aibuildos/undefined`. */
+  readonly branch: string | null;
+}
+
+/** Every worktree `git worktree list --porcelain` reports, branch names stripped of `refs/heads/`. */
+export async function worktreeList(projectPath: string): Promise<Worktree[]> {
+  const stdout = await readGit(projectPath, "worktree", "list", "--porcelain");
+
+  const worktrees: Worktree[] = [];
+  let current: { path?: string; branch?: string } = {};
+  const flush = (): void => {
+    if (current.path !== undefined)
+      worktrees.push({ path: current.path, branch: current.branch ?? null });
+    current = {};
+  };
+
+  for (const line of stdout.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      flush();
+      current.path = line.slice("worktree ".length);
+    } else if (line.startsWith("branch ")) {
+      const ref = line.slice("branch ".length);
+      current.branch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
+    }
+    // `HEAD <sha>`, `detached`, `locked`, `prunable` — nothing downstream needs them.
+  }
+  flush();
+
+  return worktrees;
+}
+
+/** A worktree for a fresh branch `-b <branch>`, from `projectPath`'s current `HEAD` (DC-0021). */
+export async function worktreeAdd(
+  projectPath: string,
+  worktreePath: string,
+  branch: string,
+): Promise<void> {
+  await git(projectPath, "worktree", "add", "-b", branch, worktreePath, "HEAD");
+}
+
+/** Removes the worktree's administrative entry and, unless `force`, refuses if it is dirty. */
+export async function worktreeRemove(
+  projectPath: string,
+  worktreePath: string,
+  force = false,
+): Promise<void> {
+  await git(projectPath, "worktree", "remove", ...(force ? ["--force"] : []), worktreePath);
+}
+
+/** Clears the administrative entry for a worktree directory deleted by hand (TC-0066 step 5). */
+export async function worktreePrune(projectPath: string): Promise<void> {
+  await git(projectPath, "worktree", "prune");
+}
+
+/** `--no-ff`: the accept press is the person's commit, and history should say a merge happened
+ * rather than fast-forwarding it away (DC-0021). Throws `GitError` on conflict; main is left as
+ * Git left it — the caller is what runs `merge --abort`. */
+export async function mergeBranch(
+  projectPath: string,
+  branch: string,
+  message: string,
+): Promise<void> {
+  await git(projectPath, "merge", "--no-ff", branch, "-m", message);
+}
+
+/** Leaves main clean after a conflicting merge. Failing here (nothing to abort) is not this
+ * caller's problem — main was never touched by a merge that never landed. */
+export async function mergeAbort(projectPath: string): Promise<void> {
+  await git(projectPath, "merge", "--abort");
+}
+
+export async function deleteBranch(
+  projectPath: string,
+  branch: string,
+  force = false,
+): Promise<void> {
+  await git(projectPath, "branch", force ? "-D" : "-d", branch);
+}

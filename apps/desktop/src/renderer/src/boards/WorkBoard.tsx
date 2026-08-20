@@ -1,5 +1,6 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
 import { useCallback, useEffect, useState } from "react";
+import { useHarnesses } from "../harness/HarnessPanel.js";
 import { buildWalk } from "../review/walk.js";
 import { button, card, eyebrow, focusRing, mono } from "../ui.js";
 import { useBump, useRevision } from "../workspace/revision.js";
@@ -44,6 +45,7 @@ export function WorkBoard({
 }): React.JSX.Element {
   const revision = useRevision();
   const bump = useBump();
+  const { harnesses } = useHarnesses();
   const [record, setRecord] = useState<Record_ | null>(null);
   const [vocabulary, setVocabulary] = useState<string[]>([]);
   const [showRetired, setShowRetired] = useState(false);
@@ -52,6 +54,9 @@ export function WorkBoard({
   /** Stories with a build walk in flight, so the button reads "Building…" and cannot be pressed
    * twice into the same two guarded saves. */
   const [building, setBuilding] = useState<Set<string>>(new Set());
+  /** Stories starting a worktree build (RQ-0020) — a separate flag from `building` because the two
+   * buttons must not race each other into the same story's guarded saves. */
+  const [buildingWorktree, setBuildingWorktree] = useState<Set<string>>(new Set());
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the revision is a trigger, not a read
   useEffect(() => {
@@ -152,6 +157,91 @@ export function WorkBoard({
     [projectId, bump, onPrompt, record],
   );
 
+  /**
+   * Build in a worktree (RQ-0020#AC-1): `build:start` creates the worktree and the session before
+   * anything in the record moves, so a story implementing no requirement — the one thing that can
+   * still refuse the walk below — never leaves a worktree and a session orphaned behind it. Only
+   * once the session exists does the walk run and the composed prompt go straight to it, never
+   * through `onPrompt` — the worktree session's own stream is where its conversation lives
+   * (ST-0037), not the main transcript.
+   */
+  const startWorktreeBuild = useCallback(
+    async (storyId: string, harnessId: string) => {
+      if (building.has(storyId) || buildingWorktree.has(storyId)) return;
+      const titleOf = (id: string): string =>
+        record?.artifacts?.find((a) => a.id === id)?.title ?? id;
+
+      setBuildingWorktree((current) => new Set(current).add(storyId));
+      setProblems((current) => {
+        const next = { ...current };
+        delete next[storyId];
+        return next;
+      });
+      try {
+        const [story, playbook] = await Promise.all([
+          window.aibuildos.invoke("project:artifact", { id: projectId, artifactId: storyId }),
+          window.aibuildos.invoke("project:artifact", { id: projectId, artifactId: PLAYBOOK_ID }),
+        ]);
+        const requirementId = story.links.find((link) => link.relationship === "implements")
+          ?.current[0];
+        if (requirementId === undefined) {
+          setProblems((current) => ({
+            ...current,
+            [storyId]: "This story implements no requirement.",
+          }));
+          return;
+        }
+
+        const started = await window.aibuildos.invoke("build:start", {
+          projectId,
+          storyId,
+          harnessId,
+        });
+        if (!started.ok) {
+          setProblems((current) => ({ ...current, [storyId]: started.message }));
+          return;
+        }
+
+        const result = await buildWalk(
+          (artifactId, frontmatter) =>
+            window.aibuildos.invoke("project:artifact-save", {
+              id: projectId,
+              artifactId,
+              frontmatter,
+            }),
+          {
+            storyId,
+            storyTitle: titleOf(storyId),
+            requirementId,
+            requirementTitle: titleOf(requirementId),
+            playbookBody: playbook.body,
+          },
+        );
+
+        if (result.problem !== null) {
+          setProblems((current) => ({ ...current, [storyId]: result.problem as string }));
+          return;
+        }
+        bump();
+        if (result.prompt !== null) {
+          // Fire-and-forget: this resolves at the worktree session's turn end, which the Now tab —
+          // not this button — is what watches for.
+          void window.aibuildos.invoke("session:prompt", {
+            sessionId: started.sessionId,
+            text: result.prompt,
+          });
+        }
+      } finally {
+        setBuildingWorktree((current) => {
+          const next = new Set(current);
+          next.delete(storyId);
+          return next;
+        });
+      }
+    },
+    [projectId, bump, record, building, buildingWorktree],
+  );
+
   if (record === null) return <p className="p-4 text-xs text-neutral-500">Loading…</p>;
   if (record.problem !== null) {
     return (
@@ -177,24 +267,45 @@ export function WorkBoard({
     (column) => showRetired || column.state !== "retired",
   );
 
-  const readyAction = (artifact: BoardArtifact): CardAction | null => {
-    if (artifact.type !== "Story") return null;
+  const readyActions = (artifact: BoardArtifact): CardAction[] => {
+    if (artifact.type !== "Story") return [];
     const busy = building.has(artifact.id);
-    return {
-      testId: `board-card-build-${artifact.id}`,
-      label: busy ? "Building…" : "Build",
-      disabled: busy,
-      onClick: () => void startBuild(artifact.id),
-    };
+    const busyWorktree = buildingWorktree.has(artifact.id);
+    const configured = harnesses ?? [];
+    return [
+      {
+        testId: `board-card-build-${artifact.id}`,
+        label: busy ? "Building…" : "Build",
+        disabled: busy || busyWorktree,
+        onClick: () => void startBuild(artifact.id),
+      },
+      // One button per configured harness (RQ-0020#AC-1): a worktree build spawns a session right
+      // away, so — unlike the plain Build button above, which reuses whatever the main chat already
+      // picked — it has to know which harness to spawn with before the click ever fires.
+      ...configured.map(
+        (harness): CardAction => ({
+          testId: `board-card-build-worktree-${artifact.id}-${harness.id}`,
+          label: busyWorktree
+            ? "Starting…"
+            : configured.length > 1
+              ? `Build in a worktree (${harness.displayName})`
+              : "Build in a worktree",
+          disabled: busy || busyWorktree,
+          onClick: () => void startWorktreeBuild(artifact.id, harness.id),
+        }),
+      ),
+    ];
   };
 
-  const reviewAction = (artifact: BoardArtifact): CardAction | null => {
-    if (artifact.type !== "Story") return null;
-    return {
-      testId: `board-card-review-${artifact.id}`,
-      label: "Review",
-      onClick: () => onOpen({ id: `review:${artifact.id}`, kind: "review", title: artifact.id }),
-    };
+  const reviewActions = (artifact: BoardArtifact): CardAction[] => {
+    if (artifact.type !== "Story") return [];
+    return [
+      {
+        testId: `board-card-review-${artifact.id}`,
+        label: "Review",
+        onClick: () => onOpen({ id: `review:${artifact.id}`, kind: "review", title: artifact.id }),
+      },
+    ];
   };
 
   return (
@@ -214,7 +325,7 @@ export function WorkBoard({
               onMove={attemptMove}
               problems={problems}
               caption={BUILDER_COLUMNS.has(column.state) ? "moved by the builder" : undefined}
-              action={column.state === "ready" ? readyAction : reviewAction}
+              actions={column.state === "ready" ? readyActions : reviewActions}
             />
           ) : (
             <Column
@@ -266,7 +377,7 @@ interface CardAction {
  * assertions still hold for these two columns.
  *
  * ponytail: duplicates BoardTab's Column/Card shape for two states out of nine. Extract a shared
- * `action` prop on `Column` itself if a third board ever needs the same.
+ * `actions` prop on `Column` itself if a third board ever needs the same.
  */
 function ActionColumn({
   column,
@@ -279,7 +390,7 @@ function ActionColumn({
   onMove,
   problems,
   caption,
-  action,
+  actions,
 }: {
   column: BoardColumn;
   projectId: string;
@@ -291,8 +402,8 @@ function ActionColumn({
   onMove: (artifactId: string, state: string) => void;
   problems: Record<string, string>;
   caption?: string | undefined;
-  /** `null` when this artifact offers no extra action — a Bug sitting in `ready`, say. */
-  action: (artifact: BoardArtifact) => CardAction | null;
+  /** Empty when this artifact offers no extra action — a Bug sitting in `ready`, say. */
+  actions: (artifact: BoardArtifact) => CardAction[];
 }): React.JSX.Element {
   return (
     <div
@@ -318,7 +429,7 @@ function ActionColumn({
             filterMoves={filterMoves}
             onMove={onMove}
             problem={problems[artifact.id]}
-            action={action(artifact)}
+            actions={actions(artifact)}
           />
         ))}
       </div>
@@ -336,7 +447,7 @@ function ActionCard({
   filterMoves,
   onMove,
   problem,
-  action,
+  actions,
 }: {
   artifact: BoardArtifact;
   projectId: string;
@@ -347,7 +458,7 @@ function ActionCard({
   filterMoves: (current: string, states: string[]) => string[];
   onMove: (artifactId: string, state: string) => void;
   problem?: string | undefined;
-  action: CardAction | null;
+  actions: CardAction[];
 }): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moves, setMoves] = useState<string[] | null>(null);
@@ -401,8 +512,9 @@ function ActionCard({
         </span>
       </button>
 
-      {action !== null && (
+      {actions.map((action) => (
         <button
+          key={action.testId}
           type="button"
           data-testid={action.testId}
           onClick={action.onClick}
@@ -411,7 +523,7 @@ function ActionCard({
         >
           {action.label}
         </button>
-      )}
+      ))}
 
       <button
         type="button"

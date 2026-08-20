@@ -7,6 +7,7 @@ import { useBump, useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
 import { Checks } from "./Checks.js";
 import { ManualChecks } from "./ManualChecks.js";
+import { Preview } from "./Preview.js";
 import { acceptStory, commitMessage, type Save, sendBackStory } from "./walk.js";
 
 type Artifact = ChannelResponse<"project:artifact">;
@@ -40,6 +41,9 @@ export function ReviewTab({
   const [problem, setProblem] = useState<string | null>(null);
   /** Set the moment Accept lands; offered until Commit or Not now is pressed (RQ-0018#AC-4). */
   const [offer, setOffer] = useState<{ storyId: string; title: string } | null>(null);
+  /** Whether `build:list` names this story — the smallest way this tab tells a worktree build's
+   * review from a main-tree one, without a second component (RQ-0020#AC-4). */
+  const [worktree, setWorktree] = useState(false);
 
   const load = useCallback(async () => {
     const next = await window.aibuildos.invoke("project:artifact", {
@@ -51,6 +55,29 @@ export function ReviewTab({
     const state = String((next.frontmatter as { state?: unknown }).state ?? "");
     if (state !== "review" || next.markdown === null) {
       setDiffs(null);
+      setWorktree(false);
+      return;
+    }
+
+    const { builds } = await window.aibuildos.invoke("build:list", { projectId });
+    const inWorktree = builds.some((build) => build.storyId === storyId);
+    setWorktree(inWorktree);
+
+    if (inWorktree) {
+      const { changes, problem: changesProblem } = await window.aibuildos.invoke("build:changes", {
+        projectId,
+        storyId,
+      });
+      const results = await Promise.all(
+        changes.map((change) =>
+          window.aibuildos.invoke("build:diff", { projectId, storyId, path: change.path }),
+        ),
+      );
+      setDiffs(
+        changesProblem === null
+          ? results
+          : [{ path: "", oldText: null, newText: "", problem: changesProblem }],
+      );
       return;
     }
 
@@ -87,6 +114,17 @@ export function ReviewTab({
     setBusy(true);
     setProblem(null);
     try {
+      // For a worktree build the merge *is* the accept (DC-0021): it has to land before the flip,
+      // and a conflict must leave both the story and main exactly where they were — reported
+      // verbatim, never force-resolved.
+      if (worktree) {
+        const merged = await window.aibuildos.invoke("build:merge", { projectId, storyId });
+        if (!merged.ok) {
+          setProblem(merged.message);
+          return;
+        }
+      }
+
       const result = await acceptStory(save, storyId);
       if (result.problem !== null) {
         setProblem(result.problem);
@@ -96,6 +134,21 @@ export function ReviewTab({
         storyId,
         title: String((story.frontmatter as { title?: unknown }).title ?? storyId),
       });
+      bump();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const discard = async (): Promise<void> => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = await window.aibuildos.invoke("build:discard", { projectId, storyId });
+      if (result.problem !== null) {
+        setProblem(result.problem);
+        return;
+      }
       bump();
     } finally {
       setBusy(false);
@@ -114,7 +167,18 @@ export function ReviewTab({
       }
       setNote("");
       bump();
-      if (result.prompt !== null) onPrompt(result.prompt);
+      if (result.prompt !== null) {
+        // A worktree build's conversation is its own session, not the main chat: the note goes
+        // where the builder can hear it (RQ-0020). A survivor with no live session falls back to
+        // the main conversation — the one place a person can pick the story up from.
+        const { builds } = await window.aibuildos.invoke("build:list", { projectId });
+        const sessionId = builds.find((build) => build.storyId === storyId)?.sessionId ?? null;
+        if (sessionId !== null) {
+          void window.aibuildos.invoke("session:prompt", { sessionId, text: result.prompt });
+        } else {
+          onPrompt(result.prompt);
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -195,10 +259,11 @@ export function ReviewTab({
               story.links.find((link) => link.relationship === "verified_by")?.current ?? []
             }
           />
+          <Preview projectId={projectId} />
         </div>
 
         <div data-testid="review-diffs" className="min-h-0 overflow-auto p-4">
-          <p className={eyebrow}>Working tree</p>
+          <p className={eyebrow}>{worktree ? "Worktree branch" : "Working tree"}</p>
           {diffs === null ? (
             <p className="mt-1.5 text-xs text-neutral-500">Loading…</p>
           ) : diffs.length === 0 ? (
@@ -244,9 +309,28 @@ export function ReviewTab({
               Accept
             </button>
             <p className="mt-1 max-w-48 text-[11px] text-neutral-500">
-              Flips {storyId} to accepted — the person's okay, made in the record.
+              {worktree
+                ? `Merges aibuildos/${storyId.toLowerCase()} into main, then flips ${storyId} to accepted.`
+                : `Flips ${storyId} to accepted — the person's okay, made in the record.`}
             </p>
           </div>
+
+          {worktree && (
+            <div>
+              <button
+                type="button"
+                data-testid="review-discard"
+                disabled={busy}
+                onClick={() => void discard()}
+                className={`${button} ${focusRing}`}
+              >
+                Discard
+              </button>
+              <p className="mt-1 max-w-48 text-[11px] text-neutral-500">
+                Removes the worktree and its branch. Nothing is merged; {storyId} stays as it is.
+              </p>
+            </div>
+          )}
 
           <div className="flex min-w-64 flex-1 flex-col gap-1.5">
             <label htmlFor="review-note" className={eyebrow}>
