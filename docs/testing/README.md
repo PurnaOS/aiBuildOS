@@ -43,3 +43,5 @@ back to [docs/README.md](../README.md)
 | [TC-0033](tc-0033.md) | A file is made from the tree, in the directory pointed at | active | [RQ-0006](../requirements/rq-0006.md)#AC-9 |
 | [TC-0034](tc-0034.md) | Editing saves itself, except when something else has a claim on the file | active | [RQ-0008](../requirements/rq-0008.md)#AC-1 through #AC-5, #AC-7, #AC-8 |
 | [TC-0035](tc-0035.md) | The sidebar collapses, comes back, and is remembered | active | [RQ-0009](../requirements/rq-0009.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0036](tc-0036.md) | A failed save keeps the work and names the failure | active | [RQ-0008](../requirements/rq-0008.md)#AC-6 |
+| [TC-0037](tc-0037.md) | Collapsing the chrome leaves the panes as the user sized them | active | [RQ-0009](../requirements/rq-0009.md)#AC-4 |

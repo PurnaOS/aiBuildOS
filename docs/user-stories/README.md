@@ -27,6 +27,6 @@ back to [docs/README.md](../README.md)
 | [ST-0017](st-0017.md) | Start a file, and mint an artifact | done | [RQ-0006](../requirements/rq-0006.md) · [EP-0004](../epics/ep-0004.md) · [TC-0029](../testing/tc-0029.md), [TC-0030](../testing/tc-0030.md) |
 | [ST-0018](st-0018.md) | The editors are dark when the window is | done | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0031](../testing/tc-0031.md) |
 | [ST-0019](st-0019.md) | Choose light, dark, or whatever the system is doing | done | [RQ-0007](../requirements/rq-0007.md) · [TC-0032](../testing/tc-0032.md) |
-| [ST-0020](st-0020.md) | Make a file where you are looking | review | [RQ-0006](../requirements/rq-0006.md) · [EP-0004](../epics/ep-0004.md) · [TC-0033](../testing/tc-0033.md) |
-| [ST-0021](st-0021.md) | Stop asking me to save | review | [RQ-0008](../requirements/rq-0008.md) · [EP-0004](../epics/ep-0004.md) · [TC-0034](../testing/tc-0034.md) |
-| [ST-0022](st-0022.md) | Collapse the sidebar, and remember the furniture somewhere that lasts | review | [RQ-0009](../requirements/rq-0009.md) · [EP-0004](../epics/ep-0004.md) · [TC-0035](../testing/tc-0035.md) |
+| [ST-0020](st-0020.md) | Make a file where you are looking | done | [RQ-0006](../requirements/rq-0006.md) · [EP-0004](../epics/ep-0004.md) · [TC-0033](../testing/tc-0033.md) |
+| [ST-0021](st-0021.md) | Stop asking me to save | done | [RQ-0008](../requirements/rq-0008.md) · [EP-0004](../epics/ep-0004.md) · [TC-0034](../testing/tc-0034.md), [TC-0036](../testing/tc-0036.md) |
+| [ST-0022](st-0022.md) | Collapse the sidebar, and remember the furniture somewhere that lasts | done | [RQ-0009](../requirements/rq-0009.md) · [EP-0004](../epics/ep-0004.md) · [TC-0035](../testing/tc-0035.md), [TC-0037](../testing/tc-0037.md) |

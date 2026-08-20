@@ -11,6 +11,7 @@ single-subject, and linked. Nothing is duplicated: **repeat IDs and links, never
 
 | If you want to… | Read |
 | --- | --- |
+| know where the product is headed | [How aiBuildOS works](HowItWorks.md) — the vision, in plain terms |
 | know how documents are written | [OKF conventions](guidelines/okf-conventions.md) |
 | add a feature | [Requirement-first development](guidelines/requirement-first.md) |
 | know why the stack is what it is | [Decisions](decisions/README.md) |

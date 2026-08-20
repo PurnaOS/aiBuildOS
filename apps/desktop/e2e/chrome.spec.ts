@@ -89,6 +89,25 @@ test("collapses, comes back, and is where it was left after a restart", async ()
   const widened = await width(w);
   // Otherwise the comparison after the restart would hold for a drag that did nothing.
   expect(widened).toBeGreaterThan(before + 50);
+
+  // TC-0037 (RQ-0009#AC-4): collapsing the chrome does not disturb the panes the user just sized.
+  // The layout is fractional, so the sizes the user chose *are* fractions: bringing the sidebar back
+  // shares the reclaimed width pro-rata across the panes, and collapsing it again returns every pane
+  // to exactly the width it had. What must never happen is a toggle resetting the drag to defaults.
+  const workspaceWidth = async (): Promise<number> =>
+    (await w.getByTestId("workspace").boundingBox())?.width ?? 0;
+  const chosenFraction = widened / (await workspaceWidth());
+
+  await toggle();
+  await expect(w.getByTestId("sidebar")).toBeVisible();
+  await expect
+    .poll(async () => Math.abs((await width(w)) / (await workspaceWidth()) - chosenFraction))
+    .toBeLessThan(0.01);
+
+  await toggle();
+  await expect(w.getByTestId("sidebar")).toBeHidden();
+  await expect.poll(async () => Math.abs((await width(w)) - widened)).toBeLessThan(4);
+
   await app.close();
 
   const again = await launch();
