@@ -19,6 +19,7 @@
     "@aibuildos/knowledge-engine": "workspace:*",
     "@aibuildos/shared": "workspace:*",
     "@codemirror/language": "^6",
+    "chokidar": "^5.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -10,6 +10,7 @@ import {
   validate,
 } from "@aibuildos/knowledge-engine";
 import { loadBundle, loadProfile } from "@aibuildos/knowledge-engine/load";
+import { noteSelfWrite } from "./watch.js";
 
 /**
  * The record's guarded edit, and the path containment every write shares (ST-0041).
@@ -161,6 +162,10 @@ export function applyArtifactEdit(
       "utf8",
     );
   }
+
+  // Main's own write must not depend on the watcher noticing it (fsevents can drop the tail of a
+  // rapid rewrite burst): the generation and the changed event move here, deterministically.
+  noteSelfWrite(projectPath);
 
   // Re-read so what comes back is what the bundle now says, not what was hoped for.
   const after = loadBundle(root, projectPath);

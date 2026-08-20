@@ -74,7 +74,7 @@ import { applyArtifactEdit, findingsFor, insideProject } from "./record.js";
 import { claimProjectDirectory, fillProject } from "./scaffold.js";
 import { SessionRegistry } from "./sessions.js";
 import { DEFAULTS, readSettings, saveSettings, settingsFile } from "./settings.js";
-import { stopWatching, watchProject } from "./watch.js";
+import { recordGeneration, stopWatching, watchProject } from "./watch.js";
 
 /**
  * Bind the IPC contract to Electron's ipcMain.
@@ -258,6 +258,90 @@ function requireProject(id: string) {
   return project;
 }
 
+/**
+ * `project:record`'s answer: the bundle walk, the profile read and the graph build that watching
+ * `docs/` exists to let the cache below skip (RQ-0026#AC-6). Pulled out of the handler so the
+ * cache has a return type to key on rather than restating the response shape by hand.
+ */
+function computeRecord(project: Project) {
+  const root = join(project.path, "docs");
+  if (!isDirectory(root)) return { artifacts: null, problem: null };
+
+  try {
+    const { bundle } = loadBundle(root, project.path);
+    const { profile } = loadProfile(root);
+    const problems = problemsFor(bundle, profile);
+
+    // The engine builds a graph only inside `validate` today, so the rail builds its own. Three
+    // lines, and it is what turns stored links into the reverse the rail actually shows.
+    const nodes: GraphNode[] = bundle.artifacts.flatMap((artifact) => {
+      const {
+        id: artifactId,
+        type,
+        links,
+      } = artifact.frontmatter as {
+        id?: unknown;
+        type?: unknown;
+        links?: unknown;
+      };
+      if (typeof artifactId !== "string" || typeof type !== "string") return [];
+      return [{ id: artifactId, type, links: (links ?? {}) as Record<string, string[]> }];
+    });
+    const graph = new ArtifactGraph(nodes);
+
+    const artifacts = bundle.artifacts.flatMap((artifact) => {
+      const front = artifact.frontmatter as Record<string, unknown>;
+      const artifactId = front.id;
+      if (typeof artifactId !== "string") return [];
+
+      return [
+        {
+          id: artifactId,
+          type: typeof front.type === "string" ? front.type : "",
+          title: typeof front.title === "string" ? front.title : artifactId,
+          state: typeof front.state === "string" ? front.state : "",
+          // Omitted rather than empty when the artifact carries none: the boards sort by it,
+          // and a card without a priority sorts after every prioritised one (BG-0005).
+          ...(typeof front.priority === "string" ? { priority: front.priority } : {}),
+          file: artifact.file,
+          problems: problems.get(artifact.file) ?? { errors: 0, warnings: 0 },
+          // Deduplicated: a test that verifies two criteria of one requirement
+          // (`verifies: [RQ-0004#AC-3, RQ-0004#AC-18]`) is one relationship, not two. The graph
+          // flattens `#AC-n` to the artifact, so without this the rail lists it once per
+          // criterion — four TC-0017s under one requirement.
+          inbound: [
+            ...new Map(
+              graph
+                .incoming(artifactId)
+                .map((edge) => [
+                  `${edge.relationship}:${edge.from}`,
+                  { relationship: edge.relationship, id: edge.from },
+                ]),
+            ).values(),
+          ],
+        },
+      ];
+    });
+
+    artifacts.sort((a, b) => a.id.localeCompare(b.id));
+    return { artifacts, problem: null };
+  } catch (cause) {
+    return { artifacts: null, problem: failure(cause).message };
+  }
+}
+
+/**
+ * `project:record`'s cache (RQ-0026#AC-6), keyed by project id and valid only while `watch.ts`'s
+ * generation for that project's path has not moved. `watchProject` bumps the generation on every
+ * `docs/` change and on watch start, so a project nobody has opened — `recordGeneration` answers
+ * `-1` for it — never gets an entry here at all, which is what keeps every existing test that
+ * calls this handler without opening a project re-parsing exactly as it always did.
+ */
+const recordCache = new Map<
+  string,
+  { generation: number; response: ReturnType<typeof computeRecord> }
+>();
+
 function createHandlers(
   sessions: SessionRegistry,
   emitCheckOutput: (payload: { projectId: string; command: string; chunk: string }) => void,
@@ -421,70 +505,18 @@ function createHandlers(
 
     "project:record": ({ id }) => {
       const project = requireProject(id);
-      const root = join(project.path, "docs");
-      if (!isDirectory(root)) return { artifacts: null, problem: null };
+      const generation = recordGeneration(project.path);
 
-      try {
-        const { bundle } = loadBundle(root, project.path);
-        const { profile } = loadProfile(root);
-        const problems = problemsFor(bundle, profile);
-
-        // The engine builds a graph only inside `validate` today, so the rail builds its own. Three
-        // lines, and it is what turns stored links into the reverse the rail actually shows.
-        const nodes: GraphNode[] = bundle.artifacts.flatMap((artifact) => {
-          const {
-            id: artifactId,
-            type,
-            links,
-          } = artifact.frontmatter as {
-            id?: unknown;
-            type?: unknown;
-            links?: unknown;
-          };
-          if (typeof artifactId !== "string" || typeof type !== "string") return [];
-          return [{ id: artifactId, type, links: (links ?? {}) as Record<string, string[]> }];
-        });
-        const graph = new ArtifactGraph(nodes);
-
-        const artifacts = bundle.artifacts.flatMap((artifact) => {
-          const front = artifact.frontmatter as Record<string, unknown>;
-          const artifactId = front.id;
-          if (typeof artifactId !== "string") return [];
-
-          return [
-            {
-              id: artifactId,
-              type: typeof front.type === "string" ? front.type : "",
-              title: typeof front.title === "string" ? front.title : artifactId,
-              state: typeof front.state === "string" ? front.state : "",
-              // Omitted rather than empty when the artifact carries none: the boards sort by it,
-              // and a card without a priority sorts after every prioritised one (BG-0005).
-              ...(typeof front.priority === "string" ? { priority: front.priority } : {}),
-              file: artifact.file,
-              problems: problems.get(artifact.file) ?? { errors: 0, warnings: 0 },
-              // Deduplicated: a test that verifies two criteria of one requirement
-              // (`verifies: [RQ-0004#AC-3, RQ-0004#AC-18]`) is one relationship, not two. The graph
-              // flattens `#AC-n` to the artifact, so without this the rail lists it once per
-              // criterion — four TC-0017s under one requirement.
-              inbound: [
-                ...new Map(
-                  graph
-                    .incoming(artifactId)
-                    .map((edge) => [
-                      `${edge.relationship}:${edge.from}`,
-                      { relationship: edge.relationship, id: edge.from },
-                    ]),
-                ).values(),
-              ],
-            },
-          ];
-        });
-
-        artifacts.sort((a, b) => a.id.localeCompare(b.id));
-        return { artifacts, problem: null };
-      } catch (cause) {
-        return { artifacts: null, problem: failure(cause).message };
+      if (generation !== -1) {
+        const cached = recordCache.get(id);
+        if (cached && cached.generation === generation) return cached.response;
       }
+
+      const response = computeRecord(project);
+      // A generation of -1 means nothing is watching this project's path, so nothing is caching
+      // it either — the next read parses again, same as before ST-0043 (RQ-0026#AC-6).
+      if (generation !== -1) recordCache.set(id, { generation, response });
+      return response;
     },
 
     "project:tree": async ({ id, path }) => {
