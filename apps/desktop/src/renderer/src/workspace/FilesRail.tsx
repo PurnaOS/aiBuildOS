@@ -1,6 +1,7 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
 import { ChevronDown, ChevronRight, File, Folder } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Loading } from "../Loading.js";
 import { eyebrow, field, focusRing, mono, primary, relativeTime } from "../ui.js";
 import { NewFile } from "./NewArtifact.js";
 import { useBump, useRevision } from "./revision.js";
@@ -141,7 +142,7 @@ function Directory({
   }, []);
 
   if (tree === null) {
-    return <p className="px-3 py-1 text-xs text-neutral-500">Loading…</p>;
+    return <Loading className="px-3 py-1 text-xs" />;
   }
   if (tree.problem) {
     return <p className="px-3 py-1 text-xs text-red-600">{tree.problem}</p>;
@@ -288,7 +289,7 @@ function GitChanges({
     [projectId, bump],
   );
 
-  if (changes === null) return <p className="px-3 py-2 text-xs text-neutral-500">Loading…</p>;
+  if (changes === null) return <Loading className="px-3 py-2 text-xs" />;
   if (changes.problem) {
     return (
       <p data-testid="changes-problem" className="px-3 py-2 text-xs text-red-600">

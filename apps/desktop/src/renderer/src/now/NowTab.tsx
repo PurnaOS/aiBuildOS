@@ -4,7 +4,14 @@ import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
 import { setNowBadge } from "./badge.js";
-import { deriveNow, emptyMessage, type LiveSession, needsYouCount } from "./now.js";
+import {
+  deriveNow,
+  describeActivity,
+  elapsedLabel,
+  emptyMessage,
+  type LiveSession,
+  needsYouCount,
+} from "./now.js";
 
 type Record_ = ChannelResponse<"project:record">;
 type BuildRow = ChannelResponse<"build:list">["builds"][number];
@@ -50,6 +57,13 @@ export function NowTab({
   const [permissions, setPermissions] = useState<Map<string, Permission>>(new Map());
   const [cancelled, setCancelled] = useState<Set<string>>(new Set());
   const [answering, setAnswering] = useState<string | null>(null);
+  // A coarse clock for "42s ago" (RQ-0030#AC-2): nothing here needs the exact second, only enough
+  // ticks that a row's elapsed time is not frozen at whenever this component last happened to render.
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision is a trigger, not a read
   useEffect(() => {
@@ -74,8 +88,12 @@ export function NowTab({
 
       setSessions((current) => {
         const next = new Map(current);
-        const existing = next.get(payload.sessionId) ?? { state: null, activity: null };
-        next.set(payload.sessionId, { ...existing, activity });
+        const existing = next.get(payload.sessionId) ?? {
+          state: null,
+          activity: null,
+          lastEventAt: null,
+        };
+        next.set(payload.sessionId, { ...existing, activity, lastEventAt: Date.now() });
         return next;
       });
 
@@ -107,8 +125,12 @@ export function NowTab({
     return window.aibuildos.subscribe("session:state", (payload) => {
       setSessions((current) => {
         const next = new Map(current);
-        const existing = next.get(payload.sessionId) ?? { state: null, activity: null };
-        next.set(payload.sessionId, { ...existing, state: payload.state });
+        const existing = next.get(payload.sessionId) ?? {
+          state: null,
+          activity: null,
+          lastEventAt: null,
+        };
+        next.set(payload.sessionId, { ...existing, state: payload.state, lastEventAt: Date.now() });
         return next;
       });
     });
@@ -208,12 +230,22 @@ export function NowTab({
                   </div>
                 </div>
 
+                {/* `build:list` (`builds.ts`'s `listBuilds`) only ever names worktree branches, so
+                    every row here already has an answer to "where are my files" (RQ-0030#AC-4). */}
+                <p
+                  data-testid={`now-row-worktree-${row.storyId}`}
+                  className="mt-1 text-[11px] text-neutral-500"
+                >
+                  Works in its own copy of the code — <span className={mono}>{row.branch}</span>.
+                </p>
+
                 {row.activity !== null && (
                   <p
                     data-testid={`now-row-activity-${row.storyId}`}
                     className="mt-1.5 text-xs text-neutral-500"
                   >
-                    {row.activity}
+                    {describeActivity(row.activity)}
+                    {row.lastEventAt !== null && ` · ${elapsedLabel(row.lastEventAt, clock)}`}
                   </p>
                 )}
 

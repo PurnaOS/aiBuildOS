@@ -1,5 +1,6 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
 import { useEffect, useState } from "react";
+import { Loading } from "../Loading.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { splitBody } from "../workspace/ArtifactTab.js";
 import { useBump, useRevision } from "../workspace/revision.js";
@@ -46,7 +47,7 @@ export function PlanTab({
     };
   }, [projectId, revision]);
 
-  if (record === null) return <p className="p-6 text-sm text-neutral-500">Loading…</p>;
+  if (record === null) return <Loading className="p-6 text-sm" />;
   if (record.problem !== null) {
     return (
       <p data-testid="plan-problem" className="p-6 text-sm text-red-600">
@@ -275,7 +276,7 @@ function StoryRow({
         <div className="mt-1.5 ml-6">
           <p className={eyebrow}>Must be true when done</p>
           {criteria === null ? (
-            <p className="mt-1 text-[11px] text-neutral-500">Loading…</p>
+            <Loading className="mt-1 text-[11px]" />
           ) : criteria.length === 0 ? (
             <p className="mt-1 text-[11px] text-neutral-500">No acceptance criteria written yet.</p>
           ) : (

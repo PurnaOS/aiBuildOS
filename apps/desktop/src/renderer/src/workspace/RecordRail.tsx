@@ -1,13 +1,14 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Loading } from "../Loading.js";
 import { eyebrow, focusRing, mono } from "../ui.js";
 import { NewArtifact } from "./NewArtifact.js";
 import { useRevision } from "./revision.js";
 import type { Tab } from "./TabStrip.js";
 
 /**
- * The record rail (ST-0012).
+ * The record rail (ST-0012, ST-0046).
  *
  * The rail that makes this aiBuildOS rather than a front end for an agent: the left of the workspace
  * is what the work is *for*. It shows what implements a requirement and what verifies it by
@@ -46,6 +47,15 @@ const DERIVED: Record<string, string> = {
   related_to: "related to",
 };
 
+/** A transient "changed" mark clears itself even if nobody opens the row (RQ-0030#AC-3). */
+const CHANGED_TTL = 15_000;
+
+/** "Story" at one, "Stories" otherwise — the only irregular plural among the profile's types. */
+function pluralType(type: string, count: number): string {
+  if (count === 1) return type;
+  return type.endsWith("y") ? `${type.slice(0, -1)}ies` : `${type}s`;
+}
+
 export function RecordRail({
   projectId,
   onOpen,
@@ -60,11 +70,18 @@ export function RecordRail({
   onCreated: (artifactId: string) => void;
 }): React.JSX.Element {
   const [record, setRecord] = useState<Record_ | null>(null);
-  // Re-read when the project has moved underneath this. What is expanded and what is filtered are
-  // this rail's own state and survive it, so a refresh does not throw away where the user was.
+  // Re-read when the project has moved underneath this. What is expanded, what is folded and what is
+  // filtered are this rail's own state and survive it, so a refresh does not throw away where the
+  // user was.
   const revision = useRevision();
   const [filter, setFilter] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Every type starts unfolded (ST-0046#AC-1) — a `Set` of what has been folded, not what is open.
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  // Which artifact ids just changed, and when — this rail's own diff of its last two reads, not
+  // anything the watcher itself says changed (see the comment on the fetch effect below).
+  const [changedAt, setChangedAt] = useState<Map<string, number>>(new Map());
+  const previousRead = useRef<{ projectId: string; artifacts: Artifact[] } | null>(null);
 
   // `revision` is not read in here — it *is* the trigger. It moves when the project's files may
   // have changed underneath what is on screen, and re-reading is the whole point of depending on it.
@@ -74,7 +91,36 @@ export function RecordRail({
     void window.aibuildos
       .invoke("project:record", { id: projectId })
       .then((next) => {
-        if (live) setRecord(next);
+        if (!live) return;
+        setRecord(next);
+
+        // The "changed" mark (RQ-0030#AC-3): the renderer only ever learns *that* the project moved
+        // (`project:changed` carries no paths), so the smallest honest signal is this rail's own
+        // before/after — an artifact whose `state` or `title` differs from the last read, or that is
+        // new outright, gets marked. A content-only edit to the body is invisible here; that is the
+        // corner this cuts, and it is cut on purpose rather than by omission.
+        const nextArtifacts = next.artifacts ?? [];
+        const previous = previousRead.current;
+        if (previous === null || previous.projectId !== projectId) {
+          // First read of this project: nothing to diff against yet, so nothing is "changed" — every
+          // artifact would otherwise light up the moment the rail first opens.
+          setChangedAt(new Map());
+        } else {
+          const before = new Map(previous.artifacts.map((a) => [a.id, a]));
+          const at = Date.now();
+          const changed = nextArtifacts.filter((a) => {
+            const was = before.get(a.id);
+            return was === undefined || was.state !== a.state || was.title !== a.title;
+          });
+          if (changed.length > 0) {
+            setChangedAt((current) => {
+              const merged = new Map(current);
+              for (const artifact of changed) merged.set(artifact.id, at);
+              return merged;
+            });
+          }
+        }
+        previousRead.current = { projectId, artifacts: nextArtifacts };
       })
       .catch(() => {
         if (live) setRecord({ artifacts: null, problem: "The record could not be read." });
@@ -83,6 +129,28 @@ export function RecordRail({
       live = false;
     };
   }, [projectId, revision]);
+
+  // Sweeps marks older than the TTL so one never outlives its usefulness just because nobody opened
+  // that row (RQ-0030#AC-3's "clears... shortly after").
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setChangedAt((current) => {
+        const cutoff = Date.now() - CHANGED_TTL;
+        const next = new Map([...current].filter(([, at]) => at >= cutoff));
+        return next.size === current.size ? current : next;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const clearChanged = useCallback((id: string) => {
+    setChangedAt((current) => {
+      if (!current.has(id)) return current;
+      const next = new Map(current);
+      next.delete(id);
+      return next;
+    });
+  }, []);
 
   const toggle = useCallback((id: string) => {
     setExpanded((current) => {
@@ -93,10 +161,29 @@ export function RecordRail({
     });
   }, []);
 
+  const toggleFold = useCallback((type: string) => {
+    setFolded((current) => {
+      const next = new Set(current);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }, []);
+
+  const needle = filter.trim().toLowerCase();
+  const filtering = needle !== "";
+
+  const totalByType = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const artifact of record?.artifacts ?? []) {
+      map.set(artifact.type, (map.get(artifact.type) ?? 0) + 1);
+    }
+    return map;
+  }, [record]);
+
   const groups = useMemo(() => {
     const artifacts = record?.artifacts ?? [];
-    const needle = filter.trim().toLowerCase();
-    const matching = needle
+    const matching = filtering
       ? artifacts.filter(
           (a) => a.id.toLowerCase().includes(needle) || a.title.toLowerCase().includes(needle),
         )
@@ -110,7 +197,11 @@ export function RecordRail({
       ([a], [b]) =>
         (ORDER.indexOf(a) + 1 || ORDER.length + 1) - (ORDER.indexOf(b) + 1 || ORDER.length + 1),
     );
-  }, [record, filter]);
+  }, [record, filtering, needle]);
+
+  const matchCount = filtering
+    ? groups.reduce((sum, [, artifacts]) => sum + artifacts.length, 0)
+    : 0;
 
   return (
     <div data-testid="record-rail" className="relative flex h-full flex-col overflow-hidden">
@@ -122,9 +213,39 @@ export function RecordRail({
         <NewArtifact projectId={projectId} onCreated={onCreated} />
       </div>
 
+      {/* The filter, at the top (ST-0046#AC-2) rather than buried under a long scroll. */}
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-neutral-200 px-2 py-1.5 dark:border-neutral-800">
+        <input
+          data-testid="record-filter"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="filter"
+          className={`min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-neutral-500 ${focusRing}`}
+        />
+        {filtering && (
+          <span
+            data-testid="record-filter-count"
+            className={`shrink-0 text-[10px] text-neutral-500 ${mono}`}
+          >
+            {matchCount} match
+          </span>
+        )}
+        {filtering && (
+          <button
+            type="button"
+            data-testid="record-filter-clear"
+            aria-label="Clear filter"
+            onClick={() => setFilter("")}
+            className={`shrink-0 rounded p-0.5 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 ${focusRing}`}
+          >
+            <X size={11} aria-hidden />
+          </button>
+        )}
+      </div>
+
       <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-2">
         {record === null ? (
-          <p className="px-2 py-1 text-xs text-neutral-500">Loading…</p>
+          <Loading className="px-2 py-1 text-xs" />
         ) : record.problem ? (
           <p data-testid="record-problem" className="px-2 py-1 text-xs text-red-600">
             {record.problem}
@@ -138,32 +259,51 @@ export function RecordRail({
             No artifacts yet — the first requirement goes here.
           </p>
         ) : (
-          groups.map(([type, artifacts]) => (
-            <div key={type} className="mb-2">
-              <p className={`px-2 pt-1 pb-0.5 ${eyebrow}`}>{type}</p>
-              {artifacts.map((artifact) => (
-                <Row
-                  key={artifact.id}
-                  artifact={artifact}
-                  expanded={expanded.has(artifact.id)}
-                  onToggle={() => toggle(artifact.id)}
-                  onOpen={onOpen}
-                  onWorkOn={onWorkOn}
-                />
-              ))}
-            </div>
-          ))
+          groups.map(([type, artifacts]) => {
+            // A filter reaches into every group, folded or not (ST-0046#AC-1): the simplest honest
+            // way to say that is to ignore the fold for as long as filtering is in effect, rather than
+            // tracking a second "why this is open" reason per type. The fold itself is untouched underneath
+            // and resumes the moment the filter clears.
+            const isFolded = !filtering && folded.has(type);
+            const total = totalByType.get(type) ?? artifacts.length;
+            return (
+              <div key={type} className="mb-2">
+                <button
+                  type="button"
+                  data-testid={`record-group-${type}`}
+                  onClick={() => toggleFold(type)}
+                  aria-expanded={!isFolded}
+                  aria-label={isFolded ? `Unfold ${type}` : `Fold ${type}`}
+                  className={`flex w-full items-center gap-1 rounded px-1.5 pt-1 pb-0.5 hover:bg-neutral-50 dark:hover:bg-neutral-900 ${focusRing}`}
+                >
+                  {isFolded ? (
+                    <ChevronRight size={11} className="shrink-0 text-neutral-400" aria-hidden />
+                  ) : (
+                    <ChevronDown size={11} className="shrink-0 text-neutral-400" aria-hidden />
+                  )}
+                  <span className={eyebrow}>
+                    {pluralType(type, total)} · {total}
+                  </span>
+                </button>
+                {!isFolded &&
+                  artifacts.map((artifact) => (
+                    <Row
+                      key={artifact.id}
+                      artifact={artifact}
+                      expanded={expanded.has(artifact.id)}
+                      changed={changedAt.has(artifact.id)}
+                      onToggle={() => toggle(artifact.id)}
+                      onOpen={(tab, options) => {
+                        clearChanged(artifact.id);
+                        onOpen(tab, options);
+                      }}
+                      onWorkOn={onWorkOn}
+                    />
+                  ))}
+              </div>
+            );
+          })
         )}
-      </div>
-
-      <div className="shrink-0 border-t border-neutral-200 px-2 py-1.5 dark:border-neutral-800">
-        <input
-          data-testid="record-filter"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder="filter"
-          className={`w-full bg-transparent text-xs outline-none placeholder:text-neutral-500 ${focusRing}`}
-        />
       </div>
     </div>
   );
@@ -172,12 +312,14 @@ export function RecordRail({
 function Row({
   artifact,
   expanded,
+  changed,
   onToggle,
   onOpen,
   onWorkOn,
 }: {
   artifact: Artifact;
   expanded: boolean;
+  changed: boolean;
   onToggle: () => void;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
   onWorkOn: (artifact: { id: string; file: string }) => void;
@@ -210,8 +352,16 @@ function Row({
           <span className={`shrink-0 text-xs ${mono}`}>{artifact.id}</span>
           <span className="min-w-0 flex-1 truncate text-xs">{artifact.title}</span>
           <span className={`shrink-0 text-[10px] text-neutral-500 ${mono}`}>{artifact.state}</span>
-          {/* Words carry the signal, not the colour (RQ-0012#AC-1). A clean artifact renders nothing
-              here — no zero-count badge (RQ-0012#AC-4). */}
+          {/* Words carry the signal, not the colour (RQ-0012#AC-1, RQ-0030#AC-3). A transient mark,
+              not a badge that lingers past its meaning. */}
+          {changed && (
+            <span
+              data-testid={`record-changed-${artifact.id}`}
+              className={`shrink-0 text-[10px] text-amber-700 dark:text-amber-500 ${mono}`}
+            >
+              changed
+            </span>
+          )}
           {(artifact.problems.errors > 0 || artifact.problems.warnings > 0) && (
             <span
               data-testid={`record-problems-${artifact.id}`}

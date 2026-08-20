@@ -76,8 +76,10 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
   });
   const w = await app.firstWindow();
   await w.setViewportSize({ width: 1440, height: 900 });
-  // Retire's confirm is a plain `window.confirm` (TabStrip's own close pattern) — Playwright dismisses
-  // an unhandled one, so this must be registered before anything that could trigger it.
+  // Retire's confirm is `PlanTab`'s own plain `window.confirm` — unrelated to `TabStrip`'s close,
+  // which now asks through its own styled dialog (RQ-0029#AC-3) rather than a native one. This
+  // native confirm is still native, so Playwright still dismisses an unhandled one; register before
+  // anything that could trigger it.
   w.on("dialog", (dialog) => void dialog.accept());
 
   await w.getByTestId("project-open").first().click();
