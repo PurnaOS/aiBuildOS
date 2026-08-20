@@ -3,6 +3,7 @@ import { Group, type Layout, Panel, Separator } from "react-resizable-panels";
 import { BoardTab } from "../boards/BoardTab.js";
 import { PlanTab } from "../plan/PlanTab.js";
 import { ReviewTab } from "../review/ReviewTab.js";
+import { useTurnEnd } from "../review/useTurnEnd.js";
 import { useSession } from "../session/useSession.js";
 import { ArtifactTab } from "./ArtifactTab.js";
 import { Chat } from "./Chat.js";
@@ -28,6 +29,7 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
   const { revision, bump, streaming } = useWorkspaceRevision(
     session.state.status === "ready" ? session.state.sessionId : null,
   );
+  useTurnEnd(projectId, session.state.status === "ready" ? session.state.sessionId : null, bump);
   /**
    * Pane widths, remembered between runs (ST-0011#AC-2, BG-0004).
    *
