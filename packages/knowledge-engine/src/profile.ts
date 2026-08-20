@@ -23,14 +23,25 @@ const LinkDefSchema = z.object({
 });
 
 /**
- * `transitions` is deliberately not modelled. The profile declares `from -> to` pairs, but a
- * validator sees one commit and cannot know what a state was before it — enforcing them needs Git
- * history and is out of scope for RQ-0003. Unknown keys are stripped, so declaring them is harmless.
+ * One declared move. `from` is a state, a list of states, or the wildcard `"*"` every type carries
+ * for retirement; `to` is the single state it leads to.
+ */
+const TransitionSchema = z.object({
+  from: z.union([z.string(), z.array(z.string())]),
+  to: z.string(),
+});
+
+/**
+ * `transitions` was stripped until RQ-0010: a *validator* sees one commit and cannot know what a
+ * state was before it, so legality could not be checked there (RQ-0003). The application's own save
+ * path reads the file before it writes it, so the previous state is in its hand — that is where
+ * `legalNextStates` in `./transitions` reads this field from.
  */
 const StatesDefSchema = z.object({
   vocabulary: z.array(z.string()),
   initial: z.string(),
   derived: z.boolean().optional(),
+  transitions: z.array(TransitionSchema).optional(),
 });
 
 const SectionDefSchema = z.object({
@@ -54,6 +65,7 @@ const TypeDefinitionSchema = z.object({
 export type FieldDef = z.infer<typeof FieldDefSchema>;
 export type LinkDef = z.infer<typeof LinkDefSchema>;
 export type StatesDef = z.infer<typeof StatesDefSchema>;
+export type Transition = z.infer<typeof TransitionSchema>;
 export type SectionDef = z.infer<typeof SectionDefSchema>;
 
 /** A type definition with its whole `extends` chain already merged in. */

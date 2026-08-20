@@ -18,14 +18,17 @@ import {
 } from "@aibuildos/ipc";
 import {
   ArtifactGraph,
+  criteriaRefusal,
   editArtifact,
   type GraphNode,
   insertIndexRow,
+  legalNextStates,
   nextId,
   type Profile,
   parseOkfDocument,
   resolveProfile,
   scaffoldArtifact,
+  transitionRefusal,
   updateIndexRow,
   validate,
 } from "@aibuildos/knowledge-engine";
@@ -641,8 +644,13 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         const { profile } = loadProfile(root);
         const definition = profile.get(type);
 
-        // What the profile allows, never a list this application invented (RQ-0005#AC-6).
-        const states = definition?.states?.vocabulary ?? [];
+        // The current state — so the control has something to show even when it is not one of the
+        // type's own — plus exactly what its transitions declare from there, never the whole
+        // vocabulary (RQ-0010#AC-1, AC-3, AC-5).
+        const currentState = String((found.frontmatter as { state?: unknown }).state ?? "");
+        const states = definition?.states
+          ? [...new Set([currentState, ...legalNextStates(definition, currentState)])]
+          : [];
         const stored = (found.frontmatter as { links?: Record<string, string[]> }).links ?? {};
         const links = Object.entries(definition?.links ?? {}).map(([relationship, def]) => ({
           relationship,
@@ -705,10 +713,28 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         // for a link key the file does not carry yet. Anything else missing is still refused.
         const { profile: dialect } = loadProfile(root);
         const type = String((found.frontmatter as { type?: unknown }).type ?? "");
-        const create = Object.keys(dialect.get(type)?.links ?? {}).map((rel) => `links.${rel}`);
+        const definition = dialect.get(type);
+        const create = Object.keys(definition?.links ?? {}).map((rel) => `links.${rel}`);
+
+        const before = readFileSync(file, "utf8");
+
+        // This is the one place the previous state is known: read before the write, the same file
+        // the write is about to change. That is what lets a transition be checked here at all
+        // (RQ-0010).
+        if (definition && typeof frontmatter.state === "string") {
+          const currentState = String((found.frontmatter as { state?: unknown }).state ?? "");
+          if (frontmatter.state !== currentState) {
+            const refusal = transitionRefusal(definition, type, currentState, frontmatter.state);
+            if (refusal !== null) return { problem: refusal, markdown: null, findings: [] };
+          }
+        }
+        if (body !== undefined) {
+          const refusal = criteriaRefusal(parseOkfDocument(before).body, body);
+          if (refusal !== null) return { problem: refusal, markdown: null, findings: [] };
+        }
 
         // Only the named keys and the body change; the rest of the file is byte-identical.
-        const written = editArtifact(readFileSync(file, "utf8"), {
+        const written = editArtifact(before, {
           frontmatter,
           ...(body === undefined ? {} : { body }),
           create,

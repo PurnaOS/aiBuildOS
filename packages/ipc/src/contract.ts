@@ -502,7 +502,8 @@ export const channels = {
       /** Frontmatter as read. Values are whatever YAML produced. */
       frontmatter: z.record(z.string(), z.unknown()),
       body: z.string(),
-      /** This type's own state vocabulary, empty when the profile does not describe it. */
+      /** The current state, then the legal next states (RQ-0010) — never the whole vocabulary.
+       * Empty when the profile does not describe this type. */
       states: z.array(z.string()),
       links: z.array(
         z.object({

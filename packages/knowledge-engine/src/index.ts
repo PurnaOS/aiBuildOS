@@ -12,6 +12,7 @@ export type {
   RawTypeDefinition,
   SectionDef,
   StatesDef,
+  Transition,
   TypeDef,
 } from "./profile.js";
 export { Profile, resolveProfile } from "./profile.js";
@@ -28,5 +29,11 @@ export {
   LinkTargetSchema,
   ProvenanceSchema,
 } from "./schema.js";
+export {
+  criteriaRefusal,
+  legalNextStates,
+  legalTransition,
+  transitionRefusal,
+} from "./transitions.js";
 export type { Bundle, Finding, LoadedArtifact, Severity } from "./validate.js";
 export { validate } from "./validate.js";

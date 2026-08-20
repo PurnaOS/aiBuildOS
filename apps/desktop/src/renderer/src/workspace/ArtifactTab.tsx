@@ -11,10 +11,11 @@ import { Diff } from "./Diff.js";
 /**
  * An artifact, edited as its own shape (RQ-0005#AC-5 to AC-10).
  *
- * Not a text box. An artifact has a type, a state vocabulary, links with legal targets, and
- * acceptance criteria whose numbers are append-only — and all of that comes from the profile rather
- * than from anything this component believes. The states offered are the ones the type declares; the
- * artifacts offered for a link are the ones its target types allow.
+ * Not a text box. An artifact has a type, a state that may only move along the paths its type
+ * declares, links with legal targets, and acceptance criteria whose numbers are append-only — and all
+ * of that comes from the profile rather than from anything this component believes. The states
+ * offered are the current one plus exactly its legal next states, never the whole vocabulary
+ * (RQ-0010#AC-1); the artifacts offered for a link are the ones its target types allow.
  *
  * Saving rewrites only what changed. That is the whole point of the writer behind it: `docs/` is
  * committed, and a diff full of reformatting is a diff nobody can review.
@@ -305,19 +306,14 @@ export function ArtifactTab({
               value={state}
               onChange={(event) => setState(event.target.value)}
             >
-              {/* A state the vocabulary does not contain is still what this artifact says, so it is
-                  offered and labelled. Leaving it out makes the control display the first option
-                  instead — the editor reporting a value the file does not carry, and the one option
-                  the user cannot pick to correct it. */}
-              {!loaded.states.includes(state) && (
-                <option value={state}>
-                  {state === "" ? "(none)" : `${state} — not in the vocabulary`}
-                </option>
-              )}
-              {/* This type's own vocabulary, from the profile. */}
+              {/* The current state first — so a value outside the vocabulary is shown as found rather
+                  than corrected, since it would otherwise be missing from the options the select can
+                  actually render — followed by exactly its legal next states. A state with no
+                  declared transition of its own still offers retirement, which matches every state
+                  (RQ-0010#AC-1, AC-3, AC-5). */}
               {loaded.states.map((candidate) => (
                 <option key={candidate} value={candidate}>
-                  {candidate}
+                  {candidate === "" ? "(none)" : candidate}
                 </option>
               ))}
             </select>

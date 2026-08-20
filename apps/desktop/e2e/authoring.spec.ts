@@ -153,12 +153,13 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
   return { app, w, work };
 }
 
-test("offers the type's own states and only legal link targets", async () => {
+test("offers the current state, its legal next states, and only legal link targets", async () => {
   const { app, w } = await open();
 
-  // The Requirement vocabulary from the profile, and nothing this application invented (AC-6).
+  // The current state plus exactly what Requirement's transitions declare from `draft` — not the
+  // whole vocabulary (RQ-0010#AC-1).
   const states = await w.getByTestId("artifact-state").locator("option").allTextContents();
-  expect(states).toEqual(["draft", "ready", "building", "built", "verified", "retired"]);
+  expect(states).toEqual(["draft", "ready", "retired"]);
 
   // `verified_by` targets TestCase, so the requirement next door is not on offer for it.
   const verifiers = await w.getByTestId("link-add-verified_by").locator("option").allTextContents();
