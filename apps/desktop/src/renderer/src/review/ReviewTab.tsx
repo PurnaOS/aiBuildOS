@@ -5,6 +5,7 @@ import { splitBody } from "../workspace/ArtifactTab.js";
 import { Diff } from "../workspace/Diff.js";
 import { useBump, useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
+import { Checks } from "./Checks.js";
 import { acceptStory, commitMessage, type Save, sendBackStory } from "./walk.js";
 
 type Artifact = ChannelResponse<"project:artifact">;
@@ -186,6 +187,7 @@ export function ReviewTab({
             )}
           </div>
 
+          <Checks projectId={projectId} onPrompt={onPrompt} />
         </div>
 
         <div data-testid="review-diffs" className="min-h-0 overflow-auto p-4">

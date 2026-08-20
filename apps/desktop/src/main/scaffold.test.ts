@@ -108,13 +108,13 @@ describe("scaffolding a project", () => {
     for (const type of ["Requirement", "Epic", "Story", "TestCase", "Bug"]) {
       expect(summary.byType[type] ?? 0).toBe(0);
     }
-    expect(summary.artifacts).toBe(3);
-    expect(summary.byType.Playbook).toBe(3);
-    expect(summary.byState.active).toBe(3);
+    expect(summary.artifacts).toBe(4);
+    expect(summary.byType.Playbook).toBe(4);
+    expect(summary.byState.active).toBe(4);
     // The indexes are there waiting for the first requirement.
     expect(summary.indexes).toBeGreaterThanOrEqual(8);
 
-    for (const id of ["pb-0001", "pb-0002", "pb-0003"]) {
+    for (const id of ["pb-0001", "pb-0002", "pb-0003", "pb-0004"]) {
       const text = readFileSync(join(dir, "docs", "playbooks", `${id}.md`), "utf8");
       // The identity `IDENTITY` gave the commit above — never the raw `{{OWNER}}` token.
       expect(text).toContain("owner: Test\n");

@@ -112,7 +112,7 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
   // The template ships every playbook with an unresolved `{{OWNER}}` token — `fillProject` fills it
   // in normally, and this fixture skips that, so it is filled in by hand the same way playbooks.spec
   // does. Left unresolved, `owner: {{OWNER}}` is not valid YAML.
-  for (const id of ["pb-0001", "pb-0002", "pb-0003"]) {
+  for (const id of ["pb-0001", "pb-0002", "pb-0003", "pb-0004"]) {
     const file = join(work, "docs", "playbooks", `${id}.md`);
     writeFileSync(file, readFileSync(file, "utf8").replaceAll("{{OWNER}}", "Test Person"), "utf8");
   }

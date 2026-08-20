@@ -65,7 +65,7 @@ async function open(requirement: string): Promise<{ app: ElectronApplication; w:
   // The template ships `owner: {{OWNER}}` in its seed playbooks — only `seedBundle` resolves that,
   // which a raw `cpSync` does not run. Left unresolved it parses as a YAML mapping, not a string, and
   // every playbook fails `doc/field-required` — the "clean project" case would not be clean.
-  for (const id of ["pb-0001", "pb-0002", "pb-0003"]) {
+  for (const id of ["pb-0001", "pb-0002", "pb-0003", "pb-0004"]) {
     const file = join(work, `docs/playbooks/${id}.md`);
     writeFileSync(file, readFileSync(file, "utf8").replaceAll("{{OWNER}}", "srini"));
   }

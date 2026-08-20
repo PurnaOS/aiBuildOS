@@ -14,7 +14,7 @@ import { commitAll, git, initRepo } from "./git.js";
  * empty of *artifacts* any more: the standard playbooks (RQ-0013#AC-1, DC-0019) ship from the first
  * commit, because they are the buttons that help write the backlog rather than backlog themselves.
  * One consequence worth knowing before anybody "fixes" it: the bundle validator CLI's `bundle/empty`
- * guard no longer fires on a freshly created project — three playbooks are three artifacts. The
+ * guard no longer fires on a freshly created project — the standard playbooks are real artifacts. The
  * engine's `validate` is clean on this seed either way, and that is what TC-0006 asserts.
  */
 

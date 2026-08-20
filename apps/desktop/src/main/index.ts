@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
+import { killChecks } from "./checks.js";
 import { registerIpc } from "./ipc.js";
 import { commandTarget, installMenu } from "./menu.js";
 import { loadSettings, settingsFile } from "./settings.js";
@@ -65,6 +66,7 @@ void app.whenReady().then(() => {
   // `window-all-closed`, because on macOS closing the window does not quit.
   app.on("before-quit", () => {
     void sessions.closeAll();
+    killChecks();
   });
 
   app.on("activate", () => {

@@ -34,7 +34,7 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
 
   // The scaffold template leaves `owner` a token for `fillProject` to fill in (playbooks.spec.ts's
   // fixture does the same by hand): PB-0002 is what "Plan the selected work" starts.
-  for (const id of ["pb-0001", "pb-0002", "pb-0003"]) {
+  for (const id of ["pb-0001", "pb-0002", "pb-0003", "pb-0004"]) {
     const file = join(work, "docs", "playbooks", `${id}.md`);
     writeFileSync(file, readFileSync(file, "utf8").replaceAll("{{OWNER}}", "Test Person"), "utf8");
   }

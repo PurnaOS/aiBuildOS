@@ -63,7 +63,7 @@ describe("seeding playbooks into an adopted project", () => {
     expect(problem).toBeNull();
     // The type this project's profile never declared, so the artifacts it just gained resolve.
     expect(existsSync(join(dir, "docs", "profile", "playbook.md"))).toBe(true);
-    for (const id of ["pb-0001", "pb-0002", "pb-0003"]) {
+    for (const id of ["pb-0001", "pb-0002", "pb-0003", "pb-0004"]) {
       const text = readFileSync(join(dir, "docs", "playbooks", `${id}.md`), "utf8");
       expect(text).toContain("owner: Adopter\n");
       expect(text).not.toContain("{{OWNER}}");

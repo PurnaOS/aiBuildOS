@@ -11,3 +11,4 @@ Conventions: [OKF conventions](../guidelines/okf-conventions.md) ·
 | [PB-0001](pb-0001.md) | Draft requirements from an idea | active | — |
 | [PB-0002](pb-0002.md) | Propose a plan | active | — |
 | [PB-0003](pb-0003.md) | Build a story | active | — |
+| [PB-0004](pb-0004.md) | Run the checks | active | — |
