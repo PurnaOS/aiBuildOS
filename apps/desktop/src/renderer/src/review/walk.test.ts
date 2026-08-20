@@ -104,6 +104,28 @@ describe("the turn-end walk", () => {
 
     expect(flipped).toEqual(["ST-0001"]);
   });
+
+  it("a rejected save propagates rather than being swallowed (TC-0072, BG-0006)", async () => {
+    const save: Save = async () => {
+      throw new Error("the artifact was briefly unreadable");
+    };
+
+    await expect(
+      turnEndWalk(save, [{ id: "ST-0001", type: "Story", state: "building" }]),
+    ).rejects.toThrow("the artifact was briefly unreadable");
+  });
+
+  it("everything succeeding is exactly the previous behaviour, byte for byte (TC-0072)", async () => {
+    const { save, calls } = fakeSave();
+
+    const flipped = await turnEndWalk(save, [
+      { id: "ST-0001", type: "Story", state: "building" },
+      { id: "ST-0002", type: "Story", state: "review" },
+    ]);
+
+    expect(calls).toEqual([{ artifactId: "ST-0001", frontmatter: { state: "review" } }]);
+    expect(flipped).toEqual(["ST-0001"]);
+  });
 });
 
 describe("a verdict from review", () => {

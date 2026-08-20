@@ -1,7 +1,7 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
 import { useEffect, useState } from "react";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
-import { useBump, useRevision } from "../workspace/revision.js";
+import { useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
 import { setNowBadge } from "./badge.js";
 import { deriveNow, emptyMessage, type LiveSession, needsYouCount } from "./now.js";
@@ -26,12 +26,14 @@ const CONCURRENCY_CAP = 3;
 /**
  * Now: every running build, live, and what waits on a person (RQ-0021, ST-0038).
  *
- * Pinned, so it is always mounted — which is also why the turn-end half of the build/review walk for
- * a *worktree* build lives here rather than in `useTurnEnd.ts` (Workspace.tsx, off-limits): that hook
- * watches only the main chat session, and a build session's stream never reaches it. This subscribes
- * to `session:event` for every session `build:list` names and flips only the one story a finished
- * session belongs to — never every `building` story at once, the way `turnEndWalk` does, because with
- * several builds running side by side (RQ-0021#AC-1) that would flip one still mid-turn.
+ * Pinned, so it is always mounted — which used to be why the turn-end half of the build/review walk
+ * for a *worktree* build lived here rather than in `useTurnEnd.ts`: that hook watches only the main
+ * chat session, and a build session's stream never reached it. ST-0041 moved the flip into main
+ * instead — `builds.ts`'s own turn-end hook performs it against the build's own project through the
+ * same guarded edit the save handler uses, whether or not this tab, or any window, is even open
+ * (BG-0007). What is left here is VIEW state only: which permission is waiting, what a session is
+ * doing right now, cleared once its turn ends because nobody can still answer a question that turn
+ * already closed — never written back to the record.
  */
 export function NowTab({
   projectId,
@@ -42,7 +44,6 @@ export function NowTab({
   onPrompt: (text: string) => void;
 }): React.JSX.Element {
   const revision = useRevision();
-  const bump = useBump();
   const [builds, setBuilds] = useState<BuildRow[]>([]);
   const [record, setRecord] = useState<Record_ | null>(null);
   const [sessions, setSessions] = useState<Map<string, Omit<LiveSession, "waiting">>>(new Map());
@@ -89,46 +90,18 @@ export function NowTab({
       }
 
       if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR") {
-        // A turn that ends with a request still open is nobody's to answer any more.
+        // A turn that ends with a request still open is nobody's to answer any more. VIEW state
+        // only — the flip this used to chase down through `session:list` now happens in main,
+        // against the build's own project, whether or not this component exists at all (ST-0041).
         setPermissions((current) => {
           if (!current.has(payload.sessionId)) return current;
           const next = new Map(current);
           next.delete(payload.sessionId);
           return next;
         });
-
-        // Resolved fresh from the registry, not from the last `build:list` this component happened
-        // to have loaded: a worktree build's very first turn can finish before that snapshot (a
-        // git-backed `build:list` plus a full record walk) has even resolved, and `session:list` is
-        // an in-memory read with no such race. `storyId` is `null` for the main chat session, which
-        // correctly no-ops below rather than flipping anything.
-        void window.aibuildos
-          .invoke("session:list", {})
-          .then(
-            (result) =>
-              result.sessions.find((row) => row.sessionId === payload.sessionId)?.storyId ?? null,
-          )
-          .then((storyId) => {
-            if (storyId === null) return { problem: null as string | null };
-            return window.aibuildos
-              .invoke("project:artifact", { id: projectId, artifactId: storyId })
-              .then((artifact) => {
-                const state = String((artifact.frontmatter as { state?: unknown }).state ?? "");
-                if (state !== "building") return { problem: null as string | null };
-                return window.aibuildos.invoke("project:artifact-save", {
-                  id: projectId,
-                  artifactId: storyId,
-                  frontmatter: { state: "review" },
-                });
-              });
-          })
-          .then((result) => {
-            if (result.problem === null) bump();
-          })
-          .catch(() => undefined);
       }
     });
-  }, [projectId, bump]);
+  }, []);
 
   useEffect(() => {
     return window.aibuildos.subscribe("session:state", (payload) => {

@@ -199,7 +199,8 @@ test("a worktree build leaves the workspace free, and lands on accept", async ()
     .toContain("built: turn 1");
   expect(readFileSync(join(work, "notes.md"), "utf8")).toBe("existing\n");
 
-  // The turn ending flips the story to review (Now's watcher, not the main-session `useTurnEnd`).
+  // The turn ending flips the story to review — `builds.ts`'s own turn-end hook, in main, against
+  // this build's own project (ST-0041), not the main-session `useTurnEnd`.
   await expect
     .poll(() => readFileSync(storyFile, "utf8"), { timeout: 20000 })
     .toContain("state: review");

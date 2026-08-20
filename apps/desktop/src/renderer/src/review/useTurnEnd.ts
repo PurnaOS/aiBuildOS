@@ -6,11 +6,20 @@ import { turnEndWalk } from "./walk.js";
  * story sits at `building`, flip it to `review`.
  *
  * Mounted once in `Workspace.tsx`, not in `WorkBoard.tsx` or `ReviewTab.tsx` — a tab can be closed
- * mid-turn, but the walk still has to land. `bump` is taken as an argument rather than read with
- * `useBump()`: this hook is called from the workspace's own body, above the `BumpContext` provider
- * it renders, where that hook would answer with the no-op default.
+ * mid-turn, but the walk still has to land.
+ *
+ * No `bump` here any more (BG-0006, ST-0040): RQ-0026's file watcher is what every refresh rides on
+ * now, and a flip is a write like any other — the watcher sees it and the rails re-read on their own.
+ * What this hook alone can still tell the workspace is a **failure** nothing on disk will ever show:
+ * a rejected read or save at turn's end used to vanish into `.catch(() => undefined)`, leaving the
+ * story at `building` with no word said anywhere. `onProblem` is that word — Workspace.tsx holds it
+ * and renders it, the one thing this hook cannot do sitting above any UI of its own.
  */
-export function useTurnEnd(projectId: string, sessionId: string | null, bump: () => void): void {
+export function useTurnEnd(
+  projectId: string,
+  sessionId: string | null,
+  onProblem: (text: string) => void,
+): void {
   useEffect(() => {
     if (sessionId === null) return;
 
@@ -23,10 +32,10 @@ export function useTurnEnd(projectId: string, sessionId: string | null, bump: ()
         window.aibuildos.invoke("project:record", { id: projectId }),
         window.aibuildos.invoke("build:list", { projectId }),
       ])
-        .then(async ([record, builds]) => {
-          // A worktree build's story flips when its own session's turn ends (NowTab owns that);
+        .then(([record, builds]) =>
+          // A worktree build's story flips when its own session's turn ends, in main (ST-0041);
           // the main conversation ending a turn must not flip a sibling still mid-build.
-          const flipped = await turnEndWalk(
+          turnEndWalk(
             (artifactId, frontmatter) =>
               window.aibuildos.invoke("project:artifact-save", {
                 id: projectId,
@@ -35,10 +44,11 @@ export function useTurnEnd(projectId: string, sessionId: string | null, bump: ()
               }),
             record.artifacts ?? [],
             new Set(builds.builds.map((build) => build.storyId.toUpperCase())),
-          );
-          if (flipped.length > 0) bump();
-        })
-        .catch(() => undefined);
+          ),
+        )
+        .catch((cause) => {
+          onProblem(cause instanceof Error ? cause.message : String(cause));
+        });
     });
-  }, [projectId, sessionId, bump]);
+  }, [projectId, sessionId, onProblem]);
 }

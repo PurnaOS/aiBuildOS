@@ -15,6 +15,7 @@ import {
   worktreePrune,
   worktreeRemove,
 } from "./git.js";
+import { applyArtifactEdit } from "./record.js";
 import type { SessionRegistry, SessionRow } from "./sessions.js";
 
 /**
@@ -100,6 +101,37 @@ export async function checkpointWorktree(
   }
 }
 
+/**
+ * `building → review`, in the build's own project (BG-0007, ST-0041) — through `applyArtifactEdit`,
+ * the same guarded core `project:artifact-save` calls, so a build's own flip is refused exactly as a
+ * person's save would be. No prior read: the cheapest honest check is attempting the edit itself and
+ * reading what comes back.
+ *
+ * A refusal is not automatically a failure. `applyArtifactEdit` refuses a state change in exactly two
+ * ways — the story is not in the bundle at all, or the transition is not declared — and only the
+ * latter is expected here: a story already sent onward (accepted, sent back to `building` again) by
+ * the time its turn ends is a story this flip has nothing to do, not an error. Anything else —
+ * not-found included — is real and gets said, in the session's own stream (`aibuildos.flip`), the
+ * same place a checkpoint's own rejection already lands.
+ */
+function flipToReview(
+  sessions: SessionRegistry,
+  sessionId: string,
+  projectPath: string,
+  storyId: string,
+): void {
+  let result: ReturnType<typeof applyArtifactEdit>;
+  try {
+    result = applyArtifactEdit(projectPath, storyId, { state: "review" });
+  } catch (cause) {
+    sessions.noteCustom(sessionId, "aibuildos.flip", { ok: false, message: messageOf(cause) });
+    return;
+  }
+  if (result.problem === null) return;
+  if (result.problem.includes("has no transition from")) return;
+  sessions.noteCustom(sessionId, "aibuildos.flip", { ok: false, message: result.problem });
+}
+
 export async function startBuild(
   sessions: SessionRegistry,
   project: { id: string; path: string },
@@ -149,14 +181,19 @@ export async function startBuild(
   let turn = 0;
   sessions.onTurnEnd(started.sessionId, () => {
     turn += 1;
-    void checkpointWorktree(worktreePath, `checkpoint: ${storyId} turn ${turn}`).then((result) => {
-      if (!result.ok) {
-        sessions.noteCustom(started.sessionId, "aibuildos.checkpoint", {
-          ok: false,
-          message: result.message,
-        });
-      }
-    });
+    // Checkpoint first, then the flip: the checkpoint captures this turn's work on the worktree's own
+    // branch, the flip is main's own write in the main checkout (DC-0021) — two different trees, but
+    // one order, so a flip never announces "ready for review" ahead of the work it is reviewing.
+    void checkpointWorktree(worktreePath, `checkpoint: ${storyId} turn ${turn}`)
+      .then((result) => {
+        if (!result.ok) {
+          sessions.noteCustom(started.sessionId, "aibuildos.checkpoint", {
+            ok: false,
+            message: result.message,
+          });
+        }
+      })
+      .then(() => flipToReview(sessions, started.sessionId, project.path, storyId));
   });
 
   live.set(key(project.path, storyId), { close: () => sessions.close(started.sessionId) });

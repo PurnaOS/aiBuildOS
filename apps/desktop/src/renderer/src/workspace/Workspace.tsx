@@ -7,6 +7,7 @@ import { PlanTab } from "../plan/PlanTab.js";
 import { ReviewTab } from "../review/ReviewTab.js";
 import { useTurnEnd } from "../review/useTurnEnd.js";
 import { useSession } from "../session/useSession.js";
+import { focusRing } from "../ui.js";
 import { ArtifactTab } from "./ArtifactTab.js";
 import { Chat } from "./Chat.js";
 import { DiffTab } from "./DiffTab.js";
@@ -15,6 +16,7 @@ import { FileTab } from "./FileTab.js";
 import { RecordRail } from "./RecordRail.js";
 import { BumpContext, RevisionContext, useWorkspaceRevision } from "./revision.js";
 import { TabStrip, useTabs } from "./TabStrip.js";
+import { useToolCallStream } from "./toolCall.js";
 
 /**
  * The project workspace (ST-0011): the record on the left, the conversation in the centre, the
@@ -27,11 +29,26 @@ import { TabStrip, useTabs } from "./TabStrip.js";
 export function Workspace({ projectId }: { projectId: string }): React.JSX.Element {
   const session = useSession(projectId);
   const tabs = useTabs();
-  // What tells the rails the project has moved: the agent's turns ending, and the user's own saves.
+  // What tells the rails the project has moved: the watcher's `project:changed`, and the user's
+  // own saves (DC-0022).
   const { revision, bump, streaming } = useWorkspaceRevision(
+    projectId,
     session.state.status === "ready" ? session.state.sessionId : null,
   );
-  useTurnEnd(projectId, session.state.status === "ready" ? session.state.sessionId : null, bump);
+  /**
+   * A turn-end read or flip that failed (BG-0006, ST-0040#AC-2). Nothing on disk changed, so the
+   * watcher has nothing to tell the rails — this is the one thing only `useTurnEnd` itself can say,
+   * and the smallest honest place to say it: a dismissible line above the tab strip, not a toast that
+   * outlives its own relevance or a rail-specific surface that only half the workspace would see.
+   */
+  const [turnEndProblem, setTurnEndProblem] = useState<string | null>(null);
+  // Every session's tool calls, kept whether or not anything is looking (BG-0008).
+  useToolCallStream();
+  useTurnEnd(
+    projectId,
+    session.state.status === "ready" ? session.state.sessionId : null,
+    setTurnEndProblem,
+  );
   /**
    * Pane widths, remembered between runs (ST-0011#AC-2, BG-0004).
    *
@@ -126,6 +143,22 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
 
           <Panel id="centre" defaultSize={55} minSize={30}>
             <div className="flex h-full flex-col">
+              {turnEndProblem !== null && (
+                <div
+                  data-testid="turn-end-problem"
+                  className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-200 px-3 py-1.5 text-xs text-red-600 dark:border-neutral-800"
+                >
+                  <span>{turnEndProblem}</span>
+                  <button
+                    type="button"
+                    aria-label="Dismiss"
+                    onClick={() => setTurnEndProblem(null)}
+                    className={`text-red-600 hover:text-red-700 ${focusRing}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
               <TabStrip {...tabs} />
               {/* Every open tab stays mounted; only the focused one is shown. Unmounting would throw
               away an editor's unsaved work the moment someone glanced at the conversation, and would
