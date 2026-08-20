@@ -73,9 +73,9 @@ back to [docs/README.md](../README.md)
 | [TC-0063](tc-0063.md) | The checklist is walked from the review, and the outcome lands | active | [RQ-0023](../requirements/rq-0023.md)#AC-1, #AC-2, #AC-3 |
 | [TC-0064](tc-0064.md) | Impact is a read of the graph, grouped by what it means | active | [RQ-0024](../requirements/rq-0024.md)#AC-1, #AC-2 |
 | [TC-0065](tc-0065.md) | A changed requirement offers the impact, and the re-plan | active | [RQ-0024](../requirements/rq-0024.md)#AC-1, #AC-3, #AC-4 |
-| [TC-0066](tc-0066.md) | Worktree verbs create, checkpoint, merge and reconcile | draft | [RQ-0020](../requirements/rq-0020.md)#AC-1, #AC-3, #AC-4, #AC-5 |
-| [TC-0067](tc-0067.md) | A worktree build leaves the workspace free, and lands on accept | draft | [RQ-0020](../requirements/rq-0020.md)#AC-1, #AC-2, #AC-4, #AC-6 |
-| [TC-0068](tc-0068.md) | Now derives from the sessions and the record, and counts what waits | draft | [RQ-0021](../requirements/rq-0021.md)#AC-2, #AC-3 |
-| [TC-0069](tc-0069.md) | Two builds at once; cancelling one leaves the other | draft | [RQ-0021](../requirements/rq-0021.md)#AC-1, #AC-2, #AC-4 |
-| [TC-0070](tc-0070.md) | The run fence starts a server, and nothing outlives its review | draft | [RQ-0025](../requirements/rq-0025.md)#AC-1, #AC-3, #AC-4 |
-| [TC-0071](tc-0071.md) | The preview renders beside the review, and closes with it | draft | [RQ-0025](../requirements/rq-0025.md)#AC-1, #AC-2 |
+| [TC-0066](tc-0066.md) | Worktree verbs create, checkpoint, merge and reconcile | active | [RQ-0020](../requirements/rq-0020.md)#AC-1, #AC-3, #AC-4, #AC-5 |
+| [TC-0067](tc-0067.md) | A worktree build leaves the workspace free, and lands on accept | active | [RQ-0020](../requirements/rq-0020.md)#AC-1, #AC-2, #AC-4, #AC-6 |
+| [TC-0068](tc-0068.md) | Now derives from the sessions and the record, and counts what waits | active | [RQ-0021](../requirements/rq-0021.md)#AC-2, #AC-3 |
+| [TC-0069](tc-0069.md) | Two builds at once; cancelling one leaves the other | active | [RQ-0021](../requirements/rq-0021.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0070](tc-0070.md) | The run fence starts a server, and nothing outlives its review | active | [RQ-0025](../requirements/rq-0025.md)#AC-1, #AC-3, #AC-4 |
+| [TC-0071](tc-0071.md) | The preview renders beside the review, and closes with it | active | [RQ-0025](../requirements/rq-0025.md)#AC-1, #AC-2 |
