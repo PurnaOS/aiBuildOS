@@ -27,3 +27,4 @@ back to [docs/README.md](../README.md)
 | [ST-0017](st-0017.md) | Start a file, and mint an artifact | done | [RQ-0006](../requirements/rq-0006.md) · [EP-0004](../epics/ep-0004.md) · [TC-0029](../testing/tc-0029.md), [TC-0030](../testing/tc-0030.md) |
 | [ST-0018](st-0018.md) | The editors are dark when the window is | done | [RQ-0004](../requirements/rq-0004.md) · [EP-0004](../epics/ep-0004.md) · [TC-0031](../testing/tc-0031.md) |
 | [ST-0019](st-0019.md) | Choose light, dark, or whatever the system is doing | done | [RQ-0007](../requirements/rq-0007.md) · [TC-0032](../testing/tc-0032.md) |
+| [ST-0020](st-0020.md) | Make a file where you are looking | review | [RQ-0006](../requirements/rq-0006.md) · [EP-0004](../epics/ep-0004.md) · [TC-0033](../testing/tc-0033.md) |

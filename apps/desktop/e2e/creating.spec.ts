@@ -143,6 +143,50 @@ test("mints an artifact of a type the project's own profile declares", async () 
   await app.close();
 });
 
+/**
+ * TC-0033. Playwright cannot click an operating-system menu, so the platform's answer is scripted —
+ * the same move [DC-0013](../../../docs/decisions/dc-0013.md) makes for a live model. What is proved
+ * here is the wiring either side of it: a right-click asks, and the answer starts the create flow in
+ * the directory that was pointed at. Which directory a right-click *means* is TC-0033's unit half.
+ */
+test("makes a file in the directory the tree was pointed at", async () => {
+  const { app, w, work } = await open();
+
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler("project:file-menu");
+    ipcMain.handle("project:file-menu", () => ({ action: "new-file", directory: "docs" }));
+  });
+
+  await w.getByTestId("file-row").filter({ hasText: "docs" }).first().click({ button: "right" });
+
+  // Named, not described: the directory is already decided, so the form asks for the rest.
+  await expect(w.getByTestId("new-file-form")).toContainText("name, in docs");
+  await w.getByTestId("new-file-path").fill("notes.md");
+  await w.getByTestId("new-file-create").click();
+
+  expect(readFileSync(join(work, "docs/notes.md"), "utf8")).toBe("");
+  await expect(w.getByTestId("file-tab")).toBeVisible();
+
+  await app.close();
+});
+
+test("does nothing when the context menu is dismissed", async () => {
+  const { app, w, work } = await open();
+
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler("project:file-menu");
+    // What a dismissal answers.
+    ipcMain.handle("project:file-menu", () => ({ action: null, directory: "docs" }));
+  });
+
+  await w.getByTestId("file-row").filter({ hasText: "docs" }).first().click({ button: "right" });
+
+  await expect(w.getByTestId("new-file-form")).toHaveCount(0);
+  expect(existsSync(join(work, "docs/notes.md"))).toBe(false);
+
+  await app.close();
+});
+
 test("says a project with no profile cannot mint artifacts", async () => {
   const { app, w } = await open({ bundle: false });
 

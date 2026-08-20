@@ -158,17 +158,32 @@ export function NewArtifact({
   );
 }
 
-/** Starting a file: a path, and nothing else (ST-0017#AC-1). */
+/**
+ * Starting a file: a path, and nothing else (ST-0017#AC-1, ST-0020#AC-2).
+ *
+ * Whether it is open, and which directory it starts in, belong to the rail — the same form is opened
+ * by the `+` in the header and by the tree's own context menu, and only the rail knows which row was
+ * pointed at.
+ */
 export function NewFile({
   projectId,
+  creating,
+  onOpen,
+  onClose,
   onCreated,
 }: {
   projectId: string;
+  /** Open when set, carrying the directory the file will be made in. `""` is the project root. */
+  creating: { directory: string } | null;
+  onOpen: () => void;
+  onClose: () => void;
   onCreated: (path: string) => void;
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
-  const [path, setPath] = useState("");
+  const [name, setName] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
+
+  const directory = creating?.directory ?? "";
+  const path = directory === "" ? name : `${directory}/${name}`;
 
   const create = async (): Promise<void> => {
     const { problem: failed } = await window.aibuildos
@@ -179,18 +194,18 @@ export function NewFile({
     setProblem(failed);
     if (failed === null) {
       onCreated(path);
-      setOpen(false);
-      setPath("");
+      onClose();
+      setName("");
     }
   };
 
-  if (!open) {
+  if (creating === null) {
     return (
       <button
         type="button"
         data-testid="new-file"
         aria-label="New file"
-        onClick={() => setOpen(true)}
+        onClick={onOpen}
         className={`text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 ${focusRing}`}
       >
         <Plus size={13} aria-hidden />
@@ -203,13 +218,15 @@ export function NewFile({
       data-testid="new-file-form"
       className="absolute top-8 right-2 left-2 z-10 rounded border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-800 dark:bg-neutral-950"
     >
-      <p className={`mb-1 ${eyebrow}`}>path in this project</p>
+      <p className={`mb-1 ${eyebrow}`}>
+        {directory === "" ? "path in this project" : `name, in ${directory}`}
+      </p>
       <input
         data-testid="new-file-path"
         className={field}
-        value={path}
-        placeholder="src/thing.ts"
-        onChange={(event) => setPath(event.target.value)}
+        value={name}
+        placeholder={directory === "" ? "src/thing.ts" : "thing.ts"}
+        onChange={(event) => setName(event.target.value)}
       />
 
       {problem !== null && (
@@ -222,7 +239,7 @@ export function NewFile({
         <button
           type="button"
           data-testid="new-file-create"
-          disabled={path.trim() === ""}
+          disabled={name.trim() === ""}
           onClick={() => void create()}
           className={`${primary} ${focusRing} disabled:opacity-40`}
         >
@@ -232,7 +249,7 @@ export function NewFile({
           type="button"
           data-testid="new-file-cancel"
           onClick={() => {
-            setOpen(false);
+            onClose();
             setProblem(null);
           }}
           className={`${button} ${focusRing}`}

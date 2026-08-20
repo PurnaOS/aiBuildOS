@@ -40,3 +40,4 @@ back to [docs/README.md](../README.md)
 | [TC-0030](tc-0030.md) | A file and an artifact are started from the workspace | active | [RQ-0006](../requirements/rq-0006.md)#AC-1, #AC-5, #AC-6, #AC-7, #AC-8 |
 | [TC-0031](tc-0031.md) | The editors follow the window's appearance | active | [BG-0003](../bugs/bg-0003.md), [RQ-0004](../requirements/rq-0004.md)#AC-1 |
 | [TC-0032](tc-0032.md) | The chosen appearance is in force, and survives a restart | active | [RQ-0007](../requirements/rq-0007.md)#AC-1 through #AC-6 |
+| [TC-0033](tc-0033.md) | A file is made from the tree, in the directory pointed at | active | [RQ-0006](../requirements/rq-0006.md)#AC-9 |

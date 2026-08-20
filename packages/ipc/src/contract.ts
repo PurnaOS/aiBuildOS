@@ -579,6 +579,27 @@ export const channels = {
     }),
   },
   /**
+   * Show the file tree's own context menu, and answer with what was chosen (RQ-0006#AC-9).
+   *
+   * The menu is built and shown by **main**, because the platform already has a real one: a floating
+   * element on a `contextmenu` event has to reimplement dismissal, keyboard navigation and appearance,
+   * and gets all three slightly wrong.
+   *
+   * The renderer learns only the decision. `null` is a dismissal, which does nothing.
+   */
+  "project:file-menu": {
+    request: z.object({
+      /** The row that was pointed at, and whether it is a directory. */
+      path: RepoPathSchema,
+      directory: z.boolean(),
+    }),
+    response: z.object({
+      action: z.enum(["new-file"]).nullable(),
+      /** The directory the chosen action applies to: the row itself, or the folder it sits in. */
+      directory: z.string(),
+    }),
+  },
+  /**
    * The installation's settings (RQ-0007).
    *
    * Appearance is set in the **main** process through `nativeTheme.themeSource`, which changes

@@ -28,6 +28,14 @@ export function FilesRail({
   onCreated: (path: string) => void;
 }): React.JSX.Element {
   const [tab, setTab] = useState<"files" | "git">("files");
+  /** Open when a file is being named, holding the directory it will be made in. */
+  const [creating, setCreating] = useState<{ directory: string } | null>(null);
+
+  const menu = useCallback(async (entry: { path: string; directory: boolean }) => {
+    const chosen = await window.aibuildos.invoke("project:file-menu", entry);
+    // A dismissal answers `null`, and does nothing.
+    if (chosen.action === "new-file") setCreating({ directory: chosen.directory });
+  }, []);
 
   return (
     <div data-testid="files-rail" className="relative flex h-full flex-col overflow-hidden">
@@ -49,12 +57,18 @@ export function FilesRail({
           </button>
         ))}
         <span className="flex flex-1 items-center justify-end pr-2">
-          <NewFile projectId={projectId} onCreated={onCreated} />
+          <NewFile
+            projectId={projectId}
+            onCreated={onCreated}
+            creating={creating}
+            onOpen={() => setCreating({ directory: "" })}
+            onClose={() => setCreating(null)}
+          />
         </span>
       </div>
 
       {tab === "files" ? (
-        <FileTree projectId={projectId} onOpen={onOpen} />
+        <FileTree projectId={projectId} onOpen={onOpen} onMenu={(entry) => void menu(entry)} />
       ) : (
         <GitChanges projectId={projectId} onOpen={onOpen} />
       )}
@@ -65,13 +79,16 @@ export function FilesRail({
 function FileTree({
   projectId,
   onOpen,
+  onMenu,
 }: {
   projectId: string;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
+  /** Right-click: the platform's own menu, which may answer with a directory to create in. */
+  onMenu: (entry: { path: string; directory: boolean }) => void;
 }): React.JSX.Element {
   return (
     <div className="min-h-0 flex-1 overflow-auto py-1.5">
-      <Directory projectId={projectId} path="" depth={0} onOpen={onOpen} />
+      <Directory projectId={projectId} path="" depth={0} onOpen={onOpen} onMenu={onMenu} />
     </div>
   );
 }
@@ -81,11 +98,14 @@ function Directory({
   path,
   depth,
   onOpen,
+  onMenu,
 }: {
   projectId: string;
   path: string;
   depth: number;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
+  /** Right-click: the platform's own menu, which may answer with a directory to create in. */
+  onMenu: (entry: { path: string; directory: boolean }) => void;
 }): React.JSX.Element {
   const [tree, setTree] = useState<Tree | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -137,10 +157,17 @@ function Directory({
             expanded={open.has(entry.path)}
             onToggle={() => toggle(entry.path)}
             onOpen={onOpen}
+            onMenu={onMenu}
           />
           {/* Mounted only once opened, which is what makes the read lazy. */}
           {entry.directory && open.has(entry.path) && (
-            <Directory projectId={projectId} path={entry.path} depth={depth + 1} onOpen={onOpen} />
+            <Directory
+              projectId={projectId}
+              path={entry.path}
+              depth={depth + 1}
+              onOpen={onOpen}
+              onMenu={onMenu}
+            />
           )}
         </div>
       ))}
@@ -154,12 +181,15 @@ function Row({
   expanded,
   onToggle,
   onOpen,
+  onMenu,
 }: {
   entry: Entry;
   depth: number;
   expanded: boolean;
   onToggle: () => void;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
+  /** Right-click: the platform's own menu, which may answer with a directory to create in. */
+  onMenu: (entry: { path: string; directory: boolean }) => void;
 }): React.JSX.Element {
   const open = () =>
     entry.directory
@@ -171,6 +201,7 @@ function Row({
       type="button"
       data-testid="file-row"
       onClick={open}
+      onContextMenu={() => onMenu({ path: entry.path, directory: entry.directory })}
       onDoubleClick={() =>
         entry.directory
           ? undefined

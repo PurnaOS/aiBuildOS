@@ -30,7 +30,7 @@ import {
   validate,
 } from "@aibuildos/knowledge-engine";
 import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
-import { app, BrowserWindow, dialog, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, Menu, nativeTheme } from "electron";
 import {
   changes,
   GitError,
@@ -43,6 +43,7 @@ import {
   status,
 } from "./git.js";
 import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
+import { fileMenuTarget } from "./menus.js";
 import { addProject, loadProjects, markOpened, type Project, removeProject } from "./projects.js";
 import { claimProjectDirectory, fillProject } from "./scaffold.js";
 import { SessionRegistry } from "./sessions.js";
@@ -851,6 +852,26 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       } catch (cause) {
         return { artifactId: null, problem: failure(cause).message };
       }
+    },
+
+    "project:file-menu": async ({ path, directory }) => {
+      const target = fileMenuTarget(path, directory);
+
+      return await new Promise((resolve) => {
+        let chosen: "new-file" | null = null;
+        Menu.buildFromTemplate([
+          {
+            label: target === "" ? "New file…" : `New file in ${target}…`,
+            click: () => {
+              chosen = "new-file";
+            },
+          },
+        ]).popup({
+          // Resolved when the menu closes, however it closed: dismissal is an answer too, and it is
+          // the one that does nothing.
+          callback: () => resolve({ action: chosen, directory: target }),
+        });
+      });
     },
 
     "settings:get": () => {
