@@ -87,8 +87,10 @@ test("creates, lists, opens and closes a project, and survives a restart", async
     await expect(window.getByTestId("record-rail")).toBeVisible();
     await expect(window.getByTestId("files-rail")).toBeVisible();
     await expect(window.getByTestId("tab-chat")).toBeVisible();
-    // A freshly created project has a bundle and no artifacts in it, which is not an error.
-    await expect(window.getByTestId("record-empty")).toBeVisible();
+    // A freshly created project has a bundle whose only artifacts are the standard playbooks
+    // (RQ-0013#AC-4): an empty backlog, not an empty record.
+    await expect(window.getByTestId("record-open-PB-0001")).toBeVisible();
+    await expect(window.getByTestId("record-empty")).toHaveCount(0);
 
     // Closing returns to the ledger without a restart (ST-0004#AC-6).
     await window.getByTestId("project-close").click();

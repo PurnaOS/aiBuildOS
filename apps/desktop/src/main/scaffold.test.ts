@@ -61,6 +61,7 @@ describe("scaffolding a project", () => {
       "bug",
       "decision",
       "epic",
+      "playbook",
       "profile",
       "README",
       "requirement",
@@ -79,6 +80,7 @@ describe("scaffolding a project", () => {
       "bugs",
       "decisions",
       "architecture",
+      "playbooks",
     ]) {
       expect(existsSync(join(dir, "docs", slug, "README.md"))).toBe(true);
     }
@@ -95,15 +97,29 @@ describe("scaffolding a project", () => {
     expect(validate(bundle).filter((finding) => finding.severity === "error")).toEqual([]);
   });
 
-  it("seeds no artifacts — a new project's backlog is empty, not broken", async () => {
+  it("seeds no backlog, but the standard playbooks, owned by whoever the commit is by", async () => {
+    // RQ-0013#AC-1, DC-0019: a new project's *backlog* is still empty (RQ-0002#AC-4) — it is not
+    // seeded empty of artifacts any more, because the standard playbooks ship from the first commit.
     const dir = await scaffoldProject(parent, "demo");
 
     const { bundle } = loadBundle(join(dir, "docs"), dir);
     const summary = summarize(bundle);
 
-    expect(summary.artifacts).toBe(0);
+    for (const type of ["Requirement", "Epic", "Story", "TestCase", "Bug"]) {
+      expect(summary.byType[type] ?? 0).toBe(0);
+    }
+    expect(summary.artifacts).toBe(3);
+    expect(summary.byType.Playbook).toBe(3);
+    expect(summary.byState.active).toBe(3);
     // The indexes are there waiting for the first requirement.
     expect(summary.indexes).toBeGreaterThanOrEqual(8);
+
+    for (const id of ["pb-0001", "pb-0002", "pb-0003"]) {
+      const text = readFileSync(join(dir, "docs", "playbooks", `${id}.md`), "utf8");
+      // The identity `IDENTITY` gave the commit above — never the raw `{{OWNER}}` token.
+      expect(text).toContain("owner: Test\n");
+      expect(text).not.toContain("{{OWNER}}");
+    }
   });
 
   it("refuses a directory that already exists, and leaves it alone (RQ-0002#AC-3)", async () => {

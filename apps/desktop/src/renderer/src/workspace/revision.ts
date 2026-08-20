@@ -16,8 +16,19 @@ import { createContext, useContext, useEffect, useState } from "react";
  */
 export const RevisionContext = createContext(0);
 
+/**
+ * The setter's twin, for the few places that *cause* a change from deep in the tree — seeding
+ * playbooks, for one — rather than merely reading. A no-op default keeps tests rendering without a
+ * workspace around them.
+ */
+export const BumpContext = createContext<() => void>(() => undefined);
+
 export function useRevision(): number {
   return useContext(RevisionContext);
+}
+
+export function useBump(): () => void {
+  return useContext(BumpContext);
 }
 
 /**

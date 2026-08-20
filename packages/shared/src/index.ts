@@ -7,7 +7,7 @@
  */
 
 /** Artifact ID prefixes this project has minted. See docs/guidelines/okf-conventions.md §3. */
-export const ID_PREFIXES = ["RQ", "EP", "ST", "TC", "BG", "DC", "AR"] as const;
+export const ID_PREFIXES = ["RQ", "EP", "ST", "TC", "BG", "DC", "AR", "PB"] as const;
 
 export type IdPrefix = (typeof ID_PREFIXES)[number];
 

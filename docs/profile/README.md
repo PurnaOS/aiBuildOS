@@ -16,6 +16,7 @@ The dialect is specified in
 | `TestCase` | `TC` | [testing/](../testing/README.md) | [test-case.md](test-case.md) |
 | `Bug` | `BG` | [bugs/](../bugs/README.md) | [bug.md](bug.md) |
 | `Decision` | `DC` | [decisions/](../decisions/README.md) | [decision.md](decision.md) |
+| `Playbook` | `PB` | [playbooks/](../playbooks/README.md) | [playbook.md](playbook.md) |
 
 Manifest: [profile.md](profile.md) — `aibuildos-default@0.1.0`, `formats: 1`.
 

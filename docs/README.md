@@ -31,6 +31,7 @@ single-subject, and linked. Nothing is duplicated: **repeat IDs and links, never
 | [bugs/](bugs/README.md) | `BG` | defects |
 | [decisions/](decisions/README.md) | `DC` | architecture decision records |
 | [architecture/](architecture/README.md) | `AR` | system shape |
+| [playbooks/](playbooks/README.md) | `PB` | named instructions shown as buttons |
 
 ## Traceability
 

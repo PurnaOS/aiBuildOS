@@ -17,8 +17,20 @@ import type { Tab } from "./TabStrip.js";
 type Record_ = ChannelResponse<"project:record">;
 type Artifact = NonNullable<Record_["artifacts"]>[number];
 
-/** Traceability order, not alphabetical: a requirement comes before the work that implements it. */
-const ORDER = ["Requirement", "Epic", "Story", "TestCase", "Bug", "Decision", "Architecture"];
+/**
+ * Traceability order, not alphabetical: a requirement comes before the work that implements it.
+ * `Playbook` sits last — it traces to nothing (DC-0019), so there is no chain to place it inside.
+ */
+const ORDER = [
+  "Requirement",
+  "Epic",
+  "Story",
+  "TestCase",
+  "Bug",
+  "Decision",
+  "Architecture",
+  "Playbook",
+];
 
 /** What the reverse of each stored link is called when it is read the other way (okf-conventions §4). */
 const DERIVED: Record<string, string> = {

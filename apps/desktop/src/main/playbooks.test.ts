@@ -1,0 +1,94 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { seedPlaybooks } from "./playbooks.js";
+import { bundleFiles } from "./scaffold.js";
+
+/**
+ * Seeding the standard playbooks into a project the scaffold did not create (RQ-0013#AC-4, DC-0019).
+ *
+ * The fixture is an "adopted" project: the same template `bundleFiles()` writes for a fresh scaffold,
+ * minus whichever playbook pieces a test wants missing, git-initialised with a local identity — the
+ * shape a real pre-DC-0019 repository is in.
+ */
+describe("seeding playbooks into an adopted project", () => {
+  let dir: string;
+
+  // A repository with no identity means no identity in *any* scope — `git config user.name` reads
+  // the global and system files too, and the machine running this suite may well have one.
+  const NO_GLOBAL = { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aibuildos-playbooks-"));
+    execFileSync("git", ["-C", dir, "init", "--quiet"]);
+    Object.assign(process.env, NO_GLOBAL);
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    for (const key of Object.keys(NO_GLOBAL)) delete process.env[key];
+  });
+
+  /** Writes the template bundle, dropping playbook pieces the caller does not want present. */
+  function adopt(options: { playbooks?: boolean; profileType?: boolean } = {}): void {
+    for (const [relative, content] of bundleFiles()) {
+      if (options.playbooks === false && relative.startsWith("docs/playbooks/")) continue;
+      if (options.profileType === false && relative === "docs/profile/playbook.md") continue;
+      const target = join(dir, relative);
+      mkdirSync(dirname(target), { recursive: true });
+      // Nothing here calls `seedPlaybooks` yet, so the `{{OWNER}}` token is never resolved by
+      // adoption itself — only by the function under test.
+      writeFileSync(target, content, "utf8");
+    }
+  }
+
+  it("refuses without a configured identity, and writes nothing", () => {
+    adopt({ playbooks: false, profileType: false });
+
+    const problem = seedPlaybooks(dir);
+
+    expect(problem).toContain("user.name");
+    expect(existsSync(join(dir, "docs", "playbooks"))).toBe(false);
+  });
+
+  it("writes the standard playbooks, healing a profile that predates the type", () => {
+    adopt({ playbooks: false, profileType: false });
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+    execFileSync("git", ["-C", dir, "config", "user.email", "adopter@example.com"]);
+
+    const problem = seedPlaybooks(dir);
+
+    expect(problem).toBeNull();
+    // The type this project's profile never declared, so the artifacts it just gained resolve.
+    expect(existsSync(join(dir, "docs", "profile", "playbook.md"))).toBe(true);
+    for (const id of ["pb-0001", "pb-0002", "pb-0003"]) {
+      const text = readFileSync(join(dir, "docs", "playbooks", `${id}.md`), "utf8");
+      expect(text).toContain("owner: Adopter\n");
+      expect(text).not.toContain("{{OWNER}}");
+    }
+  });
+
+  it("leaves an already-declared profile type alone", () => {
+    adopt({ playbooks: false, profileType: true });
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+
+    const before = readFileSync(join(dir, "docs", "profile", "playbook.md"), "utf8");
+    expect(seedPlaybooks(dir)).toBeNull();
+
+    expect(readFileSync(join(dir, "docs", "profile", "playbook.md"), "utf8")).toBe(before);
+  });
+
+  it("refuses when the project already has a playbook, and writes nothing else", () => {
+    adopt({ playbooks: true, profileType: true });
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+    const before = readFileSync(join(dir, "docs", "playbooks", "pb-0001.md"), "utf8");
+
+    const problem = seedPlaybooks(dir);
+
+    expect(problem).toContain("already has playbook");
+    // Untouched, not merely re-seeded to the same content — the refusal happens before any write.
+    expect(readFileSync(join(dir, "docs", "playbooks", "pb-0001.md"), "utf8")).toBe(before);
+  });
+});

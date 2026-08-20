@@ -6,6 +6,7 @@ import type { Session } from "../session/useSession.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { Activity } from "./Activity.js";
 import { Controls } from "./Controls.js";
+import { PlaybookStrip } from "./PlaybookStrip.js";
 import { ToolCallCard } from "./ToolCallCard.js";
 
 /**
@@ -39,8 +40,19 @@ export function Chat({
   const { state, start } = session;
   /** A slash command the user picked. It is sent as ordinary text, which is all a command is. */
   const [command, setCommand] = useState<string | null>(null);
+  // Which harness this session was actually started with — `SessionState` does not carry it, and
+  // it is RQ-0013#AC-6's fallback: what a playbook button runs with when its own preference matches
+  // nothing configured.
+  const [startedWith, setStartedWith] = useState<string | null>(null);
+  const pick = async (harnessId: string): Promise<void> => {
+    setStartedWith(harnessId);
+    await start(harnessId);
+  };
 
   if (state.status === "ready") {
+    const attachedHarness =
+      harnesses?.find((harness) => harness.id === startedWith)?.displayName ??
+      "the attached harness";
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="chat">
         {/* What the agent is set to, above the conversation it applies to. */}
@@ -56,6 +68,13 @@ export function Chat({
           // advance — one card draws whatever it ran, where it ran it.
           renderToolCalls={[{ name: "*", render: ToolCallCard as ToolRenderer["render"] }]}
         >
+          {/* The standard steps, filtered from the record alone (DC-0019) — above the transcript,
+              because they are how a session that has nothing asked of it yet gets started. */}
+          <PlaybookStrip
+            projectId={projectId}
+            harnesses={harnesses}
+            attachedHarness={attachedHarness}
+          />
           <div className="min-h-0 flex-1">
             <CopilotChat className="h-full" />
           </div>
@@ -103,7 +122,7 @@ export function Chat({
           )}
 
           <div className="mt-4">
-            <HarnessButtons harnesses={harnesses} onPick={start} label="Try again with" />
+            <HarnessButtons harnesses={harnesses} onPick={pick} label="Try again with" />
           </div>
         </div>
       </Centred>
@@ -121,7 +140,7 @@ export function Chat({
           Git and your own credentials.
         </p>
         <div className="mt-4">
-          <HarnessButtons harnesses={harnesses} onPick={start} label="Start with" />
+          <HarnessButtons harnesses={harnesses} onPick={pick} label="Start with" />
         </div>
       </div>
     </Centred>
