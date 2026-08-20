@@ -3,6 +3,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
 import { killChecks } from "./checks.js";
 import { registerIpc } from "./ipc.js";
 import { commandTarget, installMenu } from "./menu.js";
+import { killPreviews } from "./previews.js";
 import { loadSettings, settingsFile } from "./settings.js";
 
 /**
@@ -67,6 +68,7 @@ void app.whenReady().then(() => {
   app.on("before-quit", () => {
     void sessions.closeAll();
     killChecks();
+    killPreviews();
   });
 
   app.on("activate", () => {
