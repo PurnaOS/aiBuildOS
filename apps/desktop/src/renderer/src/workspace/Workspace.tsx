@@ -170,6 +170,7 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                       streaming={streaming}
                       onSaved={bump}
                       onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
+                      onPrompt={setPending}
                     />
                   ) : null}
                 </div>
