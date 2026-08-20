@@ -29,6 +29,7 @@ Conventions: [OKF conventions](../guidelines/okf-conventions.md) ·
 | [DC-0016](dc-0016.md) | Biome for linting and formatting, markdownlint for the bundle | accepted | [AR-0002](../architecture/ar-0002.md) · [DC-0001](dc-0001.md), [DC-0013](dc-0013.md), [DC-0015](dc-0015.md) |
 | [DC-0017](dc-0017.md) | The ACP to AG-UI bridge runs in main; the renderer drives a custom AbstractAgent | accepted | [RQ-0004](../requirements/rq-0004.md) · [DC-0006](dc-0006.md), [DC-0007](dc-0007.md), [DC-0008](dc-0008.md) |
 | [DC-0018](dc-0018.md) | Renderer libraries for the workspace, chosen against the Content-Security-Policy | accepted | [RQ-0004](../requirements/rq-0004.md), [RQ-0005](../requirements/rq-0005.md) · [DC-0004](dc-0004.md), [DC-0008](dc-0008.md) |
+| [DC-0019](dc-0019.md) | Playbooks are record artifacts, shipped in the project template | accepted | [RQ-0013](../requirements/rq-0013.md) · [DC-0015](dc-0015.md) |
 
 ## Not yet decided
 

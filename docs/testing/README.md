@@ -45,3 +45,15 @@ back to [docs/README.md](../README.md)
 | [TC-0035](tc-0035.md) | The sidebar collapses, comes back, and is remembered | active | [RQ-0009](../requirements/rq-0009.md)#AC-1, #AC-2, #AC-3 |
 | [TC-0036](tc-0036.md) | A failed save keeps the work and names the failure | active | [RQ-0008](../requirements/rq-0008.md)#AC-6 |
 | [TC-0037](tc-0037.md) | Collapsing the chrome leaves the panes as the user sized them | active | [RQ-0009](../requirements/rq-0009.md)#AC-4 |
+| [TC-0038](tc-0038.md) | The engine knows which states may follow, and refuses the rest | draft | [RQ-0010](../requirements/rq-0010.md)#AC-1 through #AC-4 |
+| [TC-0039](tc-0039.md) | The editor offers only the legal next states, and the record follows | draft | [RQ-0010](../requirements/rq-0010.md)#AC-1, #AC-5, #AC-6 |
+| [TC-0040](tc-0040.md) | A board is a derivation of the record, and nothing else | draft | [RQ-0011](../requirements/rq-0011.md)#AC-1, #AC-5, #AC-8 |
+| [TC-0041](tc-0041.md) | Moving a card is the state change, and an illegal drop is a refusal | draft | [RQ-0011](../requirements/rq-0011.md)#AC-2, #AC-3, #AC-4, #AC-6, #AC-7 |
+| [TC-0042](tc-0042.md) | Findings ride the record read, per artifact | draft | [RQ-0012](../requirements/rq-0012.md)#AC-1, #AC-3 |
+| [TC-0043](tc-0043.md) | A problem is marked where the artifact is listed, and a clean record is silent | draft | [RQ-0012](../requirements/rq-0012.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0044](tc-0044.md) | Playbooks are discovered from the record and composed with their context | draft | [RQ-0013](../requirements/rq-0013.md)#AC-1, #AC-2, #AC-6 |
+| [TC-0045](tc-0045.md) | A pressed playbook says exactly what it sent, in the transcript | draft | [RQ-0013](../requirements/rq-0013.md)#AC-2 through #AC-5 |
+| [TC-0046](tc-0046.md) | Approval flips what it may, and refuses what the record's rules refuse | draft | [RQ-0014](../requirements/rq-0014.md)#AC-3, #AC-5, #AC-6 |
+| [TC-0047](tc-0047.md) | A proposal lands as drafts, is shaped, and approval schedules it | draft | [RQ-0014](../requirements/rq-0014.md)#AC-1, #AC-2, #AC-4, #AC-5, #AC-7 |
+| [TC-0048](tc-0048.md) | The build walk and the send-back are record edits, and survive a restart | draft | [RQ-0015](../requirements/rq-0015.md)#AC-1, #AC-4, #AC-6 |
+| [TC-0049](tc-0049.md) | A story is built, reviewed beside its criteria, and accepted | draft | [RQ-0015](../requirements/rq-0015.md)#AC-1 through #AC-5 |
