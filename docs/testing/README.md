@@ -57,3 +57,4 @@ back to [docs/README.md](../README.md)
 | [TC-0047](tc-0047.md) | A proposal lands as drafts, is shaped, and approval schedules it | active | [RQ-0014](../requirements/rq-0014.md)#AC-1, #AC-2, #AC-4, #AC-5, #AC-7 |
 | [TC-0048](tc-0048.md) | The build walk and the send-back are record edits, and survive a restart | active | [RQ-0015](../requirements/rq-0015.md)#AC-1, #AC-4, #AC-6 |
 | [TC-0049](tc-0049.md) | A story is built, reviewed beside its criteria, and accepted | active | [RQ-0015](../requirements/rq-0015.md)#AC-1 through #AC-5 |
+| [TC-0050](tc-0050.md) | A column orders by priority before ID, live | active | [BG-0005](../bugs/bg-0005.md), [RQ-0011](../requirements/rq-0011.md)#AC-5 |

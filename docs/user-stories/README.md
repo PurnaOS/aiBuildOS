@@ -36,3 +36,4 @@ back to [docs/README.md](../README.md)
 | [ST-0026](st-0026.md) | The standard steps are buttons the project carries | done | [RQ-0013](../requirements/rq-0013.md) · [EP-0006](../epics/ep-0006.md) · [TC-0044](../testing/tc-0044.md), [TC-0045](../testing/tc-0045.md) |
 | [ST-0027](st-0027.md) | A plan is draft artifacts, and approving it is a state change | done | [RQ-0014](../requirements/rq-0014.md) · [EP-0006](../epics/ep-0006.md) · [TC-0046](../testing/tc-0046.md), [TC-0047](../testing/tc-0047.md) |
 | [ST-0028](st-0028.md) | A story is built by the agent and accepted by a person | done | [RQ-0015](../requirements/rq-0015.md) · [EP-0006](../epics/ep-0006.md) · [TC-0048](../testing/tc-0048.md), [TC-0049](../testing/tc-0049.md) |
+| [ST-0029](st-0029.md) | The cards sort by what matters first | done | [RQ-0011](../requirements/rq-0011.md) · [EP-0005](../epics/ep-0005.md) · [TC-0050](../testing/tc-0050.md) |

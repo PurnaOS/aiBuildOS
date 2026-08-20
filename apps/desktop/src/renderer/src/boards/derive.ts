@@ -12,8 +12,8 @@ export interface BoardArtifact {
   readonly type: string;
   readonly title: string;
   readonly state: string;
-  /** `project:record` carries no priority; a card without one sorts after every prioritised one. */
-  readonly priority?: string;
+  /** A card without one sorts after every prioritised one (BG-0005). */
+  readonly priority?: string | undefined;
 }
 
 export interface BoardColumn {

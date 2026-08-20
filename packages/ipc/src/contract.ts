@@ -374,6 +374,8 @@ export const channels = {
             type: z.string(),
             title: z.string(),
             state: z.string(),
+            /** Absent when the artifact carries none — the boards sort by it, absent last (BG-0005). */
+            priority: z.string().optional(),
             file: z.string(),
             /**
              * From the same `validate()` run `docs:check` performs, carried over this channel rather

@@ -321,3 +321,43 @@ test("the Work board restricts moves to the edges a person owns", async () => {
 
   await app.close();
 });
+
+/** A priority the record carries, present tense: p1 above p3 whatever the IDs say. */
+const prioritised = (id: string, priority: string): string => `---
+type: Requirement
+id: ${id}
+title: "${id} at ${priority}"
+state: draft
+owner: srini
+provenance: human
+created: 2026-08-19
+kind: functional
+priority: ${priority}
+---
+
+# ${id} — at ${priority}
+
+## Acceptance criteria
+
+- [AC-1] It does the thing.
+`;
+
+test("orders a column by priority before ID (TC-0050, BG-0005)", async () => {
+  // The IDs argue one order and the priorities the other; only the priorities may win.
+  const { app, w } = await open((dir) => {
+    writeFileSync(join(dir, "docs/requirements/rq-0001.md"), prioritised("RQ-0001", "p3"));
+    writeFileSync(join(dir, "docs/requirements/rq-0002.md"), prioritised("RQ-0002", "p1"));
+    const index = join(dir, "docs/requirements/README.md");
+    writeFileSync(
+      index,
+      `${readFileSync(index, "utf8")}| [RQ-0001](rq-0001.md) | RQ-0001 at p3 | draft | — |\n| [RQ-0002](rq-0002.md) | RQ-0002 at p1 | draft | — |\n`,
+    );
+  });
+
+  await w.getByTestId("tab-board").click();
+  const cards = w.getByTestId("board-column-draft").locator('[data-testid^="board-card-RQ-"]');
+  await expect(cards).toHaveCount(2);
+  await expect(cards.first()).toHaveAttribute("data-testid", "board-card-RQ-0002");
+
+  await app.close();
+});

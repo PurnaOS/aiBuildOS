@@ -473,6 +473,9 @@ function createHandlers(sessions: SessionRegistry): Handlers {
               type: typeof front.type === "string" ? front.type : "",
               title: typeof front.title === "string" ? front.title : artifactId,
               state: typeof front.state === "string" ? front.state : "",
+              // Omitted rather than empty when the artifact carries none: the boards sort by it,
+              // and a card without a priority sorts after every prioritised one (BG-0005).
+              ...(typeof front.priority === "string" ? { priority: front.priority } : {}),
               file: artifact.file,
               problems: problems.get(artifact.file) ?? { errors: 0, warnings: 0 },
               // Deduplicated: a test that verifies two criteria of one requirement

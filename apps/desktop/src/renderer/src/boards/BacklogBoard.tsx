@@ -106,7 +106,7 @@ export function BacklogBoard({
 
   const artifacts: BoardArtifact[] = (record.artifacts ?? [])
     .filter((a) => a.type === "Requirement")
-    .map((a) => ({ id: a.id, type: a.type, title: a.title, state: a.state }));
+    .map((a) => ({ id: a.id, type: a.type, title: a.title, state: a.state, priority: a.priority }));
 
   if (artifacts.length === 0) {
     return (

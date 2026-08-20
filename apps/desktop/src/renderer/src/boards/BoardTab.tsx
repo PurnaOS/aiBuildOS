@@ -146,7 +146,13 @@ function Card({
   onMove,
   problem,
 }: {
-  artifact: { id: string; type: string; title: string; state: string; priority?: string };
+  artifact: {
+    id: string;
+    type: string;
+    title: string;
+    state: string;
+    priority?: string | undefined;
+  };
   projectId: string;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
   dragging: { id: string; state: string } | null;
