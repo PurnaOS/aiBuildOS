@@ -58,3 +58,11 @@ back to [docs/README.md](../README.md)
 | [TC-0048](tc-0048.md) | The build walk and the send-back are record edits, and survive a restart | active | [RQ-0015](../requirements/rq-0015.md)#AC-1, #AC-4, #AC-6 |
 | [TC-0049](tc-0049.md) | A story is built, reviewed beside its criteria, and accepted | active | [RQ-0015](../requirements/rq-0015.md)#AC-1 through #AC-5 |
 | [TC-0050](tc-0050.md) | A column orders by priority before ID, live | active | [BG-0005](../bugs/bg-0005.md), [RQ-0011](../requirements/rq-0011.md)#AC-5 |
+| [TC-0051](tc-0051.md) | A question fence becomes a card, and a broken one becomes text | draft | [RQ-0016](../requirements/rq-0016.md)#AC-1, #AC-5 |
+| [TC-0052](tc-0052.md) | A tap answers the agent, and typing answers it too | draft | [RQ-0016](../requirements/rq-0016.md)#AC-1 through #AC-4 |
+| [TC-0053](tc-0053.md) | The interview drafts requirements as it settles them | draft | [RQ-0017](../requirements/rq-0017.md)#AC-1, #AC-2, #AC-3, #AC-6 |
+| [TC-0054](tc-0054.md) | An abandoned interview keeps its drafts, as drafts | draft | [RQ-0017](../requirements/rq-0017.md)#AC-4, #AC-5 |
+| [TC-0055](tc-0055.md) | Stage, unstage and commit run the user's own Git | draft | [RQ-0018](../requirements/rq-0018.md)#AC-1, #AC-2, #AC-3, #AC-6 |
+| [TC-0056](tc-0056.md) | The Git tab commits, and accepting a story offers to | draft | [RQ-0018](../requirements/rq-0018.md)#AC-1, #AC-2, #AC-4, #AC-5 |
+| [TC-0057](tc-0057.md) | Fenced check commands run, stream, and answer by exit code | draft | [RQ-0019](../requirements/rq-0019.md)#AC-1, #AC-2, #AC-3, #AC-5 |
+| [TC-0058](tc-0058.md) | The checks run beside the review, and a failure goes to the agent | draft | [RQ-0019](../requirements/rq-0019.md)#AC-1 through #AC-4 |
