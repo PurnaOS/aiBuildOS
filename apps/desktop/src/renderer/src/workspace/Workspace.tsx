@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Group, type Layout, Panel, Separator } from "react-resizable-panels";
 import { BoardTab } from "../boards/BoardTab.js";
+import { NowTab } from "../now/NowTab.js";
+import { SessionTab } from "../now/SessionTab.js";
 import { PlanTab } from "../plan/PlanTab.js";
 import { ReviewTab } from "../review/ReviewTab.js";
 import { useTurnEnd } from "../review/useTurnEnd.js";
@@ -143,6 +145,10 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                     />
                   ) : tab.kind === "board" ? (
                     <BoardTab projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
+                  ) : tab.kind === "now" ? (
+                    <NowTab projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
+                  ) : tab.kind === "session" ? (
+                    <SessionTab projectId={projectId} sessionId={tab.id.replace(/^session:/, "")} />
                   ) : tab.kind === "plan" ? (
                     <PlanTab projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
                   ) : tab.kind === "review" ? (

@@ -34,6 +34,15 @@ import {
 } from "@aibuildos/knowledge-engine";
 import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
 import { app, BrowserWindow, dialog, Menu, nativeTheme } from "electron";
+import {
+  buildChanges,
+  buildDiff,
+  discardBuild,
+  listBuilds,
+  listSessions,
+  mergeBuild,
+  startBuild,
+} from "./builds.js";
 import { runChecks } from "./checks.js";
 import {
   changes,
@@ -52,6 +61,7 @@ import {
 import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
 import { fileMenuTarget } from "./menus.js";
 import { seedPlaybooks } from "./playbooks.js";
+import { setPreviewBounds, startPreview, stopPreview } from "./previews.js";
 import {
   addProject,
   loadProjects,
@@ -919,6 +929,57 @@ function createHandlers(
       return await runChecks(project.path, (command, chunk) =>
         emitCheckOutput({ projectId: id, command, chunk }),
       );
+    },
+
+    "build:start": async ({ projectId, storyId, harnessId }) => {
+      const project = requireProject(projectId);
+      const harness = loadHarnesses(harnessFile()).find((entry) => entry.id === harnessId);
+      if (harness === undefined) {
+        return { ok: false, code: "not_found", message: "That harness is no longer configured." };
+      }
+      return await startBuild(sessions, project, storyId, harness);
+    },
+
+    "build:list": async ({ projectId }) => {
+      const project = requireProject(projectId);
+      return await listBuilds(sessions, project.path);
+    },
+
+    "build:changes": async ({ projectId, storyId }) => {
+      const project = requireProject(projectId);
+      return await buildChanges(project.path, storyId);
+    },
+
+    "build:diff": async ({ projectId, storyId, path }) => {
+      const project = requireProject(projectId);
+      insideProject(project.path, path);
+      return await buildDiff(project.path, storyId, path);
+    },
+
+    "build:merge": async ({ projectId, storyId }) => {
+      const project = requireProject(projectId);
+      return await mergeBuild(project.path, storyId);
+    },
+
+    "build:discard": async ({ projectId, storyId }) => {
+      const project = requireProject(projectId);
+      return await discardBuild(project.path, storyId);
+    },
+
+    "session:list": () => ({ sessions: listSessions(sessions) }),
+
+    "preview:start": async ({ projectId }) => {
+      const project = requireProject(projectId);
+      return await startPreview(project.path);
+    },
+
+    "preview:stop": async ({ projectId }) => {
+      const project = requireProject(projectId);
+      return await stopPreview(project.path);
+    },
+
+    "preview:bounds": (bounds) => {
+      setPreviewBounds(bounds);
     },
 
     "project:create-artifact": async ({ id, type, title }) => {

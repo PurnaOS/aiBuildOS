@@ -669,6 +669,101 @@ export const channels = {
     }),
   },
   /**
+   * Start a build in its own worktree (RQ-0020, DC-0021): walk the story's states in main, create
+   * the worktree on `aibuildos/<story>`, spawn the session there. Failures are data, as always.
+   */
+  "build:start": {
+    request: z.object({ projectId: z.string(), storyId: z.string(), harnessId: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), sessionId: z.string() }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /** Every build the enumeration knows: `git worktree list` plus the registry's live sessions. */
+  "build:list": {
+    request: z.object({ projectId: z.string() }),
+    response: z.object({
+      builds: z.array(
+        z.object({
+          storyId: z.string(),
+          branch: z.string(),
+          /** `null` for a build that survived a restart and has no session yet (DC-0021). */
+          sessionId: z.string().nullable(),
+          dirty: z.boolean(),
+        }),
+      ),
+      problem: z.string().nullable(),
+    }),
+  },
+  /** The branch's changes against main — what a worktree build's review reads (RQ-0020#AC-4). */
+  "build:changes": {
+    request: z.object({ projectId: z.string(), storyId: z.string() }),
+    response: z.object({
+      changes: z.array(z.object({ path: z.string() })),
+      problem: z.string().nullable(),
+    }),
+  },
+  "build:diff": {
+    request: z.object({ projectId: z.string(), storyId: z.string(), path: RepoPathSchema.min(1) }),
+    response: z.object({
+      path: z.string(),
+      oldText: z.string().nullable(),
+      newText: z.string(),
+      problem: z.string().nullable(),
+    }),
+  },
+  /** Accept: --no-ff merge into main, worktree removed, branch deleted — the person's commit. */
+  "build:merge": {
+    request: z.object({ projectId: z.string(), storyId: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true) }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  "build:discard": {
+    request: z.object({ projectId: z.string(), storyId: z.string() }),
+    response: z.object({ problem: z.string().nullable() }),
+  },
+  /** Every live session the registry holds — what the Now surface derives from (RQ-0021). */
+  "session:list": {
+    request: z.object({}),
+    response: z.object({
+      sessions: z.array(
+        z.object({
+          sessionId: z.string(),
+          projectId: z.string(),
+          /** The story a build session is for; `null` for the workspace's own conversation. */
+          storyId: z.string().nullable(),
+        }),
+      ),
+    }),
+  },
+  /**
+   * Start the project's declared preview server and resolve once its URL answers (RQ-0025,
+   * DC-0012). The page renders in a WebContentsView main positions from `preview:bounds`.
+   */
+  "preview:start": {
+    request: z.object({ projectId: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), url: z.string() }),
+      z.object({ ok: z.literal(false), message: z.string() }),
+    ]),
+  },
+  "preview:stop": {
+    request: z.object({ projectId: z.string() }),
+    response: z.object({ problem: z.string().nullable() }),
+  },
+  /** Where the preview's view sits, in window coordinates; zero size hides it. */
+  "preview:bounds": {
+    request: z.object({
+      x: z.number(),
+      y: z.number(),
+      width: z.number().min(0),
+      height: z.number().min(0),
+    }),
+    response: z.void(),
+  },
+  /**
    * Mint an artifact (RQ-0006#AC-2 to AC-5, AC-7).
    *
    * The number is allocated here rather than asked for: it is append-only and never reused, which is

@@ -9,7 +9,16 @@ import { eyebrow, focusRing, mono } from "../ui.js";
  * workspace hold an editor without a fourth panel, and keeps the conversation one click away from
  * whatever is being edited.
  */
-export type TabKind = "chat" | "board" | "file" | "artifact" | "diff" | "plan" | "review";
+export type TabKind =
+  | "chat"
+  | "board"
+  | "now"
+  | "session"
+  | "file"
+  | "artifact"
+  | "diff"
+  | "plan"
+  | "review";
 
 export interface Tab {
   /** Stable across opens of the same thing, so opening it twice focuses rather than duplicates. */
@@ -25,8 +34,10 @@ export interface Tab {
 const CHAT: Tab = { id: "chat", kind: "chat", title: "Chat", preview: false };
 /** Pinned beside Chat (ST-0024#AC-1): the record's shape, not one artifact at a time. */
 const BOARD: Tab = { id: "board", kind: "board", title: "Board", preview: false };
-/** Neither pinned tab can be closed. */
-const PINNED = new Set([CHAT.id, BOARD.id]);
+/** Pinned beside Board (RQ-0021#AC-2): the work's motion, and what waits on a person. */
+const NOW: Tab = { id: "now", kind: "now", title: "Now", preview: false };
+/** No pinned tab can be closed. */
+const PINNED = new Set([CHAT.id, BOARD.id, NOW.id]);
 
 export interface Tabs {
   tabs: Tab[];
@@ -39,7 +50,7 @@ export interface Tabs {
 }
 
 export function useTabs(): Tabs {
-  const [tabs, setTabs] = useState<Tab[]>([CHAT, BOARD]);
+  const [tabs, setTabs] = useState<Tab[]>([CHAT, BOARD, NOW]);
   const [active, setActive] = useState<string>(CHAT.id);
   // Read by `close`, which must not depend on the tab list and be rebuilt on every change.
   const tabsRef = useRef(tabs);
