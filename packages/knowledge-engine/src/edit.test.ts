@@ -158,9 +158,15 @@ describe("editing an artifact", () => {
     const path = fileURLToPath(new URL("../../../docs/requirements/rq-0004.md", import.meta.url));
     const source = readFileSync(path, "utf8");
 
-    const after = editArtifact(source, { frontmatter: { state: "built" } });
+    // Read rather than assumed: what this proves is about the *other* bytes, and hard-coding the
+    // state it happened to be in makes an ordinary edit to the record fail this test.
+    const current = /^state: (.+)$/m.exec(source)?.[1];
+    const next = current === "retired" ? "draft" : "retired";
 
-    expect(after).toBe(source.replace("state: ready", "state: built"));
+    const after = editArtifact(source, { frontmatter: { state: next } });
+
+    expect(current).toBeDefined();
+    expect(after).toBe(source.replace(`state: ${current}`, `state: ${next}`));
   });
 });
 
