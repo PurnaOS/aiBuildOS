@@ -28,6 +28,11 @@ export const mono = "font-mono tabular-nums";
 export const focusRing =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 dark:focus-visible:outline-neutral-100";
 
+/** A board card (ST-0024): bordered and draggable, never coloured by state — the column it sits in
+ * already says that. */
+export const card =
+  "w-full rounded border border-neutral-300 bg-white px-2.5 py-1.5 text-left text-sm shadow-sm dark:border-neutral-700 dark:bg-neutral-900";
+
 /**
  * The status rail — a 2px rule down the left edge of a project row, coloured by working-tree state.
  *

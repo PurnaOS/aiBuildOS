@@ -1,4 +1,4 @@
-import { FileCode2, MessageSquare, X } from "lucide-react";
+import { FileCode2, LayoutGrid, MessageSquare, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { eyebrow, focusRing, mono } from "../ui.js";
 
@@ -9,7 +9,7 @@ import { eyebrow, focusRing, mono } from "../ui.js";
  * workspace hold an editor without a fourth panel, and keeps the conversation one click away from
  * whatever is being edited.
  */
-export type TabKind = "chat" | "file" | "artifact" | "diff";
+export type TabKind = "chat" | "board" | "file" | "artifact" | "diff";
 
 export interface Tab {
   /** Stable across opens of the same thing, so opening it twice focuses rather than duplicates. */
@@ -23,6 +23,10 @@ export interface Tab {
 }
 
 const CHAT: Tab = { id: "chat", kind: "chat", title: "Chat", preview: false };
+/** Pinned beside Chat (ST-0024#AC-1): the record's shape, not one artifact at a time. */
+const BOARD: Tab = { id: "board", kind: "board", title: "Board", preview: false };
+/** Neither pinned tab can be closed. */
+const PINNED = new Set([CHAT.id, BOARD.id]);
 
 export interface Tabs {
   tabs: Tab[];
@@ -35,7 +39,7 @@ export interface Tabs {
 }
 
 export function useTabs(): Tabs {
-  const [tabs, setTabs] = useState<Tab[]>([CHAT]);
+  const [tabs, setTabs] = useState<Tab[]>([CHAT, BOARD]);
   const [active, setActive] = useState<string>(CHAT.id);
   // Read by `close`, which must not depend on the tab list and be rebuilt on every change.
   const tabsRef = useRef(tabs);
@@ -61,8 +65,8 @@ export function useTabs(): Tabs {
   }, []);
 
   const close = useCallback((id: string) => {
-    // The conversation has no close control, and nothing else may close it either.
-    if (id === CHAT.id) return;
+    // Neither pinned tab has a close control, and nothing else may close them either.
+    if (PINNED.has(id)) return;
 
     // Asked *before* updating, never inside the updater: a state updater must be pure, and React
     // may call it more than once — which would ask twice for one click.
@@ -93,6 +97,7 @@ export function useTabs(): Tabs {
 }
 
 export function TabStrip({ tabs, active, close, focus }: Tabs): React.JSX.Element {
+  const open = tabs.filter((tab) => !PINNED.has(tab.id)).length;
   return (
     <div
       data-testid="tab-strip"
@@ -119,10 +124,14 @@ export function TabStrip({ tabs, active, close, focus }: Tabs): React.JSX.Elemen
             >
               {tab.kind === "chat" ? (
                 <MessageSquare size={12} aria-hidden />
+              ) : tab.kind === "board" ? (
+                <LayoutGrid size={12} aria-hidden />
               ) : (
                 <FileCode2 size={12} aria-hidden />
               )}
-              <span className={tab.kind === "chat" ? "" : mono}>{tab.title}</span>
+              <span className={tab.kind === "chat" || tab.kind === "board" ? "" : mono}>
+                {tab.title}
+              </span>
               {tab.dirty === true && (
                 <span
                   data-testid={`tab-dirty-${tab.id}`}
@@ -133,7 +142,7 @@ export function TabStrip({ tabs, active, close, focus }: Tabs): React.JSX.Elemen
               )}
             </button>
 
-            {tab.id !== CHAT.id && (
+            {!PINNED.has(tab.id) && (
               <button
                 type="button"
                 aria-label={`Close ${tab.title}`}
@@ -149,7 +158,7 @@ export function TabStrip({ tabs, active, close, focus }: Tabs): React.JSX.Elemen
       })}
       <div className="flex-1" />
       <div className="flex items-center pr-3">
-        <span className={eyebrow}>{tabs.length - 1 === 0 ? "" : `${tabs.length - 1} open`}</span>
+        <span className={eyebrow}>{open === 0 ? "" : `${open} open`}</span>
       </div>
     </div>
   );
