@@ -47,10 +47,10 @@ back to [docs/README.md](../README.md)
 | [TC-0037](tc-0037.md) | Collapsing the chrome leaves the panes as the user sized them | active | [RQ-0009](../requirements/rq-0009.md)#AC-4 |
 | [TC-0038](tc-0038.md) | The engine knows which states may follow, and refuses the rest | active | [RQ-0010](../requirements/rq-0010.md)#AC-1 through #AC-4 |
 | [TC-0039](tc-0039.md) | The editor offers only the legal next states, and the record follows | active | [RQ-0010](../requirements/rq-0010.md)#AC-1, #AC-5, #AC-6 |
-| [TC-0040](tc-0040.md) | A board is a derivation of the record, and nothing else | draft | [RQ-0011](../requirements/rq-0011.md)#AC-1, #AC-5, #AC-8 |
-| [TC-0041](tc-0041.md) | Moving a card is the state change, and an illegal drop is a refusal | draft | [RQ-0011](../requirements/rq-0011.md)#AC-2, #AC-3, #AC-4, #AC-6, #AC-7 |
-| [TC-0042](tc-0042.md) | Findings ride the record read, per artifact | draft | [RQ-0012](../requirements/rq-0012.md)#AC-1, #AC-3 |
-| [TC-0043](tc-0043.md) | A problem is marked where the artifact is listed, and a clean record is silent | draft | [RQ-0012](../requirements/rq-0012.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0040](tc-0040.md) | A board is a derivation of the record, and nothing else | active | [RQ-0011](../requirements/rq-0011.md)#AC-1, #AC-5, #AC-8 |
+| [TC-0041](tc-0041.md) | Moving a card is the state change, and an illegal drop is a refusal | active | [RQ-0011](../requirements/rq-0011.md)#AC-2, #AC-3, #AC-4, #AC-6, #AC-7 |
+| [TC-0042](tc-0042.md) | Findings ride the record read, per artifact | active | [RQ-0012](../requirements/rq-0012.md)#AC-1, #AC-3 |
+| [TC-0043](tc-0043.md) | A problem is marked where the artifact is listed, and a clean record is silent | active | [RQ-0012](../requirements/rq-0012.md)#AC-1, #AC-2, #AC-4 |
 | [TC-0044](tc-0044.md) | Playbooks are discovered from the record and composed with their context | active | [RQ-0013](../requirements/rq-0013.md)#AC-1, #AC-2, #AC-6 |
 | [TC-0045](tc-0045.md) | A pressed playbook says exactly what it sent, in the transcript | active | [RQ-0013](../requirements/rq-0013.md)#AC-2 through #AC-5 |
 | [TC-0046](tc-0046.md) | Approval flips what it may, and refuses what the record's rules refuse | draft | [RQ-0014](../requirements/rq-0014.md)#AC-3, #AC-5, #AC-6 |

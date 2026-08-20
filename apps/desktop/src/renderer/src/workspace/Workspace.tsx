@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Group, type Layout, Panel, Separator } from "react-resizable-panels";
 import { BoardTab } from "../boards/BoardTab.js";
+import { PlanTab } from "../plan/PlanTab.js";
+import { ReviewTab } from "../review/ReviewTab.js";
 import { useSession } from "../session/useSession.js";
 import { ArtifactTab } from "./ArtifactTab.js";
 import { Chat } from "./Chat.js";
@@ -138,7 +140,16 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                       onSent={() => setPending(null)}
                     />
                   ) : tab.kind === "board" ? (
-                    <BoardTab projectId={projectId} onOpen={tabs.open} />
+                    <BoardTab projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
+                  ) : tab.kind === "plan" ? (
+                    <PlanTab projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
+                  ) : tab.kind === "review" ? (
+                    <ReviewTab
+                      projectId={projectId}
+                      storyId={tab.id.replace(/^review:/, "")}
+                      onOpen={tabs.open}
+                      onPrompt={setPending}
+                    />
                   ) : tab.kind === "diff" ? (
                     <DiffTab projectId={projectId} path={tab.id.replace(/^diff:/, "")} />
                   ) : tab.kind === "file" ? (

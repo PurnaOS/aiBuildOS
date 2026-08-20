@@ -9,7 +9,7 @@ import { eyebrow, focusRing, mono } from "../ui.js";
  * workspace hold an editor without a fourth panel, and keeps the conversation one click away from
  * whatever is being edited.
  */
-export type TabKind = "chat" | "board" | "file" | "artifact" | "diff";
+export type TabKind = "chat" | "board" | "file" | "artifact" | "diff" | "plan" | "review";
 
 export interface Tab {
   /** Stable across opens of the same thing, so opening it twice focuses rather than duplicates. */

@@ -29,6 +29,8 @@ export function BacklogBoard({
 }: {
   projectId: string;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
+  /** Sends text into the conversation — the picking lane (ST-0027) wires the button that uses it. */
+  onPrompt: (text: string) => void;
 }): React.JSX.Element {
   const revision = useRevision();
   const bump = useBump();

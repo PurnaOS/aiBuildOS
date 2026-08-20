@@ -14,9 +14,14 @@ import { WorkBoard } from "./WorkBoard.js";
 export function BoardTab({
   projectId,
   onOpen,
+  onPrompt,
 }: {
   projectId: string;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
+  /** Sends text into the conversation as the user's own visible message — how "Plan the selected
+   * work" speaks (RQ-0014#AC-1). Unused until the picking lane lands; threaded now so it does not
+   * need a Workspace edit then. */
+  onPrompt: (text: string) => void;
 }): React.JSX.Element {
   const [view, setView] = useState<"backlog" | "work">("backlog");
 
@@ -42,9 +47,9 @@ export function BoardTab({
       </div>
 
       {view === "backlog" ? (
-        <BacklogBoard projectId={projectId} onOpen={onOpen} />
+        <BacklogBoard projectId={projectId} onOpen={onOpen} onPrompt={onPrompt} />
       ) : (
-        <WorkBoard projectId={projectId} onOpen={onOpen} />
+        <WorkBoard projectId={projectId} onOpen={onOpen} onPrompt={onPrompt} />
       )}
     </div>
   );
