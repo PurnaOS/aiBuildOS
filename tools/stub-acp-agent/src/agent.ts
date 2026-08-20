@@ -17,15 +17,36 @@
  *   --mode=slow           streams slowly and honours `session/cancel`
  *   --mode=controls       advertises modes and config options, and confirms changes to them
  *   --mode=echo           replies with exactly the prompt text received — proves what was sent
+ *   --mode=plan-writer    writes a scripted draft story + test per RQ id found in the prompt
+ *   --mode=file-writer    appends a scripted line to notes.md each turn, with tool call and diff
  *
  * The last four exist because a live agent does far more than stream text, and a stub that only
  * streams text can only test streaming text.
  *
  * Node-compatible on purpose: it stands in for an agent binary, and agent binaries are not Bun.
  */
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 
-type Mode = "ok" | "silent" | "auth-required" | "rich" | "permission" | "slow" | "controls" | "echo";
+type Mode =
+  | "ok"
+  | "silent"
+  | "auth-required"
+  | "rich"
+  | "permission"
+  | "slow"
+  | "controls"
+  | "echo"
+  | "plan-writer"
+  | "file-writer";
 
 interface Message {
   jsonrpc: "2.0";
@@ -180,6 +201,98 @@ async function richTurn(): Promise<string> {
   return "end_turn";
 }
 
+/** The next free number for a prefix, by scanning a bundle directory the way minting does. */
+function nextNumber(dir: string, prefix: string): number {
+  if (!existsSync(dir)) return 1;
+  const taken = readdirSync(dir)
+    .map((name) => new RegExp(`^${prefix}-(\\d+)\\.md$`).exec(name))
+    .flatMap((match) => (match === null ? [] : [Number(match[1])]));
+  return taken.length === 0 ? 1 : Math.max(...taken) + 1;
+}
+
+const pad = (n: number): string => String(n).padStart(4, "0");
+
+/**
+ * A scripted planning turn: one draft Story and one draft TestCase per requirement id named in the
+ * prompt, written straight into the project's record with their index rows — which is exactly what
+ * the plan playbook asks a real agent to do, minus the judgement. The e2e asserts the application's
+ * half: gathering, shaping, approving. Deterministic on purpose; `created` is fixed, not today.
+ */
+function planWriterTurn(prompt: string): string {
+  const cwd = process.cwd();
+  const picked = [...new Set(prompt.toUpperCase().match(/RQ-\d{4,}/g) ?? [])];
+  const stories = join(cwd, "docs", "user-stories");
+  const tests = join(cwd, "docs", "testing");
+  mkdirSync(stories, { recursive: true });
+  mkdirSync(tests, { recursive: true });
+
+  let storyNumber = nextNumber(stories, "st");
+  let testNumber = nextNumber(tests, "tc");
+
+  for (const requirement of picked) {
+    const storyId = `ST-${pad(storyNumber)}`;
+    const testId = `TC-${pad(testNumber)}`;
+    const storyFile = join(stories, `${storyId.toLowerCase()}.md`);
+    const testFile = join(tests, `${testId.toLowerCase()}.md`);
+
+    writeFileSync(
+      storyFile,
+      `---\ntype: Story\nid: ${storyId}\ntitle: "Deliver ${requirement}"\nstate: draft\nowner: stub\nprovenance: agent\ncreated: 2026-08-20\ngenerated: { by: "stub-acp-agent", at: 2026-08-20T00:00:00Z }\nlinks:\n  implements: [${requirement}]\n  verified_by: [${testId}]\n---\n\n# ${storyId} — Deliver ${requirement}\n\nA scripted slice for ${requirement}.\n\n## Acceptance criteria\n\n- [AC-1] The behaviour ${requirement} asks for is observable.\n`,
+    );
+    writeFileSync(
+      testFile,
+      `---\ntype: TestCase\nid: ${testId}\ntitle: "${requirement} behaves as asked"\nstate: draft\nowner: stub\nprovenance: agent\ncreated: 2026-08-20\ngenerated: { by: "stub-acp-agent", at: 2026-08-20T00:00:00Z }\nkind: automated\nlinks:\n  verifies: [${requirement}]\n---\n\n# ${testId} — ${requirement} behaves as asked\n\n## Steps\n\n1. Exercise ${requirement} and expect what it promises.\n`,
+    );
+    appendFileSync(
+      join(stories, "README.md"),
+      `| [${storyId}](${storyId.toLowerCase()}.md) | Deliver ${requirement} | draft | [${requirement}](../requirements/${requirement.toLowerCase()}.md) · [${testId}](../testing/${testId.toLowerCase()}.md) |\n`,
+    );
+    appendFileSync(
+      join(tests, "README.md"),
+      `| [${testId}](${testId.toLowerCase()}.md) | ${requirement} behaves as asked | draft | [${requirement}](../requirements/${requirement.toLowerCase()}.md) |\n`,
+    );
+
+    update({
+      sessionUpdate: "tool_call",
+      toolCallId: `write-${storyId}`,
+      title: `Write ${storyId} and ${testId}`,
+      kind: "edit",
+      status: "completed",
+      locations: [{ path: storyFile }, { path: testFile }],
+    });
+    storyNumber += 1;
+    testNumber += 1;
+  }
+
+  chunk(
+    picked.length === 0
+      ? "No requirement ids in the prompt."
+      : `Proposed ${picked.length} draft stories.`,
+  );
+  return "end_turn";
+}
+
+/** One scripted file change per turn — the smallest thing a build produces. */
+let buildTurns = 0;
+function fileWriterTurn(): string {
+  const file = join(process.cwd(), "notes.md");
+  buildTurns += 1;
+  const before = existsSync(file) ? readFileSync(file, "utf8") : "";
+  const line = `built: turn ${buildTurns}\n`;
+  writeFileSync(file, before + line);
+
+  update({
+    sessionUpdate: "tool_call",
+    toolCallId: `build-${buildTurns}`,
+    title: "Edit notes.md",
+    kind: "edit",
+    status: "completed",
+    content: [{ type: "diff", path: file, oldText: before, newText: before + line }],
+  });
+  chunk(`Changed notes.md (turn ${buildTurns}).`);
+  return "end_turn";
+}
+
 async function permissionTurn(): Promise<string> {
   update({
     sessionUpdate: "tool_call",
@@ -324,6 +437,10 @@ async function handle(line: string): Promise<void> {
         // was sent and what arrived — which is what a playbook test needs and a mock cannot give.
         const blocks = (message.params as { prompt?: { type?: string; text?: string }[] })?.prompt;
         chunk((blocks ?? []).map((block) => block.text ?? "").join(""));
+      } else if (mode === "plan-writer" || mode === "file-writer") {
+        const blocks = (message.params as { prompt?: { type?: string; text?: string }[] })?.prompt;
+        const text = (blocks ?? []).map((block) => block.text ?? "").join("");
+        stopReason = mode === "plan-writer" ? planWriterTurn(text) : fileWriterTurn();
       } else chunk("ok");
 
       respond(message.id, { stopReason });
