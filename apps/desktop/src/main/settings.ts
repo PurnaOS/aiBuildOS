@@ -18,10 +18,13 @@ export function settingsFile(userData: string): string {
 }
 
 export type Settings = ReturnType<typeof SettingsSchema.parse>;
+/** What may be *given* to a save: the defaulted fields need not be, which is what keeps an older
+ * settings file — and a caller that only knows about one field — from being a parse failure. */
+export type SettingsInput = Parameters<typeof SettingsSchema.parse>[0];
 export type Appearance = ReturnType<typeof AppearanceSchema.parse>;
 
 /** Following the system is what a fresh installation does, and what an unreadable file falls back to. */
-export const DEFAULTS: Settings = { appearance: "system" };
+export const DEFAULTS: Settings = { appearance: "system", sidebarCollapsed: false, layout: null };
 
 /**
  * The settings as the file has them: `DEFAULTS` when there is no file, and **`null`** when there is
@@ -55,7 +58,7 @@ export function loadSettings(file: string): Settings {
   return readSettings(file) ?? DEFAULTS;
 }
 
-export function saveSettings(file: string, settings: Settings): Settings {
+export function saveSettings(file: string, settings: SettingsInput): Settings {
   const next = SettingsSchema.parse(settings);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`, "utf8");

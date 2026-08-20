@@ -183,9 +183,7 @@ test("writes the fields, the criteria and the index, and disturbs nothing else",
   await w.getByTestId("criterion-remove-1").click();
   await w.getByTestId("criterion-add").click();
 
-  await expect(w.getByTestId("artifact-dirty")).toBeVisible();
-  await w.getByTestId("artifact-save").click();
-  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+  await expect(w.getByTestId("artifact-saved")).toHaveText("saved");
 
   const after = readFileSync(join(work, "docs/requirements/rq-0001.md"), "utf8");
 
@@ -218,8 +216,7 @@ test("changing a field alone leaves the whole body byte-identical", async () => 
   const before = readFileSync(path, "utf8");
 
   await w.getByTestId("artifact-state").selectOption("ready");
-  await w.getByTestId("artifact-save").click();
-  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+  await expect(w.getByTestId("artifact-saved")).toHaveText("saved");
 
   // One field moved and nothing else did — prose, wrapping, comment and all (AC-8).
   expect(readFileSync(path, "utf8")).toBe(before.replace("state: draft", "state: ready"));
@@ -234,8 +231,7 @@ test("edits the prose of the body as markdown", async () => {
   await w.keyboard.press("ControlOrMeta+End");
   await w.keyboard.type("A sentence someone added.\n\n");
 
-  await w.getByTestId("artifact-save").click();
-  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+  await expect(w.getByTestId("artifact-saved")).toHaveText("saved");
 
   // Byte-exact: an edit inside the prose moves the prose and nothing else — the blank line under
   // the frontmatter above all, which a one-newline disagreement about where the body starts eats.
@@ -271,8 +267,7 @@ test("does not hand out a criterion number it has already retired", async () => 
   await w.getByTestId("criterion-remove-1").click();
   await w.getByTestId("criterion-remove-2").click();
   await w.getByTestId("criterion-add").click();
-  await w.getByTestId("artifact-save").click();
-  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+  await expect(w.getByTestId("artifact-saved")).toHaveText("saved");
 
   const after = readFileSync(join(work, "docs/requirements/rq-0001.md"), "utf8");
   expect(after).toContain("- [AC-3]");
@@ -292,7 +287,6 @@ test("keeps both versions when the agent changes an artifact being edited", asyn
   await w.getByTestId("chat").waitFor({ timeout: 20000 });
   await w.getByTestId("tab-RQ-0001").click();
   await w.getByTestId("artifact-title").fill("Mine");
-  await expect(w.getByTestId("artifact-dirty")).toBeVisible();
 
   // `docs/` is the agent's work too, so this is a real collision rather than a hypothetical one.
   writeFileSync(
@@ -357,8 +351,7 @@ test("does not mistake its own save for the agent having changed the artifact", 
   await w.getByTestId("tab-RQ-0001").click();
 
   await w.getByTestId("artifact-title").fill("Mine");
-  await w.getByTestId("artifact-save").click();
-  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+  await expect(w.getByTestId("artifact-saved")).toHaveText("saved");
   // Still editing when the turn ends: what is on disk is this save, not what was first read.
   await w.getByTestId("artifact-title").fill("Mine again");
 

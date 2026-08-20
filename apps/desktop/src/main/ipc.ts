@@ -47,7 +47,7 @@ import { fileMenuTarget } from "./menus.js";
 import { addProject, loadProjects, markOpened, type Project, removeProject } from "./projects.js";
 import { claimProjectDirectory, fillProject } from "./scaffold.js";
 import { SessionRegistry } from "./sessions.js";
-import { readSettings, saveSettings, settingsFile } from "./settings.js";
+import { DEFAULTS, readSettings, saveSettings, settingsFile } from "./settings.js";
 
 /**
  * Bind the IPC contract to Electron's ipcMain.
@@ -876,11 +876,14 @@ function createHandlers(sessions: SessionRegistry): Handlers {
 
     "settings:get": () => {
       const stored = readSettings(settingsFile(app.getPath("userData")));
+      const settings = stored ?? DEFAULTS;
       return {
         // What is in force, not what was persisted. The two can disagree — the appearance is applied
         // before it is written, so a failed write leaves the window changed and the file behind — and
         // a panel that reported the file would then show the wrong choice as current.
         appearance: nativeTheme.themeSource,
+        sidebarCollapsed: settings.sidebarCollapsed,
+        layout: settings.layout,
         problem:
           stored === null
             ? "Your settings file could not be read, so the appearance below is not what it says."
@@ -894,7 +897,20 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       // `prefers-color-scheme` in every renderer, so the media query the stylesheets already read
       // simply answers differently — there is nothing to hand back for the renderer to apply.
       nativeTheme.themeSource = appearance;
-      return saveSettings(settingsFile(app.getPath("userData")), { appearance });
+      const file = settingsFile(app.getPath("userData"));
+      return saveSettings(file, { ...(readSettings(file) ?? DEFAULTS), appearance });
+    },
+
+    "settings:set-chrome": (chrome) => {
+      const file = settingsFile(app.getPath("userData"));
+      // Merged, so setting one piece of furniture does not forget another.
+      return saveSettings(file, {
+        ...(readSettings(file) ?? DEFAULTS),
+        ...(chrome.sidebarCollapsed === undefined
+          ? {}
+          : { sidebarCollapsed: chrome.sidebarCollapsed }),
+        ...(chrome.layout === undefined ? {} : { layout: chrome.layout }),
+      });
     },
 
     "session:start": async ({ projectId, harnessId }) => {

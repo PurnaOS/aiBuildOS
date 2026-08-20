@@ -122,8 +122,7 @@ test("picks up what a turn changed, and what the user saves", async () => {
   // The user's own writing goes stale just as fast as the agent's.
   await w.getByTestId("record-open-RQ-0001").click();
   await w.getByTestId("artifact-state").selectOption("ready");
-  await w.getByTestId("artifact-save").click();
-  await expect(w.getByTestId("artifact-dirty")).toHaveCount(0);
+  await expect(w.getByTestId("artifact-saved")).toHaveText("saved");
   await expect(w.getByTestId("record-row").filter({ hasText: "RQ-0001" })).toContainText("ready");
 
   await app.close();

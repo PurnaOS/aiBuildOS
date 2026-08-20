@@ -19,20 +19,38 @@ afterEach(() => {
 });
 
 describe("the settings store", () => {
-  it("follows the system when there is no file at all", () => {
-    expect(loadSettings(join(dir, "absent.json"))).toEqual({ appearance: "system" });
-    expect(DEFAULTS).toEqual({ appearance: "system" });
+  it("follows the system, with the furniture where it starts, when there is no file", () => {
+    expect(loadSettings(join(dir, "absent.json"))).toEqual(DEFAULTS);
+    expect(DEFAULTS).toEqual({ appearance: "system", sidebarCollapsed: false, layout: null });
   });
 
-  it("round-trips a choice", () => {
-    expect(saveSettings(file, { appearance: "dark" })).toEqual({ appearance: "dark" });
-    expect(loadSettings(file)).toEqual({ appearance: "dark" });
+  it("reads a file written before the furniture was kept here", () => {
+    // Defaulted rather than refused: an older settings file is not a broken one, and treating it as
+    // unusable would silently throw away the appearance somebody had chosen.
+    writeFileSync(file, '{"appearance":"dark"}', "utf8");
+
+    expect(readSettings(file)).toEqual({
+      appearance: "dark",
+      sidebarCollapsed: false,
+      layout: null,
+    });
+  });
+
+  it("round-trips a choice, and the furniture with it", () => {
+    const saved = saveSettings(file, {
+      appearance: "dark",
+      sidebarCollapsed: true,
+      layout: [20, 55, 25],
+    });
+
+    expect(saved).toEqual({ appearance: "dark", sidebarCollapsed: true, layout: [20, 55, 25] });
+    expect(loadSettings(file)).toEqual(saved);
   });
 
   it("falls back rather than refusing to start on a file it cannot use", () => {
-    for (const contents of ['{"appearance":"blue"}', "{}", "not json at all", ""]) {
+    for (const contents of ['{"appearance":"blue"}', "not json at all", ""]) {
       writeFileSync(file, contents, "utf8");
-      expect(loadSettings(file)).toEqual({ appearance: "system" });
+      expect(loadSettings(file)).toEqual(DEFAULTS);
     }
   });
 

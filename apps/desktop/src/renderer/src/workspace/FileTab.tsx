@@ -4,6 +4,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { darkEditor, useDarkAppearance } from "../appearance.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
+import { useAutoSave } from "./autosave.js";
 import { Diff } from "./Diff.js";
 
 /**
@@ -20,12 +21,16 @@ export function FileTab({
   projectId,
   path,
   sessionId,
+  streaming,
   onDirtyChange,
 }: {
   projectId: string;
   path: string;
   /** Watched so a finished turn triggers a re-read: that is when the agent has changed things. */
   sessionId: string | null;
+  /** Whether a turn is in flight. Owned by the workspace, which outlives every tab and so cannot
+   * miss a turn that began before this opened. */
+  streaming: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }): React.JSX.Element {
   const [text, setText] = useState<string | null>(null);
@@ -42,9 +47,13 @@ export function FileTab({
   // over a new closure — which would loop: report dirty, parent re-renders, report again.
   const report = useRef(onDirtyChange);
   report.current = onDirtyChange;
+  // Reported as "waiting on something", not merely "not written yet". An 800ms gap between a
+  // keystroke and its write is not worth a mark on a tab; a write being *held* is, and it is the same
+  // condition under which closing the tab still asks (RQ-0008#AC-8).
+  const held = dirty && (streaming || conflict !== null);
   useEffect(() => {
-    report.current?.(dirty);
-  }, [dirty]);
+    report.current?.(held);
+  }, [held]);
 
   const load = useCallback(async () => {
     const result = await window.aibuildos.invoke("project:file", { id: projectId, path });
@@ -105,6 +114,15 @@ export function FileTab({
     }
   };
 
+  // Held back while the agent is mid-turn or a choice is being asked: in both cases something else
+  // has a claim on this file, and a timer is the wrong thing to settle that with (RQ-0008#AC-3, AC-4).
+  useAutoSave({
+    dirty: dirty && text !== null,
+    content: text ?? "",
+    blocked: streaming || conflict !== null || saving,
+    save,
+  });
+
   if (problem !== null && text === null) {
     return (
       <p data-testid="file-problem" className="p-6 text-sm text-red-600">
@@ -118,20 +136,10 @@ export function FileTab({
     <div data-testid="file-tab" className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-3 py-1.5 dark:border-neutral-800">
         <span className={`min-w-0 flex-1 truncate text-xs ${mono}`}>{path}</span>
-        {dirty && (
-          <span data-testid="file-dirty" className={eyebrow}>
-            unsaved
-          </span>
-        )}
-        <button
-          type="button"
-          data-testid="file-save"
-          disabled={!dirty || saving}
-          onClick={() => void save()}
-          className={`${button} ${focusRing}`}
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
+        {/* What is happening, not what to press. Nothing here asks for anything (RQ-0008#AC-5). */}
+        <span data-testid="file-saved" className={eyebrow}>
+          {saving ? "saving…" : dirty ? "unsaved" : "saved"}
+        </span>
       </div>
 
       {problem !== null && (

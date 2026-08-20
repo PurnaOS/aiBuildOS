@@ -20,23 +20,39 @@ export function useRevision(): number {
   return useContext(RevisionContext);
 }
 
-/** The revision for a workspace: raised by the agent's turns, and by `bump` for the user's own. */
+/**
+ * The revision for a workspace: raised by the agent's turns, and by `bump` for the user's own — plus
+ * whether a turn is in flight right now.
+ *
+ * `streaming` is tracked **here**, not in each editor, because the workspace outlives every tab. An
+ * editor opened in the middle of a turn never saw the turn begin, and one that believed the agent was
+ * idle would write over what the agent is in the middle of writing (RQ-0008#AC-3).
+ */
 export function useWorkspaceRevision(sessionId: string | null): {
   revision: number;
   bump: () => void;
+  streaming: boolean;
 } {
   const [revision, setRevision] = useState(0);
+  const [streaming, setStreaming] = useState(false);
   const bump = (): void => setRevision((current) => current + 1);
 
   useEffect(() => {
-    if (sessionId === null) return;
+    if (sessionId === null) {
+      setStreaming(false);
+      return;
+    }
 
     return window.aibuildos.subscribe("session:event", (payload) => {
       if (payload.sessionId !== sessionId) return;
       const type = (payload.event as { type: string }).type;
-      if (type === "RUN_FINISHED" || type === "RUN_ERROR") setRevision((current) => current + 1);
+      if (type === "RUN_STARTED") setStreaming(true);
+      if (type === "RUN_FINISHED" || type === "RUN_ERROR") {
+        setStreaming(false);
+        setRevision((current) => current + 1);
+      }
     });
   }, [sessionId]);
 
-  return { revision, bump };
+  return { revision, bump, streaming };
 }

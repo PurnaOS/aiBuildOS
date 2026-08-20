@@ -1,3 +1,5 @@
+import { PanelLeft } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { AppearancePanel } from "./AppearancePanel.js";
 import { AttachHarnessDialog, HarnessPanel, useHarnesses } from "./harness/HarnessPanel.js";
 import { LaunchPage, type ProjectSummary, useProjects } from "./project/LaunchPage.js";
@@ -14,6 +16,14 @@ import { Workspace } from "./workspace/Workspace.js";
  * and that `Projects` shows the project instead of the ledger (ST-0004).
  */
 export function App(): React.JSX.Element {
+  /**
+   * Where the sidebar was left (ST-0022#AC-3).
+   *
+   * `null` until the settings answer, so the sidebar is not drawn in the wrong state and then moved.
+   * Kept in the installation's settings rather than the renderer's own storage — which is where it
+   * obviously belonged until a probe showed nothing there survives a restart (BG-0004).
+   */
+  const [collapsed, setCollapsed] = useState<boolean | null>(null);
   const view = useUiStore((state) => state.view);
   const setView = useUiStore((state) => state.setView);
   const activeProjectId = useUiStore((state) => state.activeProjectId);
@@ -24,6 +34,37 @@ export function App(): React.JSX.Element {
   const harnessState = useHarnesses();
   const { harnesses, refresh } = harnessState;
   const projectState = useProjects();
+
+  useEffect(() => {
+    let live = true;
+    void window.aibuildos
+      .invoke("settings:get", {})
+      .then((settings) => {
+        if (live) setCollapsed(settings.sidebarCollapsed);
+      })
+      .catch(() => {
+        // Unreadable settings are not worth a sidebar nobody can see.
+        if (live) setCollapsed(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setCollapsed((current) => {
+      const next = !(current ?? false);
+      void window.aibuildos.invoke("settings:set-chrome", { sidebarCollapsed: next });
+      return next;
+    });
+  }, []);
+
+  // ⌘B, from the menu where the accelerator lives (ST-0022#AC-2).
+  useEffect(() => {
+    return window.aibuildos.subscribe("app:command", (payload) => {
+      if (payload.command === "toggle-sidebar") toggleSidebar();
+    });
+  }, [toggleSidebar]);
 
   const navItem = (target: "home" | "settings", label: string): React.JSX.Element => (
     <button
@@ -40,10 +81,37 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="flex h-screen bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+      {/* Collapsed to nothing, with a handle in its place: an affordance that exists only as a
+          keystroke is one most people never find, and this project's own discipline is that a signal
+          is never available one way only (ST-0022#AC-1). */}
+      {collapsed === true && (
+        <button
+          type="button"
+          data-testid="sidebar-expand"
+          aria-label="Show sidebar"
+          onClick={toggleSidebar}
+          className={`shrink-0 border-r border-neutral-200 px-1.5 text-neutral-500 hover:text-neutral-900 dark:border-neutral-800 dark:hover:text-neutral-100 ${focusRing}`}
+        >
+          <PanelLeft size={14} aria-hidden />
+        </button>
+      )}
+
       <aside
         data-testid="sidebar"
+        hidden={collapsed !== false}
         className="flex w-56 shrink-0 flex-col gap-1 border-r border-neutral-200 p-4 text-sm dark:border-neutral-800"
       >
+        <div className="mb-1 flex justify-end">
+          <button
+            type="button"
+            data-testid="sidebar-collapse"
+            aria-label="Hide sidebar"
+            onClick={toggleSidebar}
+            className={`text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 ${focusRing}`}
+          >
+            <PanelLeft size={14} aria-hidden />
+          </button>
+        </div>
         {activeProjectId === null ? (
           <p className="mb-2 font-medium">aiBuildOS</p>
         ) : (

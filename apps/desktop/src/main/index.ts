@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
 import { registerIpc } from "./ipc.js";
+import { commandTarget, installMenu } from "./menu.js";
 import { loadSettings, settingsFile } from "./settings.js";
 
 /**
@@ -48,6 +49,16 @@ void app.whenReady().then(() => {
     ipcMain,
     () => BrowserWindow.getAllWindows()[0]?.webContents ?? null,
   );
+
+  // What a command *means* is the renderer's business — only it knows what is on screen — so the menu
+  // says what happened and nothing more.
+  installMenu((command) =>
+    commandTarget(
+      BrowserWindow.getAllWindows(),
+      BrowserWindow.getFocusedWindow(),
+    )?.webContents.send("app:command", { command }),
+  );
+
   createWindow();
 
   // No agent outlives the application that started it. `before-quit` rather than

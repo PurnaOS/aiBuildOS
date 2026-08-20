@@ -15,3 +15,5 @@ back to [docs/README.md](../README.md)
 | [RQ-0005](rq-0005.md) | Files and record artifacts are edited inside the workspace | verified | [EP-0004](../epics/ep-0004.md), [ST-0013](../user-stories/st-0013.md), [ST-0014](../user-stories/st-0014.md) · [TC-0022](../testing/tc-0022.md), [TC-0023](../testing/tc-0023.md), [TC-0024](../testing/tc-0024.md), [TC-0025](../testing/tc-0025.md), [TC-0026](../testing/tc-0026.md) |
 | [RQ-0006](rq-0006.md) | New files and record artifacts are created from the workspace | built | [EP-0004](../epics/ep-0004.md), [ST-0017](../user-stories/st-0017.md) · [TC-0029](../testing/tc-0029.md), [TC-0030](../testing/tc-0030.md) |
 | [RQ-0007](rq-0007.md) | The application's appearance can be chosen | verified | [ST-0019](../user-stories/st-0019.md) · [TC-0032](../testing/tc-0032.md) |
+| [RQ-0008](rq-0008.md) | Work is saved without being asked, and by the shortcut everyone already knows | built | [ST-0021](../user-stories/st-0021.md) · [TC-0034](../testing/tc-0034.md) |
+| [RQ-0009](rq-0009.md) | The application's own chrome can be got out of the way | built | [ST-0022](../user-stories/st-0022.md) · [TC-0035](../testing/tc-0035.md) |

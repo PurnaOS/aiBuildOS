@@ -41,3 +41,5 @@ back to [docs/README.md](../README.md)
 | [TC-0031](tc-0031.md) | The editors follow the window's appearance | active | [BG-0003](../bugs/bg-0003.md), [RQ-0004](../requirements/rq-0004.md)#AC-1 |
 | [TC-0032](tc-0032.md) | The chosen appearance is in force, and survives a restart | active | [RQ-0007](../requirements/rq-0007.md)#AC-1 through #AC-6 |
 | [TC-0033](tc-0033.md) | A file is made from the tree, in the directory pointed at | active | [RQ-0006](../requirements/rq-0006.md)#AC-9 |
+| [TC-0034](tc-0034.md) | Editing saves itself, except when something else has a claim on the file | active | [RQ-0008](../requirements/rq-0008.md)#AC-1 through #AC-5, #AC-7, #AC-8 |
+| [TC-0035](tc-0035.md) | The sidebar collapses, comes back, and is remembered | active | [RQ-0009](../requirements/rq-0009.md)#AC-1, #AC-2, #AC-3 |

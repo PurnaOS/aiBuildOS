@@ -5,6 +5,7 @@ import { AlertTriangle, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { darkEditor, useDarkAppearance } from "../appearance.js";
 import { button, eyebrow, field, focusRing, mono, primary } from "../ui.js";
+import { useAutoSave } from "./autosave.js";
 import { Diff } from "./Diff.js";
 
 /**
@@ -37,6 +38,7 @@ export function ArtifactTab({
   projectId,
   artifactId,
   sessionId,
+  streaming,
   onSaved,
   onDirtyChange,
 }: {
@@ -44,6 +46,9 @@ export function ArtifactTab({
   artifactId: string;
   /** Watched so a finished turn triggers a re-read: `docs/` is the agent's work too, not only ours. */
   sessionId: string | null;
+  /** Whether a turn is in flight. Owned by the workspace, which outlives every tab and so cannot
+   * miss a turn that began before this opened. */
+  streaming: boolean;
   /** Told when a save lands, so the rails stop showing the state this artifact used to have. */
   onSaved?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -95,9 +100,13 @@ export function ArtifactTab({
   report.current = onDirtyChange;
   const dirtyRef = useRef(false);
   dirtyRef.current = dirty;
+  // Reported as "waiting on something", not merely "not written yet". An 800ms gap between a
+  // keystroke and its write is not worth a mark on a tab; a write being *held* is, and it is the same
+  // condition under which closing the tab still asks (RQ-0008#AC-8).
+  const held = dirty && (streaming || collision);
   useEffect(() => {
-    report.current?.(dirty);
-  }, [dirty]);
+    report.current?.(held);
+  }, [held]);
 
   const load = useCallback(async () => {
     const next = await window.aibuildos.invoke("project:artifact", { id: projectId, artifactId });
@@ -198,6 +207,14 @@ export function ArtifactTab({
     }
   };
 
+  // Held back while the agent is mid-turn or a choice is being asked (RQ-0008#AC-3, AC-4).
+  useAutoSave({
+    dirty,
+    content: snapshot,
+    blocked: streaming || collision || saving,
+    save,
+  });
+
   if (loaded === null) return <p className="p-6 text-sm text-neutral-500">Loading…</p>;
   if (loaded.markdown === null) {
     return (
@@ -216,20 +233,10 @@ export function ArtifactTab({
         <span className="min-w-0 flex-1 truncate text-[11px] text-neutral-500">
           {String((loaded.frontmatter as { type?: unknown }).type ?? "")}
         </span>
-        {dirty && (
-          <span data-testid="artifact-dirty" className={eyebrow}>
-            unsaved
-          </span>
-        )}
-        <button
-          type="button"
-          data-testid="artifact-save"
-          disabled={!dirty || saving}
-          onClick={() => void save()}
-          className={`${button} ${focusRing}`}
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
+        {/* What is happening, not what to press (RQ-0008#AC-5). */}
+        <span data-testid="artifact-saved" className={eyebrow}>
+          {saving ? "saving…" : dirty ? "unsaved" : "saved"}
+        </span>
       </div>
 
       {problem !== null && (

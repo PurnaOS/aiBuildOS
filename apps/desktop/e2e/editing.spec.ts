@@ -53,12 +53,11 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
   return { app, w, work };
 }
 
-/** Type into the editor and wait for the tab to admit it is dirty. */
+/** Type into the editor. Nothing is pressed afterwards: the write happens on its own (RQ-0008). */
 async function edit(w: Page, text: string): Promise<void> {
   await w.locator(".cm-content").click();
   await w.keyboard.press("ControlOrMeta+a");
   await w.keyboard.type(text);
-  await expect(w.getByTestId("file-dirty")).toBeVisible();
 }
 
 test("edits and saves a file exactly as it was shown", async () => {
@@ -68,10 +67,7 @@ test("edits and saves a file exactly as it was shown", async () => {
   await expect(w.getByTestId("file-tab")).toBeVisible();
 
   await edit(w, "two\n");
-  await expect(w.getByTestId("tab-dirty-notes.md")).toBeVisible();
-
-  await w.getByTestId("file-save").click();
-  await expect(w.getByTestId("file-dirty")).toHaveCount(0);
+  await expect(w.getByTestId("file-saved")).toHaveText("saved");
 
   // Byte for byte: nothing appended, trimmed or normalised on the way out.
   expect(readFileSync(join(work, "notes.md"), "utf8")).toBe("two\n");

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Group, type Layout, Panel, Separator } from "react-resizable-panels";
 import { useSession } from "../session/useSession.js";
 import { ArtifactTab } from "./ArtifactTab.js";
@@ -18,32 +18,45 @@ import { TabStrip, useTabs } from "./TabStrip.js";
  * is *for*, the right is where it *lands*, and the conversation that connects them sits between
  * them.
  */
-const LAYOUT_KEY = "aibuildos.workspace.layout";
-
-/**
- * Pane widths, remembered between runs (ST-0011#AC-2).
- *
- * `localStorage` rather than the Zustand store or the main process: this is a property of this
- * window on this screen, it is not domain state, and nothing else needs to read it (DC-0005).
- */
-function readLayout(): Layout | undefined {
-  try {
-    const stored = window.localStorage.getItem(LAYOUT_KEY);
-    return stored ? (JSON.parse(stored) as Layout) : undefined;
-  } catch {
-    // A layout that will not parse is one the user resized once; it is not worth a broken window.
-    return undefined;
-  }
-}
-
 export function Workspace({ projectId }: { projectId: string }): React.JSX.Element {
   const session = useSession(projectId);
   const tabs = useTabs();
   // What tells the rails the project has moved: the agent's turns ending, and the user's own saves.
-  const { revision, bump } = useWorkspaceRevision(
+  const { revision, bump, streaming } = useWorkspaceRevision(
     session.state.status === "ready" ? session.state.sessionId : null,
   );
-  const [defaultLayout] = useState<Layout | undefined>(readLayout);
+  /**
+   * Pane widths, remembered between runs (ST-0011#AC-2, BG-0004).
+   *
+   * Read from the installation's settings rather than `localStorage`, where they were written for
+   * months and never survived a restart: Chromium flushes local storage on its own schedule, and an
+   * exit that does not wait loses whatever had not been written. Still not domain state (DC-0005) —
+   * it is a property of this window, kept somewhere that lasts.
+   *
+   * `undefined` until the settings answer; the panes take their default sizes until then.
+   */
+  const [defaultLayout, setDefaultLayout] = useState<Layout | undefined>(undefined);
+  const [layoutRead, setLayoutRead] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void window.aibuildos
+      .invoke("settings:get", {})
+      .then((settings) => {
+        if (!live) return;
+        // Whatever shape the panel library gives back, kept and handed straight back to it.
+        if (settings.layout !== null && typeof settings.layout === "object") {
+          setDefaultLayout(settings.layout as Layout);
+        }
+        setLayoutRead(true);
+      })
+      .catch(() => {
+        if (live) setLayoutRead(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
   /**
    * A message the record rail wants sent.
    *
@@ -71,12 +84,14 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
   );
 
   const remember = useCallback((layout: Layout) => {
-    try {
-      window.localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
-    } catch {
-      // Storage full or blocked. The panes still work; they just forget.
-    }
+    // Fire and forget: a layout that cannot be written is worth no interruption, and the panes still
+    // work. What it must not do is throw into an event handler.
+    void window.aibuildos.invoke("settings:set-chrome", { layout }).catch(() => undefined);
   }, []);
+
+  // Mounted only once the stored layout is known: `defaultLayout` is read at mount by the panel
+  // group, so handing it over later would have no effect at all.
+  if (!layoutRead) return <div data-testid="workspace-loading" className="flex-1" />;
 
   return (
     <RevisionContext value={revision}>
@@ -127,6 +142,7 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                     projectId={projectId}
                     path={tab.id}
                     sessionId={session.state.status === "ready" ? session.state.sessionId : null}
+                    streaming={streaming}
                     onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
                   />
                 ) : tab.kind === "artifact" ? (
@@ -134,6 +150,7 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                     projectId={projectId}
                     artifactId={tab.id}
                     sessionId={session.state.status === "ready" ? session.state.sessionId : null}
+                    streaming={streaming}
                     onSaved={bump}
                     onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
                   />

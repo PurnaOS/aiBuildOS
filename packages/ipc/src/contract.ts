@@ -204,7 +204,22 @@ const RepoPathSchema = z
  */
 export const AppearanceSchema = z.enum(["system", "light", "dark"]);
 
-export const SettingsSchema = z.object({ appearance: AppearanceSchema });
+export const SettingsSchema = z.object({
+  appearance: AppearanceSchema,
+  /**
+   * Where the user left the furniture (RQ-0009, BG-0004).
+   *
+   * Here rather than in the renderer's own storage, which is where it obviously belonged until a
+   * probe showed nothing there survives a restart: Chromium flushes local storage on its own
+   * schedule, and an exit that does not wait loses whatever had not been written.
+   *
+   * Defaulted so a settings file written before these existed still parses, rather than being read as
+   * one that cannot be used.
+   */
+  sidebarCollapsed: z.boolean().default(false),
+  /** The pane layout, as `react-resizable-panels` reports it. Opaque here on purpose. */
+  layout: z.unknown().default(null),
+});
 
 export const channels = {
   /** Runtime identity of the host process — the smallest useful real channel. */
@@ -611,12 +626,22 @@ export const channels = {
     response: z.object({
       /** What is **in force**, which is the platform's own value rather than what is on disk. */
       appearance: AppearanceSchema,
+      sidebarCollapsed: z.boolean(),
+      layout: z.unknown(),
       /** Set when a settings file exists but cannot be used, so the fallback is not silent. */
       problem: z.string().nullable(),
     }),
   },
   "settings:set-appearance": {
     request: z.object({ appearance: AppearanceSchema }),
+    response: SettingsSchema,
+  },
+  /** Where the furniture was left. Merged into what is stored, so one field does not erase another. */
+  "settings:set-chrome": {
+    request: z.object({
+      sidebarCollapsed: z.boolean().optional(),
+      layout: z.unknown().optional(),
+    }),
     response: SettingsSchema,
   },
 } as const satisfies Record<string, ChannelDefinition>;
@@ -654,6 +679,13 @@ export const events = {
     /** Present only on `failed`, and written to be shown to a person. */
     error: z.object({ code: z.string(), message: z.string() }).nullable(),
   }),
+  /**
+   * A command from the application's own menu (RQ-0008#AC-2, AC-7).
+   *
+   * The menu lives in main, where the accelerators are the platform's rather than a key handler's
+   * guess at them; what a command *means* is the renderer's, because only it knows what is on screen.
+   */
+  "app:command": z.object({ command: z.enum(["save", "toggle-sidebar"]) }),
 } as const satisfies Record<string, z.ZodType>;
 
 export type EventName = keyof typeof events;
