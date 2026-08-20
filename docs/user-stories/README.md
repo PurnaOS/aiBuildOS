@@ -51,8 +51,8 @@ back to [docs/README.md](../README.md)
 | [ST-0041](st-0041.md) | A build's flip belongs to its own project | done | [RQ-0021](../requirements/rq-0021.md) · [EP-0010](../epics/ep-0010.md) · [TC-0073](../testing/tc-0073.md) |
 | [ST-0042](st-0042.md) | A build's transcript shows its tool calls | done | [RQ-0021](../requirements/rq-0021.md) · [EP-0010](../epics/ep-0010.md) · [TC-0074](../testing/tc-0074.md) |
 | [ST-0043](st-0043.md) | The workspace watches its project | queued | [RQ-0026](../requirements/rq-0026.md) · [EP-0010](../epics/ep-0010.md) · [TC-0075](../testing/tc-0075.md), [TC-0076](../testing/tc-0076.md) |
-| [ST-0044](st-0044.md) | Working on a story moves the story | review | [RQ-0027](../requirements/rq-0027.md) · [EP-0010](../epics/ep-0010.md) · [TC-0077](../testing/tc-0077.md), [TC-0078](../testing/tc-0078.md) |
-| [ST-0045](st-0045.md) | A new project tells any agent how to behave | review | [RQ-0028](../requirements/rq-0028.md) · [EP-0010](../epics/ep-0010.md) · [TC-0079](../testing/tc-0079.md), [TC-0080](../testing/tc-0080.md) |
-| [ST-0046](st-0046.md) | The rail folds, counts, and filters from the top | review | [RQ-0029](../requirements/rq-0029.md) · [EP-0010](../epics/ep-0010.md) · [TC-0081](../testing/tc-0081.md) |
+| [ST-0044](st-0044.md) | Working on a story moves the story | accepted | [RQ-0027](../requirements/rq-0027.md) · [EP-0010](../epics/ep-0010.md) · [TC-0077](../testing/tc-0077.md), [TC-0078](../testing/tc-0078.md) |
+| [ST-0045](st-0045.md) | A new project tells any agent how to behave | accepted | [RQ-0028](../requirements/rq-0028.md) · [EP-0010](../epics/ep-0010.md) · [TC-0079](../testing/tc-0079.md), [TC-0080](../testing/tc-0080.md) |
+| [ST-0046](st-0046.md) | The rail folds, counts, and filters from the top | accepted | [RQ-0029](../requirements/rq-0029.md) · [EP-0010](../epics/ep-0010.md) · [TC-0081](../testing/tc-0081.md) |
 | [ST-0047](st-0047.md) | The command card becomes a terminal | done | [RQ-0031](../requirements/rq-0031.md) · [EP-0010](../epics/ep-0010.md) · [TC-0083](../testing/tc-0083.md), [TC-0084](../testing/tc-0084.md) |
-| [ST-0048](st-0048.md) | Motion is visible | review | [RQ-0030](../requirements/rq-0030.md) · [EP-0010](../epics/ep-0010.md) · [TC-0082](../testing/tc-0082.md) |
+| [ST-0048](st-0048.md) | Motion is visible | accepted | [RQ-0030](../requirements/rq-0030.md) · [EP-0010](../epics/ep-0010.md) · [TC-0082](../testing/tc-0082.md) |
