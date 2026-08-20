@@ -53,7 +53,7 @@ back to [docs/README.md](../README.md)
 | [TC-0043](tc-0043.md) | A problem is marked where the artifact is listed, and a clean record is silent | active | [RQ-0012](../requirements/rq-0012.md)#AC-1, #AC-2, #AC-4 |
 | [TC-0044](tc-0044.md) | Playbooks are discovered from the record and composed with their context | active | [RQ-0013](../requirements/rq-0013.md)#AC-1, #AC-2, #AC-6 |
 | [TC-0045](tc-0045.md) | A pressed playbook says exactly what it sent, in the transcript | active | [RQ-0013](../requirements/rq-0013.md)#AC-2 through #AC-5 |
-| [TC-0046](tc-0046.md) | Approval flips what it may, and refuses what the record's rules refuse | draft | [RQ-0014](../requirements/rq-0014.md)#AC-3, #AC-5, #AC-6 |
-| [TC-0047](tc-0047.md) | A proposal lands as drafts, is shaped, and approval schedules it | draft | [RQ-0014](../requirements/rq-0014.md)#AC-1, #AC-2, #AC-4, #AC-5, #AC-7 |
-| [TC-0048](tc-0048.md) | The build walk and the send-back are record edits, and survive a restart | draft | [RQ-0015](../requirements/rq-0015.md)#AC-1, #AC-4, #AC-6 |
-| [TC-0049](tc-0049.md) | A story is built, reviewed beside its criteria, and accepted | draft | [RQ-0015](../requirements/rq-0015.md)#AC-1 through #AC-5 |
+| [TC-0046](tc-0046.md) | Approval flips what it may, and refuses what the record's rules refuse | active | [RQ-0014](../requirements/rq-0014.md)#AC-3, #AC-5, #AC-6 |
+| [TC-0047](tc-0047.md) | A proposal lands as drafts, is shaped, and approval schedules it | active | [RQ-0014](../requirements/rq-0014.md)#AC-1, #AC-2, #AC-4, #AC-5, #AC-7 |
+| [TC-0048](tc-0048.md) | The build walk and the send-back are record edits, and survive a restart | active | [RQ-0015](../requirements/rq-0015.md)#AC-1, #AC-4, #AC-6 |
+| [TC-0049](tc-0049.md) | A story is built, reviewed beside its criteria, and accepted | active | [RQ-0015](../requirements/rq-0015.md)#AC-1 through #AC-5 |
