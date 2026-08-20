@@ -608,6 +608,43 @@ export const channels = {
     request: z.object({ id: z.string() }),
     response: z.object({ problem: z.string().nullable() }),
   },
+  /** Stage one path (RQ-0018#AC-1). The user's own Git; argv only, like every Git call here. */
+  "project:stage": {
+    request: z.object({ id: z.string(), path: RepoPathSchema.min(1) }),
+    response: z.object({ problem: z.string().nullable() }),
+  },
+  "project:unstage": {
+    request: z.object({ id: z.string(), path: RepoPathSchema.min(1) }),
+    response: z.object({ problem: z.string().nullable() }),
+  },
+  /**
+   * Commit what is staged (RQ-0018#AC-2, AC-3). A hook's rejection is an expected failure carried
+   * as data, in the hook's own words — not a paraphrase and not a thrown error.
+   */
+  "project:commit": {
+    request: z.object({ id: z.string(), message: z.string().min(1) }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), hash: z.string() }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /**
+   * Run the checks playbook's fenced commands (RQ-0019). Resolves when every command has exited;
+   * the live output arrives over the `check:output` event, and the exit code is the whole verdict.
+   */
+  "check:run": {
+    request: z.object({ id: z.string() }),
+    response: z.object({
+      results: z.array(
+        z.object({
+          command: z.string(),
+          outcome: z.enum(["passed", "failed", "could_not_run"]),
+          exitCode: z.number().int().nullable(),
+        }),
+      ),
+      problem: z.string().nullable(),
+    }),
+  },
   /**
    * Mint an artifact (RQ-0006#AC-2 to AC-5, AC-7).
    *
@@ -715,6 +752,12 @@ export const events = {
    * guess at them; what a command *means* is the renderer's, because only it knows what is on screen.
    */
   "app:command": z.object({ command: z.enum(["save", "toggle-sidebar"]) }),
+  /** One chunk of a running check command's output, as it arrives (RQ-0019#AC-2). */
+  "check:output": z.object({
+    projectId: z.string(),
+    command: z.string(),
+    chunk: z.string(),
+  }),
 } as const satisfies Record<string, z.ZodType>;
 
 export type EventName = keyof typeof events;

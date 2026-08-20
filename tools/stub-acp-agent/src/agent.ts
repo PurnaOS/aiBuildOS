@@ -19,6 +19,9 @@
  *   --mode=echo           replies with exactly the prompt text received — proves what was sent
  *   --mode=plan-writer    writes a scripted draft story + test per RQ id found in the prompt
  *   --mode=file-writer    appends a scripted line to notes.md each turn, with tool call and diff
+ *   --mode=question       asks one fenced aibuildos-question, then echoes the answer back
+ *   --mode=interview      two scripted questions, then writes one draft requirement
+ *   --mode=journey        first prompt plans like plan-writer, later prompts build like file-writer
  *
  * The last four exist because a live agent does far more than stream text, and a stub that only
  * streams text can only test streaming text.
@@ -46,7 +49,10 @@ type Mode =
   | "controls"
   | "echo"
   | "plan-writer"
-  | "file-writer";
+  | "file-writer"
+  | "question"
+  | "interview"
+  | "journey";
 
 interface Message {
   jsonrpc: "2.0";
@@ -272,6 +278,84 @@ function planWriterTurn(prompt: string): string {
   return "end_turn";
 }
 
+/** One fenced question, exactly as DC-0020's convention writes it. */
+const fencedQuestion = (question: string, options: [string, string][]): string =>
+  `\`\`\`aibuildos-question\n${JSON.stringify({
+    question,
+    options: options.map(([id, label]) => ({ id, label })),
+    allowFreeText: true,
+  })}\n\`\`\``;
+
+/** Odd prompts ask; even prompts echo the answer that came back. */
+let questionTurns = 0;
+function questionTurn(prompt: string): string {
+  questionTurns += 1;
+  if (questionTurns % 2 === 1) {
+    chunk(
+      `A quick question first.\n\n${fencedQuestion("Which colour?", [
+        ["red", "Red"],
+        ["blue", "Blue"],
+      ])}`,
+    );
+  } else {
+    chunk(`You answered: ${prompt}`);
+  }
+  return "end_turn";
+}
+
+/**
+ * The scripted interview: two questions, then one draft requirement written into the record with
+ * its index row — the shape the intake playbook asks a real agent to produce, minus the judgement.
+ */
+let interviewTurns = 0;
+function interviewTurn(): string {
+  interviewTurns += 1;
+  if (interviewTurns === 1) {
+    chunk(
+      fencedQuestion("Who is this for?", [
+        ["me", "Just me"],
+        ["team", "My team"],
+      ]),
+    );
+    return "end_turn";
+  }
+  if (interviewTurns === 2) {
+    chunk(
+      fencedQuestion("What must work first?", [
+        ["save", "Saving"],
+        ["share", "Sharing"],
+      ]),
+    );
+    return "end_turn";
+  }
+
+  const cwd = process.cwd();
+  const dir = join(cwd, "docs", "requirements");
+  mkdirSync(dir, { recursive: true });
+  const id = `RQ-${pad(nextNumber(dir, "rq"))}`;
+  writeFileSync(
+    join(dir, `${id.toLowerCase()}.md`),
+    `---\ntype: Requirement\nid: ${id}\ntitle: "What the interview settled"\nstate: draft\nowner: stub\nprovenance: agent\ncreated: 2026-08-20\ngenerated: { by: "stub-acp-agent", at: 2026-08-20T00:00:00Z }\nkind: functional\n---\n\n# ${id} — What the interview settled\n\n## Acceptance criteria\n\n- [AC-1] The settled behaviour is observable.\n`,
+  );
+  appendFileSync(
+    join(dir, "README.md"),
+    `| [${id}](${id.toLowerCase()}.md) | What the interview settled | draft | — |\n`,
+  );
+  update({
+    sessionUpdate: "tool_call",
+    toolCallId: `intake-${id}`,
+    title: `Write ${id}`,
+    kind: "edit",
+    status: "completed",
+    locations: [{ path: join(dir, `${id.toLowerCase()}.md`) }],
+  });
+  chunk(`Added ${id} to the list.`);
+  return "end_turn";
+}
+
+/** How many prompts the journey has seen: the first plans, the rest build. */
+let journeyTurns = 0;
+
 /** One scripted file change per turn — the smallest thing a build produces. */
 let buildTurns = 0;
 function fileWriterTurn(): string {
@@ -437,10 +521,28 @@ async function handle(line: string): Promise<void> {
         // was sent and what arrived — which is what a playbook test needs and a mock cannot give.
         const blocks = (message.params as { prompt?: { type?: string; text?: string }[] })?.prompt;
         chunk((blocks ?? []).map((block) => block.text ?? "").join(""));
-      } else if (mode === "plan-writer" || mode === "file-writer") {
+      } else if (
+        mode === "plan-writer" ||
+        mode === "file-writer" ||
+        mode === "question" ||
+        mode === "interview" ||
+        mode === "journey"
+      ) {
         const blocks = (message.params as { prompt?: { type?: string; text?: string }[] })?.prompt;
         const text = (blocks ?? []).map((block) => block.text ?? "").join("");
-        stopReason = mode === "plan-writer" ? planWriterTurn(text) : fileWriterTurn();
+        journeyTurns += 1;
+        stopReason =
+          mode === "plan-writer"
+            ? planWriterTurn(text)
+            : mode === "file-writer"
+              ? fileWriterTurn()
+              : mode === "question"
+                ? questionTurn(text)
+                : mode === "interview"
+                  ? interviewTurn()
+                  : journeyTurns === 1
+                    ? planWriterTurn(text)
+                    : fileWriterTurn();
       } else chunk("ok");
 
       respond(message.id, { stopReason });

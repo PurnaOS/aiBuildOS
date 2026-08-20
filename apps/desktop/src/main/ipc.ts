@@ -34,8 +34,10 @@ import {
 } from "@aibuildos/knowledge-engine";
 import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
 import { app, BrowserWindow, dialog, Menu, nativeTheme } from "electron";
+import { runChecks } from "./checks.js";
 import {
   changes,
+  commitStaged,
   GitError,
   type GitStatus,
   git,
@@ -43,7 +45,9 @@ import {
   initRepo,
   recentCommits,
   repoRoot,
+  stagePath,
   status,
+  unstagePath,
 } from "./git.js";
 import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
 import { fileMenuTarget } from "./menus.js";
@@ -291,7 +295,10 @@ function requireProject(id: string) {
   return project;
 }
 
-function createHandlers(sessions: SessionRegistry): Handlers {
+function createHandlers(
+  sessions: SessionRegistry,
+  emitCheckOutput: (payload: { projectId: string; command: string; chunk: string }) => void,
+): Handlers {
   return {
     "app:info": () => ({
       name: "aiBuildOS",
@@ -853,6 +860,45 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       return { problem: seedPlaybooks(project.path) };
     },
 
+    "project:stage": async ({ id, path }) => {
+      const project = requireProject(id);
+      try {
+        insideProject(project.path, path);
+        await stagePath(project.path, path);
+        return { problem: null };
+      } catch (cause) {
+        return { problem: failure(cause).message };
+      }
+    },
+
+    "project:unstage": async ({ id, path }) => {
+      const project = requireProject(id);
+      try {
+        insideProject(project.path, path);
+        await unstagePath(project.path, path);
+        return { problem: null };
+      } catch (cause) {
+        return { problem: failure(cause).message };
+      }
+    },
+
+    "project:commit": async ({ id, message }) => {
+      const project = requireProject(id);
+      try {
+        return { ok: true, hash: await commitStaged(project.path, message) };
+      } catch (cause) {
+        // A rejecting hook lands here too, in its own words — that is not this handler's failure.
+        return failure(cause);
+      }
+    },
+
+    "check:run": async ({ id }) => {
+      const project = requireProject(id);
+      return await runChecks(project.path, (command, chunk) =>
+        emitCheckOutput({ projectId: id, command, chunk }),
+      );
+    },
+
     "project:create-artifact": async ({ id, type, title }) => {
       const project = requireProject(id);
       const root = join(project.path, "docs");
@@ -1049,6 +1095,9 @@ export function registerIpc(
   });
 
   const sessions = new SessionRegistry((event, payload) => emitter.emit(event, payload));
-  createRouter(ipcMain, createHandlers(sessions));
+  createRouter(
+    ipcMain,
+    createHandlers(sessions, (payload) => emitter.emit("check:output", payload)),
+  );
   return sessions;
 }

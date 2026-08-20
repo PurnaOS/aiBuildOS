@@ -327,3 +327,23 @@ export async function ignored(dir: string, paths: readonly string[]): Promise<Se
 
   return new Set(stdout.split("\0").filter((path) => path !== ""));
 }
+
+/**
+ * The first writes (RQ-0018). Same posture as every read above: the user's own Git, argv only,
+ * failures in Git's — or a hook's — own words via `GitError`.
+ */
+export async function stagePath(cwd: string, path: string): Promise<void> {
+  await git(cwd, "add", "--", path);
+}
+
+export async function unstagePath(cwd: string, path: string): Promise<void> {
+  // `reset -- <path>` rather than `restore --staged`: it also unstages a file the repository has
+  // no commit for yet, which `restore` refuses on an unborn branch.
+  await git(cwd, "reset", "--", path);
+}
+
+/** Commit what is staged; the new commit's hash on success. Hooks run — that is the point. */
+export async function commitStaged(cwd: string, message: string): Promise<string> {
+  await git(cwd, "commit", "-m", message);
+  return (await git(cwd, "rev-parse", "HEAD")).trim();
+}
