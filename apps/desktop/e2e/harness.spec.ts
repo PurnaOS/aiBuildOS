@@ -14,7 +14,11 @@ const stub = fileURLToPath(new URL("../../../tools/stub-acp-agent/src/agent.ts",
  */
 test("prompts to attach a harness on an empty config, and not once one exists", async () => {
   const dir = mkdtempSync(join(tmpdir(), "aibuildos-e2e-"));
-  const env = { ...process.env, AIBUILDOS_HARNESSES_FILE: join(dir, "harnesses.json") };
+  const env = {
+    ...process.env,
+    AIBUILDOS_HARNESSES_FILE: join(dir, "harnesses.json"),
+    AIBUILDOS_SETTINGS_FILE: join(dir, "settings.json"),
+  };
 
   try {
     const first = await electron.launch({ args: ["."], cwd: appRoot, env });
@@ -60,7 +64,11 @@ test("prompts to attach a harness on an empty config, and not once one exists", 
 test("shows the reason when a save cannot be written", async () => {
   const dir = mkdtempSync(join(tmpdir(), "aibuildos-e2e-"));
   // A directory where the app expects a file: every write to it fails with EISDIR.
-  const env = { ...process.env, AIBUILDOS_HARNESSES_FILE: dir };
+  const env = {
+    ...process.env,
+    AIBUILDOS_HARNESSES_FILE: dir,
+    AIBUILDOS_SETTINGS_FILE: join(dir, "settings.json"),
+  };
 
   try {
     const app = await electron.launch({ args: ["."], cwd: appRoot, env });

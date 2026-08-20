@@ -43,6 +43,7 @@ test("streams a turn from the agent into the renderer, and cancels one", async (
       ...process.env,
       AIBUILDOS_PROJECTS_FILE: join(config, "projects.json"),
       AIBUILDOS_HARNESSES_FILE: join(config, "harnesses.json"),
+      AIBUILDOS_SETTINGS_FILE: join(config, "settings.json"),
     },
   });
   const w = await app.firstWindow();

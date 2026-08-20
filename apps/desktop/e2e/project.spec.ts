@@ -21,6 +21,7 @@ async function launch(config: string, chooses: string): Promise<ElectronApplicat
       ...process.env,
       AIBUILDOS_PROJECTS_FILE: join(config, "projects.json"),
       AIBUILDOS_HARNESSES_FILE: join(config, "harnesses.json"),
+      AIBUILDOS_SETTINGS_FILE: join(config, "settings.json"),
       // The scaffold's first commit needs an identity, and CI has none configured.
       GIT_AUTHOR_NAME: "Test",
       GIT_AUTHOR_EMAIL: "test@example.com",

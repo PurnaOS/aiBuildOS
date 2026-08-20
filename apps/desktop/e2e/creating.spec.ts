@@ -59,6 +59,7 @@ async function open(options: { bundle?: boolean; identity?: boolean } = {}): Pro
       ...process.env,
       AIBUILDOS_PROJECTS_FILE: join(config, "projects.json"),
       AIBUILDOS_HARNESSES_FILE: join(config, "harnesses.json"),
+      AIBUILDOS_SETTINGS_FILE: join(config, "settings.json"),
       // A repository with no identity means no identity in *any* scope — `git config user.name`
       // reads the global and system files too, and this machine has one.
       ...(options.identity === false
