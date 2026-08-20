@@ -580,6 +580,15 @@ export const channels = {
     response: z.object({ problem: z.string().nullable() }),
   },
   /**
+   * Seed the standard playbooks into a project that has none (RQ-0013#AC-4, DC-0019).
+   *
+   * The template ships with the application, so writing it is main's job; the renderer only asks.
+   */
+  "project:seed-playbooks": {
+    request: z.object({ id: z.string() }),
+    response: z.object({ problem: z.string().nullable() }),
+  },
+  /**
    * Mint an artifact (RQ-0006#AC-2 to AC-5, AC-7).
    *
    * The number is allocated here rather than asked for: it is append-only and never reused, which is

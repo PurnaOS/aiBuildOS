@@ -44,6 +44,7 @@ import {
 } from "./git.js";
 import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
 import { fileMenuTarget } from "./menus.js";
+import { seedPlaybooks } from "./playbooks.js";
 import { addProject, loadProjects, markOpened, type Project, removeProject } from "./projects.js";
 import { claimProjectDirectory, fillProject } from "./scaffold.js";
 import { SessionRegistry } from "./sessions.js";
@@ -783,6 +784,11 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       } catch (cause) {
         return { problem: failure(cause).message };
       }
+    },
+
+    "project:seed-playbooks": ({ id }) => {
+      const project = requireProject(id);
+      return { problem: seedPlaybooks(project.path) };
     },
 
     "project:create-artifact": async ({ id, type, title }) => {

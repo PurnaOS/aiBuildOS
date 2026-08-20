@@ -16,6 +16,7 @@
  *   --mode=permission     asks the client for permission, and obeys the answer
  *   --mode=slow           streams slowly and honours `session/cancel`
  *   --mode=controls       advertises modes and config options, and confirms changes to them
+ *   --mode=echo           replies with exactly the prompt text received — proves what was sent
  *
  * The last four exist because a live agent does far more than stream text, and a stub that only
  * streams text can only test streaming text.
@@ -24,7 +25,7 @@
  */
 import { createInterface } from "node:readline";
 
-type Mode = "ok" | "silent" | "auth-required" | "rich" | "permission" | "slow" | "controls";
+type Mode = "ok" | "silent" | "auth-required" | "rich" | "permission" | "slow" | "controls" | "echo";
 
 interface Message {
   jsonrpc: "2.0";
@@ -318,7 +319,12 @@ async function handle(line: string): Promise<void> {
       if (mode === "rich") stopReason = await richTurn();
       else if (mode === "permission") stopReason = await permissionTurn();
       else if (mode === "slow") stopReason = await slowTurn();
-      else chunk("ok");
+      else if (mode === "echo") {
+        // The prompt is content blocks; echoing the text back proves on the transcript both what
+        // was sent and what arrived — which is what a playbook test needs and a mock cannot give.
+        const blocks = (message.params as { prompt?: { type?: string; text?: string }[] })?.prompt;
+        chunk((blocks ?? []).map((block) => block.text ?? "").join(""));
+      } else chunk("ok");
 
       respond(message.id, { stopReason });
       break;
