@@ -7,6 +7,7 @@ import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { Activity } from "./Activity.js";
 import { Controls } from "./Controls.js";
 import { PlaybookStrip } from "./PlaybookStrip.js";
+import { AsksAssistantMessage } from "./QuestionCard.js";
 import { ToolCallCard } from "./ToolCallCard.js";
 
 /**
@@ -76,7 +77,7 @@ export function Chat({
             attachedHarness={attachedHarness}
           />
           <div className="min-h-0 flex-1">
-            <CopilotChat className="h-full" />
+            <CopilotChat className="h-full" AssistantMessage={AsksAssistantMessage} />
           </div>
           {/* The plan and any question the agent is waiting on, kept above the composer rather than
               left to scroll away. */}

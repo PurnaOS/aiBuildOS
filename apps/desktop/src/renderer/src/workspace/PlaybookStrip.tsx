@@ -1,6 +1,6 @@
 import { useCopilotChatInternal } from "@copilotkit/react-core";
 import { useEffect, useState } from "react";
-import { button, eyebrow, focusRing, mono } from "../ui.js";
+import { button, eyebrow, field, focusRing, mono } from "../ui.js";
 import { compose, derivePlaybooks, type PlaybookButton, resolveHarness } from "./playbooks.js";
 import { useBump, useRevision } from "./revision.js";
 
@@ -23,6 +23,13 @@ import { useBump, useRevision } from "./revision.js";
 interface LoadedPlaybook extends PlaybookButton {
   readonly body: string;
   readonly harness: string;
+}
+
+/** The intake playbook (RQ-0017#AC-1): title-first, ID fallback — the same rule `findPlanPlaybook`
+ * uses in `boards/BacklogBoard.tsx` for its own button, so a project that retitled the standard
+ * bundle still gets its door recognised. Its press opens the idea prompt instead of sending at once. */
+function isIntake(playbook: LoadedPlaybook): boolean {
+  return playbook.title === "Draft requirements from an idea" || playbook.id === "PB-0001";
 }
 
 export function PlaybookStrip({
@@ -103,6 +110,15 @@ export function PlaybookStrip({
     });
   };
 
+  // RQ-0017#AC-1: intake starts from whatever the user typed or pasted, not the bare playbook body.
+  const startIdea = (playbook: LoadedPlaybook, idea: string): void => {
+    void sendMessage({
+      id: crypto.randomUUID(),
+      role: "user",
+      content: `${compose(playbook.body, [])}\n\nThe idea, in the user's words:\n${idea}`,
+    });
+  };
+
   if (playbooks === null) return null;
 
   if (playbooks.length === 0) {
@@ -133,7 +149,13 @@ export function PlaybookStrip({
     >
       <span className={eyebrow}>Playbooks</span>
       {playbooks.map((playbook) => (
-        <PlaybookButtonView key={playbook.id} playbook={playbook} onPress={() => press(playbook)} />
+        <PlaybookButtonView
+          key={playbook.id}
+          playbook={playbook}
+          intake={isIntake(playbook)}
+          onPress={() => press(playbook)}
+          onStartIdea={(idea) => startIdea(playbook, idea)}
+        />
       ))}
     </div>
   );
@@ -141,12 +163,26 @@ export function PlaybookStrip({
 
 function PlaybookButtonView({
   playbook,
+  intake,
   onPress,
+  onStartIdea,
 }: {
   playbook: LoadedPlaybook;
+  /** RQ-0017#AC-1: the intake playbook's press opens the idea prompt rather than sending at once. */
+  intake: boolean;
   onPress: () => void;
+  onStartIdea: (idea: string) => void;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const [idea, setIdea] = useState("");
+
+  const start = (): void => {
+    if (idea.trim() === "") return;
+    onStartIdea(idea);
+    setComposing(false);
+    setIdea("");
+  };
 
   return (
     <span className="relative inline-flex items-center">
@@ -154,7 +190,7 @@ function PlaybookButtonView({
         type="button"
         data-testid={`playbook-${playbook.id}`}
         className={`${button} rounded-r-none text-xs`}
-        onClick={onPress}
+        onClick={() => (intake ? setComposing((current) => !current) : onPress())}
       >
         {playbook.title}
       </button>
@@ -168,6 +204,34 @@ function PlaybookButtonView({
       >
         ⓘ
       </button>
+
+      {composing && (
+        <div
+          data-testid={`playbook-idea-${playbook.id}`}
+          className="absolute top-full left-0 z-10 mt-1 w-96 rounded border border-neutral-300 bg-white p-3 text-xs shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+        >
+          <p className="font-medium">The idea, in your own words</p>
+          <textarea
+            data-testid={`playbook-idea-input-${playbook.id}`}
+            className={`${field} mt-2`}
+            rows={4}
+            value={idea}
+            onChange={(event) => setIdea(event.target.value)}
+            placeholder="Type or paste it here…"
+          />
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              data-testid={`playbook-idea-start-${playbook.id}`}
+              className={`${button} ${focusRing}`}
+              disabled={idea.trim() === ""}
+              onClick={start}
+            >
+              Start
+            </button>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div

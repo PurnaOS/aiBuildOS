@@ -40,7 +40,7 @@ async function open(options: { playbooks?: boolean } = {}): Promise<{
   } else {
     // The scaffold template leaves `owner` a token for `fillProject` to fill in; this fixture is not
     // going through `fillProject`, so it fills it in the same way, by hand.
-    for (const id of ["pb-0001", "pb-0002", "pb-0003"]) {
+    for (const id of ["pb-0001", "pb-0002", "pb-0003", "pb-0004"]) {
       const file = join(work, "docs", "playbooks", `${id}.md`);
       writeFileSync(
         file,
@@ -97,15 +97,17 @@ test("shows the standard playbooks, discloses one before pressing, and sends exa
   // AC-3: description, harness and exact text, before anything is pressed. One line from the body,
   // not the whole disclosed text, is what the transcript is checked against below — a chat surface
   // is free to reformat the markdown it is handed, and a single line survives that; the full,
-  // exact text is what the ⓘ itself is for.
-  const snippet = "Interview me about this idea, one question at a time";
-  await w.getByTestId("playbook-info-PB-0001").click();
-  const popover = w.getByTestId("playbook-popover-PB-0001");
-  await expect(popover).toContainText("Draft requirements from an idea");
+  // exact text is what the ⓘ itself is for. PB-0003 rather than PB-0001: the intake playbook's
+  // press opens the idea prompt (RQ-0017#AC-1) instead of sending at once, so the send-at-once
+  // path is proven on a playbook that still has one.
+  const snippet = "Implement the story and nothing beyond it";
+  await w.getByTestId("playbook-info-PB-0003").click();
+  const popover = w.getByTestId("playbook-popover-PB-0003");
+  await expect(popover).toContainText("Build a story");
   await expect(popover).toContainText("Stub");
-  await expect(w.getByTestId("playbook-text-PB-0001")).toContainText(snippet);
+  await expect(w.getByTestId("playbook-text-PB-0003")).toContainText(snippet);
 
-  await button.click();
+  await w.getByTestId("playbook-PB-0003").click();
 
   const surface = w.locator(".copilotKitMessages");
   await expect(surface).toContainText(snippet);
@@ -116,19 +118,19 @@ test("shows the standard playbooks, discloses one before pressing, and sends exa
     .toBeGreaterThanOrEqual(2);
 
   // AC-4/AC-5: editing the artifact like any other changes the button, with no application change.
-  await w.getByTestId("record-open-PB-0001").click();
+  await w.getByTestId("record-open-PB-0003").click();
   await w.getByTestId("artifact-tab").waitFor();
   await w.getByTestId("artifact-body").locator(".cm-content").click();
   await w.keyboard.press("ControlOrMeta+End");
   await w.keyboard.type("\n\nSay hello first.");
   await expect(w.getByTestId("artifact-saved")).toHaveText("saved", { timeout: 15000 });
-  expect(readFileSync(join(work, "docs", "playbooks", "pb-0001.md"), "utf8")).toContain(
+  expect(readFileSync(join(work, "docs", "playbooks", "pb-0003.md"), "utf8")).toContain(
     "Say hello first.",
   );
 
   await w.getByTestId("tab-chat").click();
   await w.getByTestId("chat").waitFor();
-  await w.getByTestId("playbook-PB-0001").click();
+  await w.getByTestId("playbook-PB-0003").click();
   await expect(surface).toContainText("Say hello first.");
 
   await app.close();
