@@ -84,11 +84,11 @@ back to [docs/README.md](../README.md)
 | [TC-0074](tc-0074.md) | A build's stream shows the tool call that ran | active | [BG-0008](../bugs/bg-0008.md), [RQ-0021](../requirements/rq-0021.md) |
 | [TC-0075](tc-0075.md) | The watcher debounces, filters, and caches | active | [RQ-0026](../requirements/rq-0026.md)#AC-4, #AC-6, #AC-7 |
 | [TC-0076](tc-0076.md) | What anything writes, the workspace shows, with no turn ending | active | [RQ-0026](../requirements/rq-0026.md)#AC-1, #AC-2, #AC-3, #AC-5 |
-| [TC-0077](tc-0077.md) | The rail's walk and the board's walk are one walk | draft | [RQ-0027](../requirements/rq-0027.md)#AC-1, #AC-2 |
-| [TC-0078](tc-0078.md) | Talking a story into work lands it in review | draft | [RQ-0027](../requirements/rq-0027.md)#AC-1, #AC-4 |
-| [TC-0079](tc-0079.md) | The scaffold seeds the instructions, and the seeder never overwrites | draft | [RQ-0028](../requirements/rq-0028.md)#AC-1, #AC-2, #AC-3 |
-| [TC-0080](tc-0080.md) | A fresh project's instructions are on disk where agents look | draft | [RQ-0028](../requirements/rq-0028.md)#AC-1 |
-| [TC-0081](tc-0081.md) | The rail folds and counts; the chrome asks in its own voice | draft | [RQ-0029](../requirements/rq-0029.md)#AC-1, #AC-2, #AC-3 |
-| [TC-0082](tc-0082.md) | Streaming shows on the tab, and what changed says so | draft | [RQ-0030](../requirements/rq-0030.md)#AC-1 through #AC-4 |
+| [TC-0077](tc-0077.md) | The rail's walk and the board's walk are one walk | active | [RQ-0027](../requirements/rq-0027.md)#AC-1, #AC-2 |
+| [TC-0078](tc-0078.md) | Talking a story into work lands it in review | active | [RQ-0027](../requirements/rq-0027.md)#AC-1, #AC-4 |
+| [TC-0079](tc-0079.md) | The scaffold seeds the instructions, and the seeder never overwrites | active | [RQ-0028](../requirements/rq-0028.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0080](tc-0080.md) | A fresh project's instructions are on disk where agents look | active | [RQ-0028](../requirements/rq-0028.md)#AC-1 |
+| [TC-0081](tc-0081.md) | The rail folds and counts; the chrome asks in its own voice | active | [RQ-0029](../requirements/rq-0029.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0082](tc-0082.md) | Streaming shows on the tab, and what changed says so | active | [RQ-0030](../requirements/rq-0030.md)#AC-1 through #AC-4 |
 | [TC-0083](tc-0083.md) | The card reads the wire: command, chunks, outcome | active | [RQ-0031](../requirements/rq-0031.md)#AC-1, #AC-2, #AC-5, #AC-6 |
 | [TC-0084](tc-0084.md) | A command streams into the transcript and folds when long | active | [RQ-0031](../requirements/rq-0031.md)#AC-1 through #AC-4 |
