@@ -63,7 +63,7 @@ export async function git(cwd: string, ...argv: string[]): Promise<string> {
 }
 
 function toGitError(cause: unknown): GitError {
-  const error = cause as { code?: unknown; stderr?: unknown; message?: unknown };
+  const error = cause as { code?: unknown; stderr?: unknown; stdout?: unknown; message?: unknown };
   const stderr = typeof error.stderr === "string" ? error.stderr.trim() : "";
 
   if (error.code === "ENOENT") {
@@ -84,7 +84,12 @@ function toGitError(cause: unknown): GitError {
     );
   }
 
-  const message = stderr || (typeof error.message === "string" ? error.message : "git failed");
+  // Git explains some refusals on stdout, not stderr — `commit` with nothing staged among them.
+  // Falling straight through to `error.message` there reports execFile's own wrapper text
+  // ("Command failed: git -C ... commit -m ...") instead of the words Git actually said.
+  const stdout = typeof error.stdout === "string" ? error.stdout.trim() : "";
+  const message =
+    stderr || stdout || (typeof error.message === "string" ? error.message : "git failed");
   return new GitError("git_failed", message, stderr);
 }
 

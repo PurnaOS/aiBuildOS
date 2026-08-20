@@ -5,7 +5,7 @@ import { splitBody } from "../workspace/ArtifactTab.js";
 import { Diff } from "../workspace/Diff.js";
 import { useBump, useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
-import { acceptStory, type Save, sendBackStory } from "./walk.js";
+import { acceptStory, commitMessage, type Save, sendBackStory } from "./walk.js";
 
 type Artifact = ChannelResponse<"project:artifact">;
 type DiffResult = ChannelResponse<"project:diff">;
@@ -36,6 +36,8 @@ export function ReviewTab({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /** Set the moment Accept lands; offered until Commit or Not now is pressed (RQ-0018#AC-4). */
+  const [offer, setOffer] = useState<{ storyId: string; title: string } | null>(null);
 
   const load = useCallback(async () => {
     const next = await window.aibuildos.invoke("project:artifact", {
@@ -79,6 +81,7 @@ export function ReviewTab({
     });
 
   const accept = async (): Promise<void> => {
+    if (story === null) return;
     setBusy(true);
     setProblem(null);
     try {
@@ -87,6 +90,10 @@ export function ReviewTab({
         setProblem(result.problem);
         return;
       }
+      setOffer({
+        storyId,
+        title: String((story.frontmatter as { title?: unknown }).title ?? storyId),
+      });
       bump();
     } finally {
       setBusy(false);
@@ -124,6 +131,19 @@ export function ReviewTab({
   const state = String((story.frontmatter as { state?: unknown }).state ?? "");
 
   if (state !== "review") {
+    // Accept just landed: offer to commit what it changed, in place of the usual "not under
+    // review" line — declining (or closing this tab) drops back to that line, and the Git tab
+    // remains where the same commit can always be made by hand.
+    if (offer !== null && offer.storyId === storyId) {
+      return (
+        <CommitOffer
+          projectId={projectId}
+          storyId={offer.storyId}
+          title={offer.title}
+          onDone={() => setOffer(null)}
+        />
+      );
+    }
     return (
       <p data-testid="review-not-ready" className="p-6 text-sm text-neutral-500">
         {storyId} is at <span className={mono}>{state}</span>, not under review.
@@ -165,6 +185,7 @@ export function ReviewTab({
               </ul>
             )}
           </div>
+
         </div>
 
         <div data-testid="review-diffs" className="min-h-0 overflow-auto p-4">
@@ -247,6 +268,96 @@ export function ReviewTab({
             </p>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The commit RQ-0018#AC-4 offers, never performs, once Accept lands.
+ *
+ * Staging: exactly the paths `project:changes` currently lists — the same union of staged,
+ * unstaged and untracked the diff pane above already reads — never `git add -A`. Those are the
+ * paths a reviewer just looked at; a blanket add would also catch anything unrelated that happens
+ * to be sitting in the tree.
+ */
+function CommitOffer({
+  projectId,
+  storyId,
+  title,
+  onDone,
+}: {
+  projectId: string;
+  storyId: string;
+  title: string;
+  onDone: () => void;
+}): React.JSX.Element {
+  const bump = useBump();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const message = commitMessage(storyId, title);
+
+  const commit = async (): Promise<void> => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const changes = await window.aibuildos.invoke("project:changes", { id: projectId });
+      const paths = [
+        ...new Set(
+          [...changes.staged, ...changes.unstaged, ...changes.untracked].map((c) => c.path),
+        ),
+      ];
+      for (const path of paths) {
+        const staged = await window.aibuildos.invoke("project:stage", { id: projectId, path });
+        if (staged.problem !== null) {
+          setProblem(staged.problem);
+          return;
+        }
+      }
+      const result = await window.aibuildos.invoke("project:commit", { id: projectId, message });
+      if (!result.ok) {
+        setProblem(result.message);
+        return;
+      }
+      bump();
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div data-testid="review-commit-offer" className="p-6">
+      <p className="text-sm">
+        Commit this work — <span className={mono}>{storyId}</span>: {title}
+      </p>
+      {problem !== null && (
+        <p
+          data-testid="review-commit-problem"
+          className="mt-2 whitespace-pre-wrap text-xs text-red-600"
+        >
+          {problem}
+        </p>
+      )}
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          data-testid="review-commit-accept"
+          disabled={busy}
+          onClick={() => void commit()}
+          className={`${primary} ${focusRing}`}
+        >
+          Commit
+        </button>
+        <button
+          type="button"
+          data-testid="review-commit-decline"
+          disabled={busy}
+          onClick={onDone}
+          className={`${button} ${focusRing}`}
+        >
+          Not now
+        </button>
       </div>
     </div>
   );

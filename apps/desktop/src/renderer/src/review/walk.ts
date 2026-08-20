@@ -87,6 +87,12 @@ export function acceptStory(save: Save, storyId: string): Promise<SaveResult> {
   return save(storyId, { state: "accepted" });
 }
 
+/** The commit message RQ-0018#AC-4 derives from an accepted story: its ID and its title, both
+ * ways this text is used — the offer's own label, and the message Git actually receives. */
+export function commitMessage(storyId: string, title: string): string {
+  return `${storyId}: ${title}`;
+}
+
 const REVIEW_NOTES_HEADING = "## Review notes";
 
 /**

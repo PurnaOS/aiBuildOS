@@ -1,9 +1,9 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
 import { ChevronDown, ChevronRight, File, Folder } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { eyebrow, focusRing, mono, relativeTime } from "../ui.js";
+import { eyebrow, field, focusRing, mono, primary, relativeTime } from "../ui.js";
 import { NewFile } from "./NewArtifact.js";
-import { useRevision } from "./revision.js";
+import { useBump, useRevision } from "./revision.js";
 import type { Tab } from "./TabStrip.js";
 
 /**
@@ -244,6 +244,7 @@ function GitChanges({
 }): React.JSX.Element {
   const [changes, setChanges] = useState<Changes | null>(null);
   const revision = useRevision();
+  const bump = useBump();
 
   // `revision` is not read in here — it *is* the trigger. It moves when the project's files may
   // have changed underneath what is on screen, and re-reading is the whole point of depending on it.
@@ -270,6 +271,23 @@ function GitChanges({
     };
   }, [projectId, revision]);
 
+  // Staging or unstaging one path, then bumping the shared revision so this rail and every other
+  // reader of the working tree (the file tree's amber marks, the review tab) re-read together.
+  const stage = useCallback(
+    async (path: string) => {
+      await window.aibuildos.invoke("project:stage", { id: projectId, path });
+      bump();
+    },
+    [projectId, bump],
+  );
+  const unstage = useCallback(
+    async (path: string) => {
+      await window.aibuildos.invoke("project:unstage", { id: projectId, path });
+      bump();
+    },
+    [projectId, bump],
+  );
+
   if (changes === null) return <p className="px-3 py-2 text-xs text-neutral-500">Loading…</p>;
   if (changes.problem) {
     return (
@@ -283,33 +301,55 @@ function GitChanges({
     changes.staged.length === 0 && changes.unstaged.length === 0 && changes.untracked.length === 0;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto py-1.5">
-      {clean ? (
-        <p data-testid="changes-clean" className="px-3 py-1 text-xs text-neutral-500">
-          Working tree clean.
-        </p>
-      ) : (
-        <>
-          <Group label="Staged" entries={changes.staged} onOpen={onOpen} />
-          <Group label="Unstaged" entries={changes.unstaged} onOpen={onOpen} />
-          <Group label="Untracked" entries={changes.untracked} onOpen={onOpen} />
-        </>
-      )}
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-auto py-1.5">
+        {clean ? (
+          <p data-testid="changes-clean" className="px-3 py-1 text-xs text-neutral-500">
+            Working tree clean.
+          </p>
+        ) : (
+          <>
+            <Group
+              label="Staged"
+              entries={changes.staged}
+              onOpen={onOpen}
+              action="unstage"
+              onAction={(path) => void unstage(path)}
+            />
+            <Group
+              label="Unstaged"
+              entries={changes.unstaged}
+              onOpen={onOpen}
+              action="stage"
+              onAction={(path) => void stage(path)}
+            />
+            <Group
+              label="Untracked"
+              entries={changes.untracked}
+              onOpen={onOpen}
+              action="stage"
+              onAction={(path) => void stage(path)}
+            />
+          </>
+        )}
 
-      <p
-        className={`mt-2 border-t border-neutral-200 px-3 pt-2 pb-0.5 dark:border-neutral-800 ${eyebrow}`}
-      >
-        History
-      </p>
-      {changes.commits.map((commit) => (
-        <div key={commit.hash} className="flex items-baseline gap-2 px-3 py-0.5">
-          <span className={`shrink-0 text-[11px] text-neutral-500 ${mono}`}>{commit.hash}</span>
-          <span className="min-w-0 flex-1 truncate text-[11px]">{commit.subject}</span>
-          <span className={`shrink-0 text-[10px] text-neutral-500 ${mono}`}>
-            {relativeTime(commit.date)}
-          </span>
-        </div>
-      ))}
+        <CommitBar projectId={projectId} stagedCount={changes.staged.length} />
+
+        <p
+          className={`mt-2 border-t border-neutral-200 px-3 pt-2 pb-0.5 dark:border-neutral-800 ${eyebrow}`}
+        >
+          History
+        </p>
+        {changes.commits.map((commit) => (
+          <div key={commit.hash} className="flex items-baseline gap-2 px-3 py-0.5">
+            <span className={`shrink-0 text-[11px] text-neutral-500 ${mono}`}>{commit.hash}</span>
+            <span className="min-w-0 flex-1 truncate text-[11px]">{commit.subject}</span>
+            <span className={`shrink-0 text-[10px] text-neutral-500 ${mono}`}>
+              {relativeTime(commit.date)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -318,10 +358,15 @@ function Group({
   label,
   entries,
   onOpen,
+  action,
+  onAction,
 }: {
   label: string;
   entries: { path: string; status: string }[];
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
+  /** What the row's affordance does — stage a change onto the index, or take it back off. */
+  action: "stage" | "unstage";
+  onAction: (path: string) => void;
 }): React.JSX.Element | null {
   if (entries.length === 0) return null;
 
@@ -331,30 +376,106 @@ function Group({
         {label} · {entries.length}
       </p>
       {entries.map((entry) => (
-        <button
+        <div
           key={entry.path}
-          type="button"
-          data-testid="change-row"
-          onClick={() =>
-            onOpen(
-              {
-                id: `diff:${entry.path}`,
-                kind: "diff",
-                title: entry.path.split("/").pop() ?? entry.path,
-              },
-              { preview: true },
-            )
-          }
-          className={`flex w-full items-baseline gap-2 px-3 py-0.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-900 ${focusRing}`}
+          className="flex items-center gap-1 pr-2 hover:bg-neutral-50 dark:hover:bg-neutral-900"
         >
-          <span className={`w-2.5 shrink-0 text-[11px] text-amber-600 ${mono}`}>
-            {entry.status}
-          </span>
-          <span className={`min-w-0 flex-1 truncate text-xs ${mono}`} title={entry.path}>
-            {entry.path}
-          </span>
-        </button>
+          <button
+            type="button"
+            data-testid="change-row"
+            onClick={() =>
+              onOpen(
+                {
+                  id: `diff:${entry.path}`,
+                  kind: "diff",
+                  title: entry.path.split("/").pop() ?? entry.path,
+                },
+                { preview: true },
+              )
+            }
+            className={`flex min-w-0 flex-1 items-baseline gap-2 py-0.5 pl-3 text-left ${focusRing}`}
+          >
+            <span className={`w-2.5 shrink-0 text-[11px] text-amber-600 ${mono}`}>
+              {entry.status}
+            </span>
+            <span className={`min-w-0 flex-1 truncate text-xs ${mono}`} title={entry.path}>
+              {entry.path}
+            </span>
+          </button>
+          <button
+            type="button"
+            data-testid={action === "stage" ? "stage-row" : "unstage-row"}
+            onClick={() => onAction(entry.path)}
+            className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100 ${focusRing}`}
+          >
+            {action === "stage" ? "Stage" : "Unstage"}
+          </button>
+        </div>
       ))}
     </>
+  );
+}
+
+/**
+ * The message field and Commit button (RQ-0018#AC-2). Sits right under the staged list — the only
+ * one of the three groups a commit actually reads from.
+ */
+function CommitBar({
+  projectId,
+  stagedCount,
+}: {
+  projectId: string;
+  stagedCount: number;
+}): React.JSX.Element {
+  const bump = useBump();
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const commit = useCallback(async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = await window.aibuildos.invoke("project:commit", {
+        id: projectId,
+        message: message.trim(),
+      });
+      if (!result.ok) {
+        setProblem(result.message);
+        return;
+      }
+      setMessage("");
+      bump();
+    } finally {
+      setBusy(false);
+    }
+  }, [projectId, message, bump]);
+
+  return (
+    <div className="mt-2 border-t border-neutral-200 px-3 pt-2 pb-1.5 dark:border-neutral-800">
+      {problem !== null && (
+        <p data-testid="commit-problem" className="mb-1.5 whitespace-pre-wrap text-xs text-red-600">
+          {problem}
+        </p>
+      )}
+      <div className="flex gap-1.5">
+        <input
+          data-testid="commit-message"
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          placeholder="Commit message"
+          className={`${field} text-xs`}
+        />
+        <button
+          type="button"
+          data-testid="commit-button"
+          disabled={busy || stagedCount === 0 || message.trim() === ""}
+          onClick={() => void commit()}
+          className={`${primary} shrink-0 py-1 text-xs ${focusRing}`}
+        >
+          Commit
+        </button>
+      </div>
+    </div>
   );
 }

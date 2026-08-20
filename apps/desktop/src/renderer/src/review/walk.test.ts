@@ -3,6 +3,7 @@ import {
   acceptStory,
   appendReviewNote,
   buildWalk,
+  commitMessage,
   type Save,
   sendBackStory,
   turnEndWalk,
@@ -146,6 +147,14 @@ describe("a verdict from review", () => {
 
     expect(result.problem).toBe("review cannot become building");
     expect(result.prompt).toBeNull();
+  });
+});
+
+describe("commitMessage", () => {
+  it("names the story by ID and title, the same text for the offer's label and Git's message", () => {
+    expect(commitMessage("ST-0032", "Finished work is committed from the workspace")).toBe(
+      "ST-0032: Finished work is committed from the workspace",
+    );
   });
 });
 

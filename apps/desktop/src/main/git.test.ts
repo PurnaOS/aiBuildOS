@@ -2,7 +2,18 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { commitAll, GitError, git, initRepo, recentCommits, repoRoot, status } from "./git.js";
+import {
+  commitAll,
+  commitStaged,
+  GitError,
+  git,
+  initRepo,
+  recentCommits,
+  repoRoot,
+  stagePath,
+  status,
+  unstagePath,
+} from "./git.js";
 
 /**
  * TC-0007. Reading a repository, and naming Git's own failures.
@@ -221,5 +232,123 @@ describe("the git boundary", () => {
     writeFileSync(join(dir, "a.txt"), "one", "utf8");
 
     await expect(commitAll(dir, "add a")).rejects.toMatchObject({ code: "git_identity" });
+  });
+});
+
+/**
+ * TC-0055. The first writes: stage, unstage and commit, against the real binary.
+ *
+ * Same posture as the reads above — nothing here reimplements Git, everything is asked of a real
+ * repository in a temp directory.
+ */
+describe("the first writes (RQ-0018)", () => {
+  let dir: string;
+
+  const identify = async (): Promise<void> => {
+    await git(dir, "config", "user.name", "Test");
+    await git(dir, "config", "user.email", "test@example.com");
+    await git(dir, "config", "commit.gpgsign", "false");
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aibuildos-git-write-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("stages, unstages and restages a path, then commits it — counts follow, and the commit lands in the log", async () => {
+    await initRepo(dir);
+    await identify();
+    writeFileSync(join(dir, "a.txt"), "one", "utf8");
+
+    await stagePath(dir, "a.txt");
+    expect(await status(dir)).toMatchObject({ staged: 1, unstaged: 0, untracked: 0 });
+
+    await unstagePath(dir, "a.txt");
+    expect(await status(dir)).toMatchObject({ staged: 0, unstaged: 0, untracked: 1 });
+
+    await stagePath(dir, "a.txt");
+    expect(await status(dir)).toMatchObject({ staged: 1, unstaged: 0, untracked: 0 });
+
+    const hash = await commitStaged(dir, "add a");
+
+    expect(hash).toMatch(/^[0-9a-f]{40}$/);
+    expect(await status(dir)).toMatchObject({ staged: 0, unstaged: 0, untracked: 0 });
+
+    const [commit] = await recentCommits(dir);
+    expect(commit?.subject).toBe("add a");
+    expect(hash.startsWith(commit?.hash ?? "\0")).toBe(true);
+  });
+
+  it("unstages a path before the first commit exists — an unborn branch", async () => {
+    await initRepo(dir);
+    writeFileSync(join(dir, "a.txt"), "one", "utf8");
+    await stagePath(dir, "a.txt");
+    expect(await status(dir)).toMatchObject({ staged: 1, untracked: 0 });
+
+    await unstagePath(dir, "a.txt");
+
+    expect(await status(dir)).toMatchObject({ staged: 0, untracked: 1 });
+  });
+
+  it("reports Git's own words, not execFile's wrapper text, when nothing is staged to commit", async () => {
+    await initRepo(dir);
+    await identify();
+    writeFileSync(join(dir, "a.txt"), "one", "utf8");
+    await commitAll(dir, "add a"); // a clean tree — nothing staged for the next commit
+
+    const error = await commitStaged(dir, "empty").catch((cause) => cause);
+
+    expect(error).toBeInstanceOf(GitError);
+    // Git prints this refusal to stdout, not stderr — the gap this hardens.
+    expect(error.message).toMatch(/nothing to commit/i);
+    expect(error.message).not.toMatch(/^Command failed/);
+  });
+
+  /**
+   * `#!/bin/sh` needs a POSIX shell to run the hook at all — not present as `sh` on a stock Windows
+   * runner — so this is the one test in the suite that cannot run there. Everything it verifies
+   * (RQ-0018#AC-3) is otherwise unexercised on win32 CI, which is a known gap, not a silent one.
+   */
+  it.skipIf(process.platform === "win32")(
+    "a rejecting pre-commit hook reports its own words, and leaves the work staged",
+    async () => {
+      await initRepo(dir);
+      await identify();
+      const hook = join(dir, ".git", "hooks", "pre-commit");
+      writeFileSync(hook, "#!/bin/sh\necho 'no, said the hook' 1>&2\nexit 1\n", "utf8");
+      chmodSync(hook, 0o755);
+      writeFileSync(join(dir, "a.txt"), "one", "utf8");
+      await stagePath(dir, "a.txt");
+
+      const error = await commitStaged(dir, "blocked").catch((cause) => cause);
+
+      expect(error).toBeInstanceOf(GitError);
+      expect(error.code).toBe("git_failed");
+      expect(error.message).toContain("no, said the hook");
+      // The hook ran *instead of* the commit — the work is exactly where staging left it.
+      expect(await status(dir)).toMatchObject({ staged: 1, unstaged: 0 });
+      expect(await recentCommits(dir)).toEqual([]);
+    },
+  );
+
+  it("treats a path and a message full of shell metacharacters as plain argv, never shell text", async () => {
+    await initRepo(dir);
+    await identify();
+    // If this ever reached a shell, `$(touch PWNED)` would run and `;` would end the command early.
+    const marker = join(dir, "PWNED");
+    const trickyName = "$(touch PWNED); a.txt";
+    const trickyMessage = "message with `backticks`, $(a command) and ; a semicolon";
+    writeFileSync(join(dir, trickyName), "one", "utf8");
+
+    await stagePath(dir, trickyName);
+    const hash = await commitStaged(dir, trickyMessage);
+
+    expect(existsSync(marker)).toBe(false);
+    const [commit] = await recentCommits(dir);
+    expect(commit?.subject).toBe(trickyMessage);
+    expect(hash).toMatch(/^[0-9a-f]{40}$/);
   });
 });
