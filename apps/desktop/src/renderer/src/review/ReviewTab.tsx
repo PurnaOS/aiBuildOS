@@ -6,6 +6,7 @@ import { Diff } from "../workspace/Diff.js";
 import { useBump, useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
 import { Checks } from "./Checks.js";
+import { ManualChecks } from "./ManualChecks.js";
 import { acceptStory, commitMessage, type Save, sendBackStory } from "./walk.js";
 
 type Artifact = ChannelResponse<"project:artifact">;
@@ -188,6 +189,12 @@ export function ReviewTab({
           </div>
 
           <Checks projectId={projectId} onPrompt={onPrompt} />
+          <ManualChecks
+            projectId={projectId}
+            verifiedBy={
+              story.links.find((link) => link.relationship === "verified_by")?.current ?? []
+            }
+          />
         </div>
 
         <div data-testid="review-diffs" className="min-h-0 overflow-auto p-4">
