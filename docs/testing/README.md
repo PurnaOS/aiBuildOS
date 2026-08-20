@@ -79,3 +79,16 @@ back to [docs/README.md](../README.md)
 | [TC-0069](tc-0069.md) | Two builds at once; cancelling one leaves the other | active | [RQ-0021](../requirements/rq-0021.md)#AC-1, #AC-2, #AC-4 |
 | [TC-0070](tc-0070.md) | The run fence starts a server, and nothing outlives its review | active | [RQ-0025](../requirements/rq-0025.md)#AC-1, #AC-3, #AC-4 |
 | [TC-0071](tc-0071.md) | The preview renders beside the review, and closes with it | active | [RQ-0025](../requirements/rq-0025.md)#AC-1, #AC-2 |
+| [TC-0072](tc-0072.md) | A rejected read at turn end still lands on screen | draft | [BG-0006](../bugs/bg-0006.md), [RQ-0015](../requirements/rq-0015.md) |
+| [TC-0073](tc-0073.md) | The flip lands in the build's own project, whatever is on screen | draft | [BG-0007](../bugs/bg-0007.md), [RQ-0021](../requirements/rq-0021.md) |
+| [TC-0074](tc-0074.md) | A build's stream shows the tool call that ran | draft | [BG-0008](../bugs/bg-0008.md), [RQ-0021](../requirements/rq-0021.md) |
+| [TC-0075](tc-0075.md) | The watcher debounces, filters, and caches | draft | [RQ-0026](../requirements/rq-0026.md)#AC-4, #AC-6, #AC-7 |
+| [TC-0076](tc-0076.md) | What anything writes, the workspace shows, with no turn ending | draft | [RQ-0026](../requirements/rq-0026.md)#AC-1, #AC-2, #AC-3, #AC-5 |
+| [TC-0077](tc-0077.md) | The rail's walk and the board's walk are one walk | draft | [RQ-0027](../requirements/rq-0027.md)#AC-1, #AC-2 |
+| [TC-0078](tc-0078.md) | Talking a story into work lands it in review | draft | [RQ-0027](../requirements/rq-0027.md)#AC-1, #AC-4 |
+| [TC-0079](tc-0079.md) | The scaffold seeds the instructions, and the seeder never overwrites | draft | [RQ-0028](../requirements/rq-0028.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0080](tc-0080.md) | A fresh project's instructions are on disk where agents look | draft | [RQ-0028](../requirements/rq-0028.md)#AC-1 |
+| [TC-0081](tc-0081.md) | The rail folds and counts; the chrome asks in its own voice | draft | [RQ-0029](../requirements/rq-0029.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0082](tc-0082.md) | Streaming shows on the tab, and what changed says so | draft | [RQ-0030](../requirements/rq-0030.md)#AC-1 through #AC-4 |
+| [TC-0083](tc-0083.md) | The card reads the wire: command, chunks, outcome | draft | [RQ-0031](../requirements/rq-0031.md)#AC-1, #AC-2, #AC-5, #AC-6 |
+| [TC-0084](tc-0084.md) | A command streams into the transcript and folds when long | draft | [RQ-0031](../requirements/rq-0031.md)#AC-1 through #AC-4 |

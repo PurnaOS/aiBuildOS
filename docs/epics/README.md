@@ -17,3 +17,4 @@ back to [docs/README.md](../README.md)
 | [EP-0007](ep-0007.md) | The conversation asks and listens | done | [RQ-0016](../requirements/rq-0016.md), [RQ-0017](../requirements/rq-0017.md), [RQ-0022](../requirements/rq-0022.md) |
 | [EP-0008](ep-0008.md) | Proving it works | done | [RQ-0019](../requirements/rq-0019.md), [RQ-0023](../requirements/rq-0023.md), [RQ-0025](../requirements/rq-0025.md) |
 | [EP-0009](ep-0009.md) | Work lands, and scales out | done | [RQ-0018](../requirements/rq-0018.md), [RQ-0020](../requirements/rq-0020.md), [RQ-0021](../requirements/rq-0021.md) |
+| [EP-0010](ep-0010.md) | The workspace keeps up with the work | active | [RQ-0026](../requirements/rq-0026.md), [RQ-0027](../requirements/rq-0027.md), [RQ-0028](../requirements/rq-0028.md), [RQ-0029](../requirements/rq-0029.md), [RQ-0030](../requirements/rq-0030.md), [RQ-0031](../requirements/rq-0031.md) |
