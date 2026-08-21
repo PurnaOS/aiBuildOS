@@ -1,10 +1,18 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validate } from "@aibuildos/knowledge-engine";
 import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { git, recentCommits, repoRoot } from "./git.js";
+import { commitAll, git, recentCommits, repoRoot } from "./git.js";
 import { bundleFiles, claimProjectDirectory, fillProject, scaffoldProject } from "./scaffold.js";
 
 /**
@@ -163,12 +171,73 @@ describe("scaffolding a project", () => {
     expect(files.size).toBeGreaterThanOrEqual(20);
     for (const [path, content] of files) {
       // Every template file lives under `docs/`, except the two root instruction files RQ-0028
-      // seeds at the project root — not a stray file the glob picked up by accident.
-      expect(path.startsWith("docs/") || path === "AGENTS.md" || path === "CLAUDE.md", path).toBe(
-        true,
-      );
+      // seeds at the project root and the Claude Code guardrail layer RQ-0049 seeds under
+      // `.claude/` — not a stray file the glob picked up by accident.
+      expect(
+        path.startsWith("docs/") ||
+          path.startsWith(".claude/") ||
+          path === "AGENTS.md" ||
+          path === "CLAUDE.md",
+        path,
+      ).toBe(true);
       expect(content.length, path).toBeGreaterThan(0);
     }
+  });
+
+  /**
+   * TC-0117 (RQ-0049#AC-1, AC-2). The template ships the record's hard rules as Claude Code hooks:
+   * a `.claude/settings.json` that parses and matches the harness's hook schema, wiring PreToolUse
+   * on the editing tools to the guard script that denies `state:` edits and protected-file writes.
+   */
+  it("ships the Claude Code guardrail layer, valid for its harness", () => {
+    const files = bundleFiles();
+
+    const settings = files.get(".claude/settings.json");
+    expect(settings).toBeDefined();
+    // AC-2: valid for its harness — parses, and its shape is the documented hook schema.
+    const parsed = JSON.parse(settings ?? "");
+    const [matcher] = parsed.hooks.PreToolUse;
+    expect(matcher.matcher).toBe("Edit|Write|MultiEdit");
+    expect(matcher.hooks).toEqual([
+      { type: "command", command: 'sh "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-record.sh"' },
+    ]);
+
+    // The script the settings point at ships too, and denies the way Claude Code documents.
+    const guard = files.get(".claude/hooks/guard-record.sh");
+    expect(guard).toContain("exit 2");
+    expect(guard).toContain("docs/profile");
+    expect(guard).toContain("state:");
+  });
+
+  it("seeds the guardrail hooks beside the instructions, the script executable (RQ-0049#AC-1)", async () => {
+    const dir = await scaffoldProject(parent, "demo");
+
+    expect(existsSync(join(dir, ".claude", "settings.json"))).toBe(true);
+    const script = join(dir, ".claude", "hooks", "guard-record.sh");
+    expect(existsSync(script)).toBe(true);
+    if (process.platform !== "win32") {
+      expect(statSync(script).mode & 0o111).not.toBe(0);
+    }
+
+    // In the initial commit, not left untracked beside it — the guardrails are part of the
+    // codebase from initialization, like everything else the seed writes.
+    const tracked = (await git(dir, "ls-tree", "-r", "--name-only", "HEAD")).split("\n");
+    expect(tracked).toContain(".claude/settings.json");
+    expect(tracked).toContain(".claude/hooks/guard-record.sh");
+  });
+
+  /**
+   * TC-0118 (RQ-0049 / ST-0066#AC-4). The scaffolded hooks are harness hooks, not git hooks: the
+   * app's own checkpoint commits (`commitAll`, the same call `checkpointWorktree` rides) succeed
+   * in a project carrying them.
+   */
+  it("does not block the app's own commits in a hook-carrying project", async () => {
+    const dir = await scaffoldProject(parent, "demo");
+
+    writeFileSync(join(dir, "notes.txt"), "turn work\n", "utf8");
+    await commitAll(dir, "checkpoint: ST-0000 turn 1");
+
+    expect(await recentCommits(dir)).toHaveLength(2);
   });
 
   /**

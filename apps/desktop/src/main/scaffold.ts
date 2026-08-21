@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { commitAll, git, initRepo } from "./git.js";
 
@@ -29,11 +29,16 @@ import { commitAll, git, initRepo } from "./git.js";
  * ponytail: the templates are a snapshot of this repo's own `docs/profile/` and `docs/guidelines/`,
  * so the two can drift. Upgrade path is a `docs:check` rule that diffs them.
  */
-const templates = import.meta.glob("./okf-template/**/*.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
+const templates = import.meta.glob(
+  // Two patterns because the glob's default skips dotfiles: the record's markdown, and the
+  // Claude Code guardrail layer under `.claude/` (RQ-0049) — settings plus the hook script.
+  ["./okf-template/**/*.md", "./okf-template/.claude/**"],
+  {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  },
+) as Record<string, string>;
 
 const TEMPLATE_ROOT = "./okf-template/";
 
@@ -69,6 +74,11 @@ export function seedBundle(dir: string, owner = ""): void {
     const target = join(dir, relative);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, content.replaceAll(OWNER_PLACEHOLDER, owner), "utf8");
+    // The guardrail hook script (RQ-0049) is invoked as an executable by the harness. Writing the
+    // `.claude/` layer is all this does — the files are inert data for any harness that does not
+    // read them (RQ-0049#AC-3), and activation is Claude Code's own trust dialog, never this seed
+    // (RQ-0049#AC-4).
+    if (relative.endsWith(".sh")) chmodSync(target, 0o755);
   }
 }
 
