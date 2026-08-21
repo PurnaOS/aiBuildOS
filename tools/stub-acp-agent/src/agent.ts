@@ -15,7 +15,8 @@
  *   --mode=rich           a realistic turn: thought, tool call, diff, plan, reply, usage
  *   --mode=permission     asks the client for permission, and obeys the answer
  *   --mode=slow           streams slowly and honours `session/cancel`
- *   --mode=controls       advertises modes and config options, and confirms changes to them
+ *   --mode=controls       advertises modes and config options, confirms changes to them, echoes
+ *                         prompts, and re-advertises its commands as turns pass (ST-0069)
  *   --mode=echo           replies with exactly the prompt text received — proves what was sent
  *   --mode=plan-writer    writes a scripted draft story + test per RQ id found in the prompt
  *   --mode=file-writer    appends a scripted line to notes.md each turn, with tool call and diff
@@ -23,6 +24,10 @@
  *   --mode=interview      two scripted questions, then writes one draft requirement
  *   --mode=journey        first prompt plans like plan-writer, later prompts build like file-writer
  *   --mode=exec-streamer  one execute tool call whose output streams in chunks before it ends
+ *   --mode=typed-record   advertises the aibuildos/typed-record extension (DC-0028): a plan prompt
+ *                         sends a typed `_aibuildos/plan` request (add `--flaky-plan` for a
+ *                         non-conforming first attempt that retries on rejection), a "run the
+ *                         checks" prompt emits a typed `_aibuildos/verdict` notification
  *
  * The last four exist because a live agent does far more than stream text, and a stub that only
  * streams text can only test streaming text.
@@ -55,7 +60,8 @@ type Mode =
   | "question"
   | "interview"
   | "journey"
-  | "exec-streamer";
+  | "exec-streamer"
+  | "typed-record";
 
 interface Message {
   jsonrpc: "2.0";
@@ -69,6 +75,9 @@ interface Message {
 const mode = (process.argv
   .find((argument) => argument.startsWith("--mode="))
   ?.slice("--mode=".length) ?? "ok") as Mode;
+
+/** typed-record only: first plan attempt is non-conforming, retried on rejection. */
+const flakyPlan = process.argv.includes("--flaky-plan");
 
 const SESSION = "stub-session";
 
@@ -130,7 +139,9 @@ const MODES = {
   ],
 };
 
-const CONFIG_OPTIONS = [
+/** A `let`, because `session/set_config_option` persists the change — a second call must see the
+ * first one's value, exactly as a real agent's would. */
+let configOptions = [
   {
     id: "model",
     name: "Model",
@@ -165,6 +176,19 @@ const CONFIG_OPTIONS = [
     options: [
       { value: "auto", name: "Auto" },
       { value: "manual", name: "Manual" },
+    ],
+  },
+  // The spec's own example of a config option is a permission-mode selector; this is the entry the
+  // supervision mapping targets (RQ-0050 / ST-0067).
+  {
+    id: "permission_mode",
+    name: "Permission mode",
+    category: "permission",
+    type: "select",
+    currentValue: "ask",
+    options: [
+      { value: "ask", name: "Ask" },
+      { value: "auto", name: "Auto" },
     ],
   },
 ];
@@ -373,6 +397,9 @@ function interviewTurn(): string {
 /** How many prompts the journey has seen: the first plans, the rest build. */
 let journeyTurns = 0;
 
+/** How many prompts controls mode has seen — what its command re-advertisement is keyed on. */
+let controlsTurns = 0;
+
 /**
  * One execute tool call whose output arrives in streamed chunks (RQ-0031): the command in the
  * call's raw input, four content updates spaced out enough for a test to observe streaming, a
@@ -405,6 +432,75 @@ async function execStreamerTurn(): Promise<string> {
     rawOutput: { exitCode: 0, output: chunks.join("") },
   });
   chunk("Ran the tests.");
+  return "end_turn";
+}
+
+/**
+ * The typed-record turn (RQ-0052, DC-0028): the same scripted content plan-writer writes as files,
+ * sent instead as data over the extension's own wire. A "run the checks" prompt reports a typed
+ * verdict for the TestCase the prompt names; anything else with requirement ids in it proposes a
+ * plan and narrates what came back — including the reject-and-retry `--flaky-plan` provokes.
+ */
+let planAttempts = 0;
+
+function typedPlanPayload(picked: string[]): unknown {
+  return {
+    sessionId: SESSION,
+    // `_meta` rides the payload so the client's forwarding of it is provable end to end.
+    _meta: { "aibuildos/typed-record": { attempt: (planAttempts += 1) } },
+    stories: picked.map((requirement) => ({
+      title: `Deliver ${requirement}`,
+      implements: [requirement],
+      criteria: [`The behaviour ${requirement} asks for is observable.`],
+    })),
+    testCases: picked.map((requirement) => ({
+      title: `${requirement} behaves as asked`,
+      kind: "automated",
+      verifies: [requirement],
+      steps: [`Exercise ${requirement} and expect what it promises.`],
+    })),
+  };
+}
+
+async function typedRecordTurn(prompt: string): Promise<string> {
+  const testCase = /TC-\d{4,}/i.exec(prompt)?.[0]?.toUpperCase();
+  if (/run the checks/i.test(prompt) && testCase !== undefined) {
+    const result = /fail/i.test(prompt) ? "failed" : "passed";
+    write({
+      jsonrpc: "2.0",
+      method: "_aibuildos/verdict",
+      params: { sessionId: SESSION, testCaseId: testCase, result, ranAt: "2026-08-20T00:00:00Z" },
+    });
+    chunk(`Reported ${result} for ${testCase}.`);
+    return "end_turn";
+  }
+
+  const picked = [...new Set(prompt.toUpperCase().match(/RQ-\d{4,}/g) ?? [])];
+  if (picked.length === 0) {
+    chunk("No requirement ids in the prompt.");
+    return "end_turn";
+  }
+
+  let payload = typedPlanPayload(picked);
+  if (flakyPlan && planAttempts === 1) {
+    // Non-conforming on purpose: an empty title fails the client's schema, and the findings that
+    // come back are what prompt the conforming retry below.
+    (payload as { stories: { title: string }[] }).stories[0].title = "";
+  }
+  let answer = (await callClient("_aibuildos/plan", payload)) as {
+    accepted?: boolean;
+    ids?: string[];
+  };
+  if (answer?.accepted !== true && flakyPlan) {
+    chunk("Plan rejected; retrying.");
+    payload = typedPlanPayload(picked);
+    answer = (await callClient("_aibuildos/plan", payload)) as typeof answer;
+  }
+  chunk(
+    answer?.accepted === true
+      ? `Proposed ${picked.length} typed stories.`
+      : "The plan was rejected.",
+  );
   return "end_turn";
 }
 
@@ -512,7 +608,12 @@ async function handle(line: string): Promise<void> {
     case "initialize":
       respond(message.id, {
         protocolVersion: 1,
-        agentCapabilities: {},
+        // Extension support is advertised in the capability object's `_meta`, per the spec
+        // (DC-0028). Every other mode advertises nothing — the baseline negative control.
+        agentCapabilities:
+          mode === "typed-record"
+            ? { _meta: { "aibuildos/typed-record": { version: 1 } } }
+            : {},
         agentInfo: { name: "stub-acp-agent", version: "0.1.0" },
         ...(mode === "auth-required"
           ? { authMethods: [{ id: "stub-login", name: "Log in to the stub" }] }
@@ -529,7 +630,7 @@ async function handle(line: string): Promise<void> {
         sessionId: SESSION,
         // Only the controls mode advertises these, so a test can prove that an agent offering
         // nothing produces no controls at all.
-        ...(mode === "controls" ? { modes: MODES, configOptions: CONFIG_OPTIONS } : {}),
+        ...(mode === "controls" ? { modes: MODES, configOptions } : {}),
       });
       if (mode === "controls") {
         update({
@@ -549,11 +650,13 @@ async function handle(line: string): Promise<void> {
 
     case "session/set_config_option": {
       const params = message.params as { configId?: string; value?: string };
-      const next = CONFIG_OPTIONS.map((option) =>
+      // Persisted, not just echoed: mapping over the list and forgetting the result was a real
+      // stub bug — a second change would silently revert the first on the wire.
+      configOptions = configOptions.map((option) =>
         option.id === params?.configId ? { ...option, currentValue: params?.value } : option,
       );
-      respond(message.id, { configOptions: next });
-      update({ sessionUpdate: "config_option_update", configOptions: next });
+      respond(message.id, { configOptions });
+      update({ sessionUpdate: "config_option_update", configOptions });
       break;
     }
 
@@ -570,18 +673,39 @@ async function handle(line: string): Promise<void> {
       else if (mode === "slow") stopReason = await slowTurn();
       // Long enough that a spec can edit, assert, and close *under* the stream on a slow CI runner.
       else if (mode === "slower") stopReason = await slowTurn(300);
-      else if (mode === "echo") {
+      else if (mode === "echo" || mode === "controls") {
         // The prompt is content blocks; echoing the text back proves on the transcript both what
         // was sent and what arrived — which is what a playbook test needs and a mock cannot give.
+        // Controls mode echoes too, so a command's exact wire text is provable (ST-0069).
         const blocks = (message.params as { prompt?: { type?: string; text?: string }[] })?.prompt;
         chunk((blocks ?? []).map((block) => block.text ?? "").join(""));
+        if (mode === "controls") {
+          // A real agent re-advertises as its command set moves (ST-0069): the first turn gains
+          // one, the second withdraws the original — the client must replace, never merge.
+          controlsTurns += 1;
+          if (controlsTurns === 1) {
+            update({
+              sessionUpdate: "available_commands_update",
+              availableCommands: [
+                { name: "review", description: "Review the working tree" },
+                { name: "ship", description: "Ship the change" },
+              ],
+            });
+          } else if (controlsTurns === 2) {
+            update({
+              sessionUpdate: "available_commands_update",
+              availableCommands: [{ name: "ship", description: "Ship the change" }],
+            });
+          }
+        }
       } else if (
         mode === "plan-writer" ||
         mode === "file-writer" ||
         mode === "question" ||
         mode === "interview" ||
         mode === "journey" ||
-        mode === "exec-streamer"
+        mode === "exec-streamer" ||
+        mode === "typed-record"
       ) {
         const blocks = (message.params as { prompt?: { type?: string; text?: string }[] })?.prompt;
         const text = (blocks ?? []).map((block) => block.text ?? "").join("");
@@ -597,9 +721,11 @@ async function handle(line: string): Promise<void> {
                   ? interviewTurn()
                   : mode === "exec-streamer"
                     ? await execStreamerTurn()
-                    : journeyTurns === 1
-                      ? planWriterTurn(text)
-                      : fileWriterTurn();
+                    : mode === "typed-record"
+                      ? await typedRecordTurn(text)
+                      : journeyTurns === 1
+                        ? planWriterTurn(text)
+                        : fileWriterTurn();
       } else chunk("ok");
 
       respond(message.id, { stopReason });

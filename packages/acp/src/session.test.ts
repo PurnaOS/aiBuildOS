@@ -277,6 +277,7 @@ describe("what the agent asks and what it offers", () => {
       "model",
       "thought_level",
       "style",
+      "permission_mode",
     ]);
 
     const silent = await start("rich");
