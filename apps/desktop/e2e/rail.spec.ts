@@ -182,17 +182,10 @@ test("a dirty tab's close asks through the application's own dialog, in dark app
   await expect(dialog).toHaveCount(0);
   await expect(w.getByTestId("tab-RQ-0001")).toBeVisible();
 
-  // The turn may have ended by now, which would let autosave's 800ms debounce clear the dirty flag
-  // out from under this second close — proven on CI's slower runners, where the polls between the
-  // re-edit and the close-click alone outlast the debounce. Start another slow turn first: autosave
-  // holds its write while a turn streams (RQ-0008#AC-3), the same protection the first close had.
-  await w.getByTestId("tab-chat").click();
-  await composer.click();
-  await composer.fill("keep going");
-  await w.keyboard.press("Enter");
-  await w.getByTestId("tab-RQ-0001").click();
-  await w.getByTestId("artifact-body").locator(".cm-content").click();
-  await w.keyboard.type("still editing\n");
+  // Re-arm the dirty flag through the title input, not CodeMirror: a re-shown editor can swallow
+  // the first keystrokes while it re-measures (CI-proven), where `fill` on a plain input is
+  // deterministic. The close lands well inside autosave's 800ms debounce.
+  await w.getByTestId("artifact-title").fill("Alpha thing, edited again");
   await expect(w.getByTestId("tab-dirty-RQ-0001")).toBeVisible();
 
   await w.getByTestId("tab-close-RQ-0001").click();
