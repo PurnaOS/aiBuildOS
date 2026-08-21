@@ -250,6 +250,33 @@ describe("the ACP to AG-UI bridge", () => {
     expect(names(events)).toEqual([CUSTOM.content]);
   });
 
+  it("forwards extension payloads whole, `_meta` intact (RQ-0052)", () => {
+    const bridge = new SessionBridge("thread-1");
+    // The known update kinds each pick their fields; an extension payload keeps every one it came
+    // with — `_meta` above all, because that is where the extension's own data rides (DC-0028).
+    const payload = {
+      _meta: { "aibuildos/typed-record": { attempt: 1 } },
+      stories: [{ title: "Deliver RQ-0001", implements: ["RQ-0001"] }],
+    };
+
+    const proposal = bridge.extension(CUSTOM.planProposal, { payload, response: null });
+    expect(types(proposal)).toEqual([EventType.CUSTOM]);
+    expect(names(proposal)).toEqual([CUSTOM.planProposal]);
+    expect(readValue<{ payload: unknown }>(proposal[0]).payload).toBe(payload);
+
+    const verdict = bridge.extension(CUSTOM.checkVerdict, {
+      _meta: { note: "kept" },
+      testCaseId: "TC-0001",
+      result: "passed",
+    });
+    expect(names(verdict)).toEqual([CUSTOM.checkVerdict]);
+    expect(readValue<{ _meta: unknown; result: string }>(verdict[0])).toEqual({
+      _meta: { note: "kept" },
+      testCaseId: "TC-0001",
+      result: "passed",
+    });
+  });
+
   it("never emits the agent's own vocabulary as an event type", () => {
     const bridge = new SessionBridge("thread-1");
     const emitted = [

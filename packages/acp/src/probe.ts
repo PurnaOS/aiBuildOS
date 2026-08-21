@@ -11,6 +11,7 @@ import {
 } from "@agentclientprotocol/sdk";
 import type { LaunchSpec } from "./index.js";
 import { killTree, spawnDetached } from "./reap.js";
+import { TYPED_RECORD, TYPED_RECORD_VERSION } from "./session.js";
 
 /**
  * The harness probe: spawn an agent, complete a full ACP round trip, report what happened, and
@@ -165,7 +166,9 @@ export async function probeHarness(spec: LaunchSpec, options: ProbeOptions): Pro
         const init = await ctx.request(methods.agent.initialize, {
           protocolVersion: PROTOCOL_VERSION,
           clientInfo: { name: "aiBuildOS", version: options.clientVersion ?? "0.0.0" },
-          clientCapabilities: {},
+          // The same `_meta` announcement `AgentSession.open` makes (DC-0028), so what the probe
+          // reports the agent advertising is what a real session would have been offered.
+          clientCapabilities: { _meta: { [TYPED_RECORD]: { version: TYPED_RECORD_VERSION } } },
         });
         authMethods = (init.authMethods ?? []).map((method) => ({
           id: method.id,

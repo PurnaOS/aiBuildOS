@@ -24,7 +24,10 @@ const okfCli = fileURLToPath(new URL("../../../tools/okf/cli.ts", import.meta.ur
  * the playbook with the right context, the plan gathers what landed, retiring and approving are
  * ordinary guarded saves, and the result validates.
  */
-async function open(): Promise<{ app: ElectronApplication; w: Page; work: string }> {
+async function open(
+  /** The stub's argv — plan-writer by default, `--mode=typed-record …` for the extension cases. */
+  stubArgs: string[] = ["--mode=plan-writer"],
+): Promise<{ app: ElectronApplication; w: Page; work: string }> {
   const config = mkdtempSync(join(tmpdir(), "plan-config-"));
   const work = mkdtempSync(join(tmpdir(), "plan-work-"));
   execFileSync("git", ["-C", work, "init", "--quiet"]);
@@ -55,7 +58,7 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
         id: "h",
         displayName: "Stub",
         command: process.execPath,
-        args: ["--experimental-strip-types", stub, "--mode=plan-writer"],
+        args: ["--experimental-strip-types", stub, ...stubArgs],
       },
     ]),
   );
@@ -308,6 +311,65 @@ test("a proposal lands as drafts, is shaped, and approval schedules it", async (
   const st0099 = readFileSync(join(work, "docs/user-stories/st-0099.md"), "utf8");
   expect(st0099).toContain("state: draft");
   expect(st0099).not.toContain("verified_by");
+
+  await app.close();
+});
+
+/**
+ * TC-0121/TC-0122. The typed path (RQ-0052, ST-0068): an agent advertising the typed-record
+ * extension proposes its plan as data, the application rejects a non-conforming attempt back with
+ * findings (`--flaky-plan` scripts exactly one), and the accepted plan lands as the same draft
+ * artifacts the prose path writes — visible on the same plan surface, because `derivePlan`
+ * re-derives from the record and never learns where a draft came from. A typed verdict then
+ * persists on the TestCase through the guarded save. The test above this one **is** the baseline
+ * control: plan-writer never advertises the extension and its flow is byte-for-byte today's
+ * (RQ-0052#AC-4).
+ */
+test("a typed plan is rejected back once, lands as drafts, and a typed verdict persists", async () => {
+  const { app, w, work } = await open(["--mode=typed-record", "--flaky-plan"]);
+
+  await w.getByTestId("plan-pick-RQ-0001").check();
+  await w.getByTestId("plan-pick-RQ-0002").check();
+  await w.getByTestId("plan-start").click();
+
+  // The reject-retry, narrated by the agent itself: the first payload failed the application's
+  // schema, the findings came back on the extension's own wire, the retry conformed.
+  await w.getByTestId("tab-chat").click();
+  const surface = w.locator(".copilotKitMessages");
+  await expect(surface).toContainText("Plan rejected; retrying.", { timeout: 20000 });
+  await expect(surface).toContainText("Proposed 2 typed stories.", { timeout: 20000 });
+
+  // The drafts are ordinary record artifacts — minted by the application, agent-attributed.
+  const story = readFileSync(join(work, "docs/user-stories/st-0001.md"), "utf8");
+  expect(story).toContain("implements: [RQ-0001]");
+  expect(story).toContain("verified_by: [TC-0001]");
+  expect(story).toContain("provenance: agent");
+  expect(readFileSync(join(work, "docs/user-stories/st-0002.md"), "utf8")).toContain(
+    "implements: [RQ-0002]",
+  );
+
+  // Visible on the plan surface exactly as prose-path drafts are — same surface, same grouping.
+  // RQ-0045#AC-2: Plan is a pinned tab now, browsed directly; there is no banner to open.
+  await w.getByTestId("tab-plan").click();
+  await expect(w.getByTestId("plan-surface")).toBeVisible({ timeout: 15000 });
+  await expect(w.getByTestId("plan-group-RQ-0001").getByTestId("plan-story-ST-0001")).toBeVisible({
+    timeout: 15000,
+  });
+  await expect(w.getByTestId("plan-group-RQ-0002").getByTestId("plan-story-ST-0002")).toBeVisible();
+
+  // What the typed path leaves behind is a bundle `docs:check` itself accepts.
+  expect(() => execFileSync("bun", [okfCli, "docs"], { cwd: work })).not.toThrow();
+
+  // A typed verdict persists through the guarded save (RQ-0052#AC-2) — polled, because the verdict
+  // is a notification and the agent's closing chunk carries no ordering guarantee against the save.
+  await sendPrompt(w, "run the checks for TC-0001");
+  await expect(surface).toContainText("Reported passed for TC-0001.", { timeout: 20000 });
+  await expect
+    .poll(() => readFileSync(join(work, "docs/testing/tc-0001.md"), "utf8"), { timeout: 10000 })
+    .toContain("last_result: passed");
+  expect(readFileSync(join(work, "docs/testing/tc-0001.md"), "utf8")).toContain(
+    "last_run_by: Stub",
+  );
 
   await app.close();
 });
