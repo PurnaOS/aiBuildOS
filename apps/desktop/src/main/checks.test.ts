@@ -92,13 +92,17 @@ describe("running the project's checks", () => {
     );
 
     expect(problem).toBeNull();
-    // 127 is `sh`'s convention for "the shell ran, the named command did not exist"; cmd.exe says
-    // 9009 — still the exit code deciding the verdict, not stderr text.
-    const notFound = process.platform === "win32" ? 9009 : 127;
+    // 127 is `sh`'s convention for "the shell ran, the named command did not exist". Windows has no
+    // honest equivalent through node's `cmd /d /s /c` path — an unknown command exits 1, the same
+    // as any failing command (CI-proven) — so there `could_not_run` is simply `failed`.
+    const missingResult =
+      process.platform === "win32"
+        ? { command: missing, outcome: "failed" as const, exitCode: 1 }
+        : { command: missing, outcome: "could_not_run" as const, exitCode: 127 };
     expect(results).toEqual([
       { command: pass, outcome: "passed", exitCode: 0 },
       { command: fail, outcome: "failed", exitCode: 1 },
-      { command: missing, outcome: "could_not_run", exitCode: notFound },
+      missingResult,
     ]);
     // Captured as it streamed, not reconstructed after the fact: the chunk arrived through the
     // callback while `pass` was still running.

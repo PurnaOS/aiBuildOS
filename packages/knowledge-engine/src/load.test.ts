@@ -70,7 +70,7 @@ describe("loadBundle", () => {
     const { bundle } = loadBundle(root, base);
 
     expect(bundle.artifacts.map((a) => a.basename).sort()).toEqual(["rq-0001.md", "rq-0002.md"]);
-    expect(bundle.artifacts[0]?.dir).toBe(join("docs", "requirements"));
+    expect(bundle.artifacts[0]?.dir).toBe("docs/requirements");
     expect(bundle.artifacts[0]?.frontmatter.id).toBe("RQ-0001");
   });
 
@@ -87,15 +87,15 @@ describe("loadBundle", () => {
   it("collects each README.md as an index rather than as an artifact", () => {
     const { bundle } = loadBundle(root, base);
 
-    expect([...bundle.indexes.keys()].sort()).toEqual(["docs", join("docs", "requirements")]);
+    expect([...bundle.indexes.keys()].sort()).toEqual(["docs", "docs/requirements"]);
     expect(bundle.indexes.get("docs")).toContain("# Bundle");
   });
 
   it("reports paths relative to the base it was given", () => {
     const { bundle } = loadBundle(root, base);
     expect(bundle.artifacts.map((a) => a.file).sort()).toEqual([
-      join("docs", "requirements", "rq-0001.md"),
-      join("docs", "requirements", "rq-0002.md"),
+      "docs/requirements/rq-0001.md",
+      "docs/requirements/rq-0002.md",
     ]);
 
     // Same walk, different base: the CLI reports repo-relative paths, the app project-relative ones.
@@ -112,7 +112,7 @@ describe("loadBundle", () => {
     const { bundle, parseErrors } = loadBundle(root, base);
 
     expect(parseErrors).toHaveLength(1);
-    expect(parseErrors[0]?.file).toBe(join("docs", "requirements", "rq-0003.md"));
+    expect(parseErrors[0]?.file).toBe("docs/requirements/rq-0003.md");
     expect(bundle.artifacts.map((a) => a.basename)).toContain("rq-0003.md");
   });
 
