@@ -348,11 +348,13 @@ test("a typed plan is rejected back once, lands as drafts, and a typed verdict p
     "implements: [RQ-0002]",
   );
 
-  // Visible on the plan surface exactly as prose-path drafts are — same banner, same grouping.
-  await w.getByTestId("tab-board").click();
-  await expect(w.getByTestId("plan-banner")).toBeVisible({ timeout: 15000 });
-  await w.getByTestId("plan-banner-open").click();
-  await expect(w.getByTestId("plan-group-RQ-0001").getByTestId("plan-story-ST-0001")).toBeVisible();
+  // Visible on the plan surface exactly as prose-path drafts are — same surface, same grouping.
+  // RQ-0045#AC-2: Plan is a pinned tab now, browsed directly; there is no banner to open.
+  await w.getByTestId("tab-plan").click();
+  await expect(w.getByTestId("plan-surface")).toBeVisible({ timeout: 15000 });
+  await expect(w.getByTestId("plan-group-RQ-0001").getByTestId("plan-story-ST-0001")).toBeVisible({
+    timeout: 15000,
+  });
   await expect(w.getByTestId("plan-group-RQ-0002").getByTestId("plan-story-ST-0002")).toBeVisible();
 
   // What the typed path leaves behind is a bundle `docs:check` itself accepts.
