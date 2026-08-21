@@ -11,7 +11,6 @@ import type { Session } from "../session/useSession.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { AgentPopover, SupervisionPill, useAgentControls } from "./AgentPopover.js";
 import { Composer, ComposerMenuProvider, StarterCards } from "./Composer.js";
-import { useSessionCommands } from "./commands.js";
 import { commandLine } from "./composerCommands.js";
 import { AsksAssistantMessage } from "./QuestionCard.js";
 import type { Tab } from "./TabStrip.js";
@@ -61,10 +60,6 @@ export function Chat({
     state.status === "ready" ? state.sessionId : null,
     state.status === "ready" ? state.offered : {},
   );
-  // What the harness says it can do, live and replaced whole (RQ-0051#AC-3) — the store, not
-  // `controls.commands`, because a withdrawal has to reach the menu and the popover's own state
-  // merges nothing. Nullable sessionId for the same reason `useAgentControls` takes one.
-  const commands = useSessionCommands(state.status === "ready" ? state.sessionId : null);
   const pick = async (harnessId: string): Promise<void> => {
     setStartedWith(harnessId);
     await start(harnessId);
@@ -100,7 +95,6 @@ export function Chat({
             projectId={projectId}
             harnesses={harnesses}
             attachedHarness={attachedHarness}
-            commands={[...commands]}
             sessionId={state.sessionId}
             onOpen={onOpen}
           >
