@@ -1,3 +1,4 @@
+import type { ChannelResponse } from "@aibuildos/ipc";
 import * as Popover from "@radix-ui/react-popover";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -7,8 +8,12 @@ import {
   type ConfigOption,
   groupAgentSettings,
   type Mode,
+  supervisionReach,
   valueName,
 } from "./agentControls.js";
+
+/** The mapping half of the harness record, straight off the wire (RQ-0050#AC-2). */
+type SupervisionOptions = ChannelResponse<"harness:list">[number]["supervisionOptions"];
 
 /**
  * One popover for everything the agent is set to (RQ-0042, ST-0060): the ACP session mode, the
@@ -177,6 +182,7 @@ export function SupervisionPill({ projectId }: { projectId: string }): React.JSX
 
 export function AgentPopover({
   attachedHarness,
+  supervisionOptions,
   projectId,
   modes,
   modeId,
@@ -185,6 +191,7 @@ export function AgentPopover({
   setOption,
 }: {
   attachedHarness: string;
+  supervisionOptions?: SupervisionOptions;
   projectId: string;
   modes: Mode[];
   modeId: string | null;
@@ -196,6 +203,11 @@ export function AgentPopover({
   const groups = groupAgentSettings(modes, modeId, options, attachedHarness);
   const modeName = modes.find((mode) => mode.id === modeId)?.name ?? null;
   const handsOff = level === "hands-off";
+  // What the level actually reaches (RQ-0050#AC-3, AC-4). `options` is the agent's own live list —
+  // the same `session:event` subscription every other group here already rides — so a change the
+  // harness makes from its side lands in this line without a second subscription to keep true.
+  const reach =
+    level === null ? null : supervisionReach(supervisionOptions?.[level], options, attachedHarness);
 
   return (
     <div className="flex shrink-0 items-center border-b border-neutral-200 px-3 py-1.5 dark:border-neutral-800">
@@ -259,6 +271,18 @@ export function AgentPopover({
                 >
                   <span>{level}</span>
                 </button>
+                {reach !== null && (
+                  <p
+                    data-testid="supervision-reach"
+                    className={`mt-1 px-1 text-[11px] ${
+                      reach.diverged
+                        ? "text-amber-600 dark:text-amber-500"
+                        : "text-neutral-500 dark:text-neutral-400"
+                    }`}
+                  >
+                    {reach.note}
+                  </p>
+                )}
               </div>
             )}
           </Popover.Content>

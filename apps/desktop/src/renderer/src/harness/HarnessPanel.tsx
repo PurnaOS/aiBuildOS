@@ -113,6 +113,13 @@ function HarnessForm({
                 displayName: preset.displayName,
                 command: preset.command,
                 args: [...preset.args],
+                // The supervision mapping is prefill like everything else here (RQ-0050#AC-2), and
+                // it is saved onto the record: the id this harness ends up with is minted, so
+                // nothing downstream can look the preset back up. A preset that maps nothing
+                // spreads nothing rather than an explicit `undefined`.
+                ...(preset.supervisionOptions === undefined
+                  ? {}
+                  : { supervisionOptions: preset.supervisionOptions }),
               }))
             }
           >

@@ -539,10 +539,14 @@ function createHandlers(
       requireProject(id); // an unknown id is a renderer bug, not something a user did
       try {
         setSupervision(projectFile(), id, level);
-        return { problem: null };
       } catch (cause) {
         return { problem: failure(cause).message };
       }
+      // Out to every open session of this project, and to no other project's (RQ-0050#AC-1). Not
+      // awaited: the setting is saved either way, and a session that cannot take the option says so
+      // on its own stream rather than turning a saved setting into a failed one.
+      void sessions.applySupervision(id, level);
+      return { problem: null };
     },
 
     "project:record": ({ id }) => {
