@@ -273,7 +273,7 @@ describe("what the agent asks and what it offers", () => {
   it("reports what the agent offers, and reports nothing when it offers nothing", async () => {
     const offering = await start("controls");
     expect(offering.offered.modes?.availableModes.map((m) => m.id)).toEqual(["plan", "code"]);
-    expect(offering.offered.configOptions?.map((o) => o.id)).toEqual(["model", "thought_level"]);
+    expect(offering.offered.configOptions?.map((o) => o.id)).toEqual(["model", "thought_level", "style"]);
 
     const silent = await start("rich");
     // Absent, not an empty set of choices — the difference the design turns on.
