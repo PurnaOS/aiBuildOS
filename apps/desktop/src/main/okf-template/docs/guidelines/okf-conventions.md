@@ -90,6 +90,7 @@ stable. The title lives in frontmatter.
 | `BG` | Bug | [`docs/bugs/`](../bugs/README.md) |
 | `DC` | Decision (ADR) | [`docs/decisions/`](../decisions/README.md) |
 | `AR` | Architecture | [`docs/architecture/`](../architecture/README.md) |
+| `PB` | Playbook | [`docs/playbooks/`](../playbooks/README.md) |
 
 Two consequences of adopting OKF's frozen prefix table that surprise people:
 

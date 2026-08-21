@@ -17,10 +17,12 @@
     "format": "biome format --write .",
     "test": "vitest run",
     "test:e2e": "bun run --filter @aibuildos/desktop test:e2e",
-    "docs:check": "bun tools/okf/cli.ts docs"
+    "docs:check": "bun tools/okf/cli.ts docs",
+    "postinstall": "electron-rebuild -f -w node-pty -m apps/desktop"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.9",
+    "@electron/rebuild": "^4.2.0",
     "@types/node": "^22.10.0",
     "markdownlint-cli2": "^0.23.2",
     "typescript": "~5.9.3",

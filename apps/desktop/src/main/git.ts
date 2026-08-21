@@ -21,6 +21,10 @@ export type GitErrorCode =
   | "git_missing"
   /** `user.name` / `user.email` are not configured, so nothing can be committed. */
   | "git_identity"
+  /** A network verb failed for want of credentials — `GIT_TERMINAL_PROMPT=0` fails fast (RQ-0032). */
+  | "git_auth"
+  /** No remote is configured to sync with (RQ-0032). A first-run state, not an exception. */
+  | "no_remote"
   /** Git ran and said no. `stderr` carries its own words. */
   | "git_failed";
 
@@ -62,8 +66,8 @@ export async function git(cwd: string, ...argv: string[]): Promise<string> {
   }
 }
 
-function toGitError(cause: unknown): GitError {
-  const error = cause as { code?: unknown; stderr?: unknown; message?: unknown };
+export function toGitError(cause: unknown): GitError {
+  const error = cause as { code?: unknown; stderr?: unknown; stdout?: unknown; message?: unknown };
   const stderr = typeof error.stderr === "string" ? error.stderr.trim() : "";
 
   if (error.code === "ENOENT") {
@@ -84,7 +88,35 @@ function toGitError(cause: unknown): GitError {
     );
   }
 
-  const message = stderr || (typeof error.message === "string" ? error.message : "git failed");
+  // RQ-0032: the two sync failures common enough to act on by kind rather than by parsing prose.
+  // Auth before no-remote — a failed SSH auth blob can also carry "Could not read from remote
+  // repository", which would otherwise be misread as a missing remote.
+  if (
+    /Authentication failed|could not read Username|Permission denied \(publickey\)|terminal prompts disabled/i.test(
+      stderr,
+    )
+  ) {
+    return new GitError(
+      "git_auth",
+      "Git could not authenticate with the remote. Check your credentials or SSH agent, then try again.",
+      stderr,
+    );
+  }
+
+  if (
+    /No configured push destination|does not appear to be a git repository|no remote repository specified/i.test(
+      stderr,
+    )
+  ) {
+    return new GitError("no_remote", "No remote is configured for this repository.", stderr);
+  }
+
+  // Git explains some refusals on stdout, not stderr — `commit` with nothing staged among them.
+  // Falling straight through to `error.message` there reports execFile's own wrapper text
+  // ("Command failed: git -C ... commit -m ...") instead of the words Git actually said.
+  const stdout = typeof error.stdout === "string" ? error.stdout.trim() : "";
+  const message =
+    stderr || stdout || (typeof error.message === "string" ? error.message : "git failed");
   return new GitError("git_failed", message, stderr);
 }
 
@@ -167,6 +199,20 @@ export interface GitStatus {
   readonly unstaged: number;
   readonly untracked: number;
   readonly conflicted: number;
+  /**
+   * Commits ahead of / behind the upstream, from porcelain v2's `# branch.ab` (RQ-0033). `null` —
+   * not 0 — when there is no upstream: "never published" and "in sync" must read differently.
+   */
+  readonly ahead: number | null;
+  readonly behind: number | null;
+}
+
+/** One local branch with its upstream tracking (RQ-0033). */
+export interface Branch {
+  readonly name: string;
+  readonly upstream: string | null;
+  readonly ahead: number | null;
+  readonly behind: number | null;
 }
 
 /** ASCII unit separator. A commit subject can contain anything printable, but not this. */
@@ -214,9 +260,12 @@ export interface GitChange {
  * `--porcelain=v2 -z`: NUL-terminated records, because a filename may contain a newline and the
  * line-based format quotes such paths instead of reporting them plainly.
  */
-export async function changes(
-  dir: string,
-): Promise<{ branch: string | null; entries: GitChange[] }> {
+export async function changes(dir: string): Promise<{
+  branch: string | null;
+  ahead: number | null;
+  behind: number | null;
+  entries: GitChange[];
+}> {
   const stdout = await readGit(
     dir,
     "status",
@@ -231,6 +280,10 @@ export async function changes(
 
   const records = stdout.split("\0");
   let branch: string | null = null;
+  // Absent `# branch.ab` — no upstream — leaves both `null`, not `0`: RQ-0033#AC-3 requires
+  // "never published" and "in sync" to read differently.
+  let ahead: number | null = null;
+  let behind: number | null = null;
   const entries: GitChange[] = [];
 
   for (let index = 0; index < records.length; index += 1) {
@@ -241,6 +294,14 @@ export async function changes(
       const head = record.slice("# branch.head ".length);
       // `(detached)` is not a branch name. A null branch *is* the detached signal.
       branch = head === "(detached)" ? null : head;
+      continue;
+    }
+    if (record.startsWith("# branch.ab ")) {
+      const ab = record.match(/^# branch\.ab \+(\d+) -(\d+)$/);
+      if (ab) {
+        ahead = Number(ab[1]);
+        behind = Number(ab[2]);
+      }
       continue;
     }
     if (record.startsWith("#")) continue;
@@ -277,7 +338,7 @@ export async function changes(
     }
   }
 
-  return { branch, entries };
+  return { branch, ahead, behind, entries };
 }
 
 /**
@@ -287,10 +348,12 @@ export async function changes(
  * shows and the list the Git rail shows can never disagree.
  */
 export async function status(dir: string): Promise<GitStatus> {
-  const { branch, entries } = await changes(dir);
+  const { branch, ahead, behind, entries } = await changes(dir);
 
   return {
     branch,
+    ahead,
+    behind,
     changed: entries.length,
     staged: entries.filter((entry) => !entry.untracked && entry.staged !== ".").length,
     unstaged: entries.filter((entry) => !entry.untracked && entry.unstaged !== ".").length,
@@ -326,4 +389,217 @@ export async function ignored(dir: string, paths: readonly string[]): Promise<Se
   });
 
   return new Set(stdout.split("\0").filter((path) => path !== ""));
+}
+
+/**
+ * The first writes (RQ-0018). Same posture as every read above: the user's own Git, argv only,
+ * failures in Git's — or a hook's — own words via `GitError`.
+ */
+export async function stagePath(cwd: string, path: string): Promise<void> {
+  await git(cwd, "add", "--", path);
+}
+
+export async function unstagePath(cwd: string, path: string): Promise<void> {
+  // `reset -- <path>` rather than `restore --staged`: it also unstages a file the repository has
+  // no commit for yet, which `restore` refuses on an unborn branch.
+  await git(cwd, "reset", "--", path);
+}
+
+/** Commit what is staged; the new commit's hash on success. Hooks run — that is the point. */
+export async function commitStaged(cwd: string, message: string): Promise<string> {
+  await git(cwd, "commit", "-m", message);
+  return (await git(cwd, "rev-parse", "HEAD")).trim();
+}
+
+/**
+ * Worktree verbs (RQ-0020, DC-0021): the branch is the binding, `git worktree list` is the
+ * enumeration, and every operation here is exactly what a person would type — no second
+ * implementation of what a worktree is.
+ *
+ * `list`/`prune` are reads, run with the same `core.fsmonitor` carve-out as `status`/`log`: they run
+ * on every `build:list`, the same read-heavy path those already sit on. `add`/`remove` and the merge
+ * verbs are writes, for the same reason `commitAll` is: they run under the user's own hooks and
+ * signing, and forcing `fsmonitor` off for them would be forcing it off for a write DC-0010 never
+ * asked to touch.
+ */
+export interface Worktree {
+  readonly path: string;
+  /** `null` for a detached worktree — not one this application ever creates, but Git's own state
+   * can hold one, and pretending otherwise would misreport it as `aibuildos/undefined`. */
+  readonly branch: string | null;
+}
+
+/** Every worktree `git worktree list --porcelain` reports, branch names stripped of `refs/heads/`. */
+export async function worktreeList(projectPath: string): Promise<Worktree[]> {
+  const stdout = await readGit(projectPath, "worktree", "list", "--porcelain");
+
+  const worktrees: Worktree[] = [];
+  let current: { path?: string; branch?: string } = {};
+  const flush = (): void => {
+    if (current.path !== undefined)
+      worktrees.push({ path: current.path, branch: current.branch ?? null });
+    current = {};
+  };
+
+  for (const line of stdout.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      flush();
+      current.path = line.slice("worktree ".length);
+    } else if (line.startsWith("branch ")) {
+      const ref = line.slice("branch ".length);
+      current.branch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
+    }
+    // `HEAD <sha>`, `detached`, `locked`, `prunable` — nothing downstream needs them.
+  }
+  flush();
+
+  return worktrees;
+}
+
+/** A worktree for a fresh branch `-b <branch>`, from `base` — `projectPath`'s `HEAD` by default,
+ * or another ref a caller names as the start point (DC-0021, DC-0025). */
+export async function worktreeAdd(
+  projectPath: string,
+  worktreePath: string,
+  branch: string,
+  base = "HEAD",
+): Promise<void> {
+  await git(projectPath, "worktree", "add", "-b", branch, worktreePath, base);
+}
+
+/** Removes the worktree's administrative entry and, unless `force`, refuses if it is dirty. */
+export async function worktreeRemove(
+  projectPath: string,
+  worktreePath: string,
+  force = false,
+): Promise<void> {
+  await git(projectPath, "worktree", "remove", ...(force ? ["--force"] : []), worktreePath);
+}
+
+/** Clears the administrative entry for a worktree directory deleted by hand (TC-0066 step 5). */
+export async function worktreePrune(projectPath: string): Promise<void> {
+  await git(projectPath, "worktree", "prune");
+}
+
+/** `--no-ff`: the accept press is the person's commit, and history should say a merge happened
+ * rather than fast-forwarding it away (DC-0021). Throws `GitError` on conflict; main is left as
+ * Git left it — the caller is what runs `merge --abort`. */
+export async function mergeBranch(
+  projectPath: string,
+  branch: string,
+  message: string,
+): Promise<void> {
+  await git(projectPath, "merge", "--no-ff", branch, "-m", message);
+}
+
+/** Leaves main clean after a conflicting merge. Failing here (nothing to abort) is not this
+ * caller's problem — main was never touched by a merge that never landed. */
+export async function mergeAbort(projectPath: string): Promise<void> {
+  await git(projectPath, "merge", "--abort");
+}
+
+export async function deleteBranch(
+  projectPath: string,
+  branch: string,
+  force = false,
+): Promise<void> {
+  await git(projectPath, "branch", force ? "-D" : "-d", branch);
+}
+
+/**
+ * Remote sync (RQ-0032, DC-0023): plain `git()`, never `readGit` — a sync is a command a person
+ * just pressed, exactly the class DC-0010's read guard carves out, so it runs under the user's
+ * full config, hooks and credential helpers like `commitAll` does.
+ */
+export async function fetchRemote(dir: string): Promise<void> {
+  await git(dir, "fetch", "--prune");
+}
+
+/** `--ff-only`: a diverged branch is a decision for a person; the refusal is git's own words. */
+export async function pull(dir: string): Promise<void> {
+  await git(dir, "pull", "--ff-only");
+}
+
+/**
+ * A branch pushed for the first time has no upstream; git refuses with `no configured push
+ * destination` (no remote at all) or `no upstream branch` (remote exists, branch unpublished).
+ * Either retries once as `push -u origin <branch>`, so publishing a new branch is one press
+ * (RQ-0032#AC-3). Any other failure — including a retry that still finds no remote — propagates.
+ */
+export async function push(dir: string): Promise<{ branch: string }> {
+  const currentBranch = async (): Promise<string> =>
+    (await git(dir, "rev-parse", "--abbrev-ref", "HEAD")).trim();
+
+  try {
+    await git(dir, "push");
+  } catch (cause) {
+    if (
+      !(cause instanceof GitError) ||
+      !/no upstream branch|no configured push destination/i.test(cause.stderr)
+    ) {
+      throw cause;
+    }
+    const branch = await currentBranch();
+    await git(dir, "push", "-u", "origin", branch);
+    return { branch };
+  }
+  return { branch: await currentBranch() };
+}
+
+/**
+ * Every local branch with its upstream and ahead/behind counts, in one `for-each-ref` (RQ-0033).
+ * `current` comes from the same status read every other git surface uses, so it can never disagree
+ * with what the sync header shows as the active branch.
+ */
+export async function branches(
+  dir: string,
+): Promise<{ current: string | null; branches: Branch[] }> {
+  const [{ branch: current }, stdout] = await Promise.all([
+    changes(dir),
+    readGit(
+      dir,
+      "for-each-ref",
+      "refs/heads",
+      `--format=%(refname:short)${UNIT}%(upstream:short)${UNIT}%(upstream:track)`,
+    ),
+  ]);
+
+  const list: Branch[] = stdout
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => {
+      const [name = "", upstreamField = "", track = ""] = line.split(UNIT);
+      const upstream = upstreamField === "" ? null : upstreamField;
+      // No upstream, or one the remote has deleted (`[gone]`): counts are absent, not zero — the
+      // same "never published" vs. "in sync" distinction `changes()` makes for `branch.ab`.
+      if (upstream === null || /gone/.test(track)) {
+        return { name, upstream, ahead: null, behind: null };
+      }
+      const aheadMatch = track.match(/ahead (\d+)/);
+      const behindMatch = track.match(/behind (\d+)/);
+      return {
+        name,
+        upstream,
+        ahead: aheadMatch ? Number(aheadMatch[1]) : 0,
+        behind: behindMatch ? Number(behindMatch[1]) : 0,
+      };
+    });
+
+  return { current, branches: list };
+}
+
+/** Commits in `range` (e.g. `main..branch`) — a sprint or story's distance from its base. */
+export async function revListCount(dir: string, range: string): Promise<number> {
+  return Number((await readGit(dir, "rev-list", "--count", range)).trim());
+}
+
+/** ISO-8601 date of `ref`'s last commit, or `null` for an unborn branch or an unknown ref — both
+ * are "nothing to date" rather than failures worth surfacing. */
+export async function lastCommitDate(dir: string, ref: string): Promise<string | null> {
+  try {
+    return (await readGit(dir, "log", "-1", "--format=%aI", ref)).trim() || null;
+  } catch (cause) {
+    if (cause instanceof GitError) return null;
+    throw cause;
+  }
 }

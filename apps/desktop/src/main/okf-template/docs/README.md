@@ -27,6 +27,7 @@ single-subject and linked. Nothing is duplicated: **repeat IDs and links, never 
 | [bugs/](bugs/README.md) | `BG` | defects |
 | [decisions/](decisions/README.md) | `DC` | architecture decision records |
 | [architecture/](architecture/README.md) | `AR` | system shape |
+| [playbooks/](playbooks/README.md) | `PB` | named instructions shown as buttons |
 
 ## Traceability
 
@@ -52,7 +53,8 @@ the whole design.
 
 ## This bundle is new
 
-It has no artifacts yet, which is the correct state for a project that has not defined its first
-requirement. Start with [requirement-first development](guidelines/requirement-first.md): mint
-`RQ-0001`, write its acceptance criteria, and add a row to
-[requirements/README.md](requirements/README.md).
+Its backlog has no artifacts yet, which is the correct state for a project that has not defined its
+first requirement — the three [playbooks/](playbooks/README.md) are not backlog, they are what a
+coding agent can already press a button to help write. Start with
+[requirement-first development](guidelines/requirement-first.md): mint `RQ-0001`, write its
+acceptance criteria, and add a row to [requirements/README.md](requirements/README.md).

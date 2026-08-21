@@ -1,4 +1,7 @@
-# OKF mandates LF (docs/guidelines/okf-conventions.md §2) and the parser enforces it. Without this,
-# a Windows checkout with core.autocrlf=true rewrites every artifact to CRLF, the walker skips them
-# all as non-artifacts, and `docs:check` passes having validated nothing.
+# OKF mandates UTF-8, LF-only — and the validator reports CRLF rather than normalising it
+# (okf-conventions §2). Windows checkouts default to autocrlf, which would hand every text file
+# to the validator with CRLF and fail docs:check on files that are clean in the repository.
 * text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary

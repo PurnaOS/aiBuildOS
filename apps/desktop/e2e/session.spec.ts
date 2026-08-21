@@ -43,6 +43,7 @@ test("streams a turn from the agent into the renderer, and cancels one", async (
       ...process.env,
       AIBUILDOS_PROJECTS_FILE: join(config, "projects.json"),
       AIBUILDOS_HARNESSES_FILE: join(config, "harnesses.json"),
+      AIBUILDOS_SETTINGS_FILE: join(config, "settings.json"),
     },
   });
   const w = await app.firstWindow();
@@ -64,6 +65,11 @@ test("streams a turn from the agent into the renderer, and cancels one", async (
       sessionId: started.sessionId,
       text: "do the thing",
     });
+    // The prompt's reply and the RUN_FINISHED event race across the boundary; wait for the event
+    // rather than asserting on whichever happened to arrive first.
+    for (let i = 0; i < 50 && !seen.some((e) => e.type === "RUN_FINISHED"); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     stop();
     await api.invoke("session:close", { sessionId: started.sessionId });
 

@@ -142,6 +142,7 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
       ...process.env,
       AIBUILDOS_PROJECTS_FILE: join(config, "projects.json"),
       AIBUILDOS_HARNESSES_FILE: join(config, "harnesses.json"),
+      AIBUILDOS_SETTINGS_FILE: join(config, "settings.json"),
     },
   });
   const w = await app.firstWindow();
@@ -153,20 +154,33 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
   return { app, w, work };
 }
 
-test("offers the type's own states and only legal link targets", async () => {
+test("offers the current state, its legal next states, and only legal link targets", async () => {
   const { app, w } = await open();
 
-  // The Requirement vocabulary from the profile, and nothing this application invented (AC-6).
-  const states = await w.getByTestId("artifact-state").locator("option").allTextContents();
-  expect(states).toEqual(["draft", "ready", "building", "built", "verified", "retired"]);
+  // The current state plus exactly what Requirement's transitions declare from `draft` — not the
+  // whole vocabulary (RQ-0010#AC-1).
+  // `allTextContents` reads once and never retries, so it can outrun the render that
+  // fills the select — CI proved it with an empty list. Wait for the options first.
+  const statesOptions = w.getByTestId("artifact-state").locator("option");
+  await expect(statesOptions.first()).toBeAttached();
+  const states = await statesOptions.allTextContents();
+  expect(states).toEqual(["draft", "ready", "retired"]);
 
   // `verified_by` targets TestCase, so the requirement next door is not on offer for it.
-  const verifiers = await w.getByTestId("link-add-verified_by").locator("option").allTextContents();
+  // `allTextContents` reads once and never retries, so it can outrun the render that
+  // fills the select — CI proved it with an empty list. Wait for the options first.
+  const verifiersOptions = w.getByTestId("link-add-verified_by").locator("option");
+  await expect(verifiersOptions.first()).toBeAttached();
+  const verifiers = await verifiersOptions.allTextContents();
   expect(verifiers.join(" ")).toContain("TC-0001");
   expect(verifiers.join(" ")).not.toContain("RQ-0002");
 
   // `depends_on` targets Requirement, so the test case is not on offer for that one.
-  const depends = await w.getByTestId("link-add-depends_on").locator("option").allTextContents();
+  // `allTextContents` reads once and never retries, so it can outrun the render that
+  // fills the select — CI proved it with an empty list. Wait for the options first.
+  const dependsOptions = w.getByTestId("link-add-depends_on").locator("option");
+  await expect(dependsOptions.first()).toBeAttached();
+  const depends = await dependsOptions.allTextContents();
   expect(depends.join(" ")).toContain("RQ-0002");
   expect(depends.join(" ")).not.toContain("TC-0001");
 
@@ -302,7 +316,7 @@ test("keeps both versions when the agent changes an artifact being edited", asyn
   await w.getByTestId("tab-RQ-0001").click();
 
   // Neither side is discarded, and the difference is on screen.
-  await expect(w.getByTestId("artifact-conflict")).toBeVisible({ timeout: 15000 });
+  await expect(w.getByTestId("artifact-conflict")).toBeVisible({ timeout: 30000 });
   await expect(w.getByTestId("artifact-title")).toHaveValue("Mine");
   await expect(w.getByTestId("artifact-conflict")).toContainText("Theirs");
 

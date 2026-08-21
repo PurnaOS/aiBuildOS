@@ -81,7 +81,7 @@ describe("the settings store", () => {
   });
 
   it("writes beside the other configuration, and honours the override", () => {
-    expect(settingsFile("/somewhere/userData")).toBe("/somewhere/userData/settings.json");
+    expect(settingsFile("/somewhere/userData")).toBe(join("/somewhere/userData", "settings.json"));
 
     process.env.AIBUILDOS_SETTINGS_FILE = "/elsewhere/settings.json";
     expect(settingsFile("/somewhere/userData")).toBe("/elsewhere/settings.json");

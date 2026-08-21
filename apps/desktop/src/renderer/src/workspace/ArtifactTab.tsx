@@ -7,20 +7,34 @@ import { darkEditor, useDarkAppearance } from "../appearance.js";
 import { button, eyebrow, field, focusRing, mono, primary } from "../ui.js";
 import { useAutoSave } from "./autosave.js";
 import { Diff } from "./Diff.js";
+import { deriveImpact, type Impact } from "./impact.js";
+import { compose } from "./playbooks.js";
 
 /**
  * An artifact, edited as its own shape (RQ-0005#AC-5 to AC-10).
  *
- * Not a text box. An artifact has a type, a state vocabulary, links with legal targets, and
- * acceptance criteria whose numbers are append-only — and all of that comes from the profile rather
- * than from anything this component believes. The states offered are the ones the type declares; the
- * artifacts offered for a link are the ones its target types allow.
+ * Not a text box. An artifact has a type, a state that may only move along the paths its type
+ * declares, links with legal targets, and acceptance criteria whose numbers are append-only — and all
+ * of that comes from the profile rather than from anything this component believes. The states
+ * offered are the current one plus exactly its legal next states, never the whole vocabulary
+ * (RQ-0010#AC-1); the artifacts offered for a link are the ones its target types allow.
  *
  * Saving rewrites only what changed. That is the whole point of the writer behind it: `docs/` is
  * committed, and a diff full of reformatting is a diff nobody can review.
  */
 type Artifact = ChannelResponse<"project:artifact">;
 type Finding = Artifact["findings"][number];
+type RecordArtifact = NonNullable<ChannelResponse<"project:record">["artifacts"]>[number];
+
+/** The plan playbook a "Plan the follow-up" press starts (RQ-0024#AC-3): the same rule
+ * `findPlanPlaybook` in `boards/BacklogBoard.tsx` uses for its own button, copied rather than
+ * imported — this file does not reach into board internals for one small lookup. */
+function findPlanPlaybook(artifacts: readonly RecordArtifact[]): RecordArtifact | undefined {
+  const playbooks = artifacts.filter((a) => a.type === "Playbook" && a.state === "active");
+  return (
+    playbooks.find((p) => p.title === "Propose a plan") ?? playbooks.find((p) => p.id === "PB-0002")
+  );
+}
 
 /** One acceptance criterion, as it appears in the body. */
 interface Criterion {
@@ -41,6 +55,7 @@ export function ArtifactTab({
   streaming,
   onSaved,
   onDirtyChange,
+  onPrompt,
 }: {
   projectId: string;
   artifactId: string;
@@ -52,6 +67,9 @@ export function ArtifactTab({
   /** Told when a save lands, so the rails stop showing the state this artifact used to have. */
   onSaved?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  /** Sends text into the conversation (RQ-0024#AC-3) — the same door `BacklogBoard`'s picking lane
+   * uses, handed down from the workspace rather than reached for directly. */
+  onPrompt?: (text: string) => void;
 }): React.JSX.Element {
   const [loaded, setLoaded] = useState<Artifact | null>(null);
   const [title, setTitle] = useState("");
@@ -70,6 +88,11 @@ export function ArtifactTab({
   const [collision, setCollision] = useState(false);
   /** The agent's version, held only so the difference can be shown before anything is chosen. */
   const [theirs, setTheirs] = useState("");
+  /** A changed requirement's blast radius (RQ-0024#AC-1, AC-2). `null` until a save lands on a
+   * Requirement past `ready` — opening one nobody touched this sitting shows nothing, because the
+   * view is what a save produces, not a standing readout (ST-0036). */
+  const [impact, setImpact] = useState<Impact | null>(null);
+  const [planning, setPlanning] = useState(false);
 
   const baseline = useRef("");
   /** What was loaded, so a save can send the difference rather than the whole form. */
@@ -114,6 +137,7 @@ export function ArtifactTab({
     setCollision(false);
     setProblem(next.problem);
     setFindings(next.findings);
+    setImpact(null);
     if (next.markdown === null) return;
 
     const nextTitle = String((next.frontmatter as { title?: unknown }).title ?? "");
@@ -201,9 +225,39 @@ export function ArtifactTab({
         original.current = { title, state, links, body };
         baseline.current = snapshot;
         onSaved?.();
+
+        // RQ-0024#AC-1, AC-2: a Requirement past `ready` shows what implements and verifies it the
+        // moment a save lands. Everything else — draft/ready, or any other type — shows nothing.
+        const type = String((loaded.frontmatter as { type?: unknown }).type ?? "");
+        if (type === "Requirement" && state !== "draft" && state !== "ready") {
+          void window.aibuildos
+            .invoke("project:record", { id: projectId })
+            .then((record) => setImpact(deriveImpact(record.artifacts ?? [], artifactId)))
+            .catch(() => undefined);
+        } else {
+          setImpact(null);
+        }
       }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const planFollowUp = async (): Promise<void> => {
+    if (onPrompt === undefined) return;
+    setPlanning(true);
+    try {
+      const record = await window.aibuildos.invoke("project:record", { id: projectId });
+      const playbook = findPlanPlaybook(record.artifacts ?? []);
+      if (playbook === undefined) return;
+
+      const playbookArtifact = await window.aibuildos.invoke("project:artifact", {
+        id: projectId,
+        artifactId: playbook.id,
+      });
+      onPrompt(compose(playbookArtifact.body, [{ id: artifactId, title }]));
+    } finally {
+      setPlanning(false);
     }
   };
 
@@ -305,19 +359,14 @@ export function ArtifactTab({
               value={state}
               onChange={(event) => setState(event.target.value)}
             >
-              {/* A state the vocabulary does not contain is still what this artifact says, so it is
-                  offered and labelled. Leaving it out makes the control display the first option
-                  instead — the editor reporting a value the file does not carry, and the one option
-                  the user cannot pick to correct it. */}
-              {!loaded.states.includes(state) && (
-                <option value={state}>
-                  {state === "" ? "(none)" : `${state} — not in the vocabulary`}
-                </option>
-              )}
-              {/* This type's own vocabulary, from the profile. */}
+              {/* The current state first — so a value outside the vocabulary is shown as found rather
+                  than corrected, since it would otherwise be missing from the options the select can
+                  actually render — followed by exactly its legal next states. A state with no
+                  declared transition of its own still offers retirement, which matches every state
+                  (RQ-0010#AC-1, AC-3, AC-5). */}
               {loaded.states.map((candidate) => (
                 <option key={candidate} value={candidate}>
-                  {candidate}
+                  {candidate === "" ? "(none)" : candidate}
                 </option>
               ))}
             </select>
@@ -375,7 +424,78 @@ export function ArtifactTab({
               ))}
           </div>
         )}
+
+        {impact !== null && (
+          <ImpactSection
+            impact={impact}
+            planning={planning}
+            onPlan={onPrompt === undefined ? undefined : () => void planFollowUp()}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+/** A changed requirement's blast radius, beneath the editor once a save has produced one
+ * (RQ-0024#AC-1, AC-2, AC-3). */
+function ImpactSection({
+  impact,
+  planning,
+  onPlan,
+}: {
+  impact: Impact;
+  planning: boolean;
+  /** `undefined` when nobody above can send a prompt — the button is then not worth showing. */
+  onPlan: (() => void) | undefined;
+}): React.JSX.Element {
+  return (
+    <div
+      data-testid="artifact-impact"
+      className="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-800"
+    >
+      <p className={eyebrow}>Impact</p>
+      <ImpactGroup testId="impact-done" label="Done" rows={impact.done} />
+      <ImpactGroup testId="impact-in-flight" label="In flight" rows={impact.inFlight} />
+      <ImpactGroup testId="impact-verification" label="Verification" rows={impact.verification} />
+
+      {onPlan !== undefined && (
+        <button
+          type="button"
+          data-testid="impact-plan"
+          disabled={planning}
+          onClick={onPlan}
+          className={`mt-2 ${primary} px-2 py-0.5 text-[11px]`}
+        >
+          {planning ? "Sending…" : "Plan the follow-up"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** One of the three impact groups: nothing shown for an empty one — an honest empty answer is silence,
+ * not a "none" placeholder beside two others that do have something to say. */
+function ImpactGroup({
+  testId,
+  label,
+  rows,
+}: {
+  testId: string;
+  label: string;
+  rows: readonly { id: string; title: string; state: string }[];
+}): React.JSX.Element | null {
+  if (rows.length === 0) return null;
+
+  return (
+    <div data-testid={testId} className="mt-2">
+      <p className="text-xs text-neutral-500">{label}</p>
+      {rows.map((row) => (
+        <p key={row.id} data-testid={`impact-row-${row.id}`} className="text-xs">
+          <span className={mono}>{row.id}</span> — {row.title}{" "}
+          <span className="text-neutral-500">({row.state})</span>
+        </p>
+      ))}
     </div>
   );
 }

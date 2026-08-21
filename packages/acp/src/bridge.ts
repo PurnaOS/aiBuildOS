@@ -24,7 +24,6 @@ import type { SessionUpdate, StopReason } from "@agentclientprotocol/sdk";
 
 /** The `name` on every `CUSTOM` event this bridge emits, so a renderer can switch on one field. */
 export const CUSTOM = {
-  toolCall: "acp.tool_call",
   toolCallUpdate: "acp.tool_call_update",
   plan: "acp.plan",
   commands: "acp.commands",
@@ -35,6 +34,8 @@ export const CUSTOM = {
   permission: "acp.permission",
   content: "acp.content",
   unknown: "acp.unknown",
+  planProposal: "acp.plan_proposal",
+  checkVerdict: "acp.check_verdict",
 } as const;
 
 /** A content block that is not plain text — an image, a linked resource, an embedded document. */
@@ -98,6 +99,17 @@ export class SessionBridge {
     const events = this.closeOpen();
     events.push({ type: EventType.RUN_ERROR, message, code } as BaseEvent);
     return events;
+  }
+
+  /**
+   * Extension traffic (DC-0028), forwarded **whole**. The known update kinds above each pick the
+   * fields AG-UI has a name for and drop the rest — including `_meta`, which is exactly where an
+   * extension payload lives. So extension events get their own mapping with no field selection at
+   * all: the payload is the point, and stripping it would be the bridge silently un-typing what
+   * RQ-0052 exists to keep typed.
+   */
+  extension(name: string, value: unknown): BaseEvent[] {
+    return [custom(name, value)];
   }
 
   /** Translate one session update. Returns every AG-UI event it produces, in order. */

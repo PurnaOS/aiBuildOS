@@ -4,6 +4,7 @@ import { Readable, Writable } from "node:stream";
 import type { BaseEvent } from "@ag-ui/core";
 import {
   type ActiveSession,
+  type AgentCapabilities,
   client,
   methods,
   type NewSessionResponse,
@@ -13,8 +14,9 @@ import {
   type RequestPermissionRequest,
   type StopReason,
 } from "@agentclientprotocol/sdk";
-import { SessionBridge } from "./bridge.js";
+import { CUSTOM, SessionBridge } from "./bridge.js";
 import type { LaunchSpec } from "./index.js";
+import { killTree, spawnDetached } from "./reap.js";
 
 /**
  * A live agent session, held open across prompts (ST-0009).
@@ -27,6 +29,19 @@ import type { LaunchSpec } from "./index.js";
  *
  * Node APIs only; this runs in Electron's main process (AR-0001).
  */
+
+/**
+ * The typed-record extension (RQ-0052, DC-0028), riding the spec's own extension points: support is
+ * advertised in the `_meta` of the capability objects both sides exchange at `initialize`, and the
+ * traffic itself travels as underscore-prefixed custom methods — the names the spec reserves for
+ * exactly this. No forked protocol types, no second door.
+ */
+export const TYPED_RECORD = "aibuildos/typed-record";
+export const TYPED_RECORD_VERSION = 1;
+/** Agent → client **request**: a proposed plan, answered with acceptance or findings. */
+export const PLAN_METHOD = "_aibuildos/plan";
+/** Agent → client **notification**: a check verdict. Notifications cannot be rejected. */
+export const VERDICT_METHOD = "_aibuildos/verdict";
 
 export type SessionFailureCode =
   | "cwd_not_found"
@@ -68,6 +83,18 @@ export interface SessionOptions {
    * never be allowed to proceed because nobody was listening.
    */
   readonly onPermission?: (request: PermissionRequest) => Promise<string | null>;
+  /**
+   * Answer a typed plan proposal (RQ-0052#AC-1): whatever this resolves with is the response the
+   * agent receives on `_aibuildos/plan` — `{accepted: false, findings}` is the reject-back. Left
+   * undefined, every proposal is refused with a finding saying so: an agent that advertised the
+   * extension deserves an answer it can act on, not a protocol error.
+   */
+  readonly onPlan?: (payload: unknown) => Promise<unknown>;
+  /**
+   * Hear a typed check verdict (RQ-0052#AC-2). A notification has no reply, so an invalid payload
+   * is the receiver's to log and drop.
+   */
+  readonly onVerdict?: (payload: unknown) => void | Promise<void>;
 }
 
 const STDERR_LIMIT = 8 * 1024;
@@ -100,6 +127,9 @@ export class AgentSession {
   private constructor(
     private readonly child: ChildProcess,
     private readonly session: ActiveSession,
+    /** What the agent's `initialize` response advertised — the probe kept this, and now so does a
+     * session, because extension support lives in its `_meta` (DC-0028). */
+    private readonly agentCapabilities: AgentCapabilities,
     private readonly context: {
       notify: (method: string, params: unknown) => Promise<void>;
       request: (method: string, params: unknown) => Promise<unknown>;
@@ -120,6 +150,15 @@ export class AgentSession {
   }
 
   /**
+   * What the agent's `initialize` advertised for one extension in `agentCapabilities._meta`, or
+   * `null` — and absent is the answer that matters: an agent advertising nothing gets exactly the
+   * baseline behaviour (RQ-0052#AC-4).
+   */
+  extension(id: string): unknown {
+    return this.agentCapabilities._meta?.[id] ?? null;
+  }
+
+  /**
    * Spawn the agent, shake hands, and open a session that stays open.
    *
    * The spawn discipline is the probe's, for the reasons the probe documents: a missing working
@@ -137,7 +176,7 @@ export class AgentSession {
     const child = spawn(spec.command, [...spec.args], {
       cwd: options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      detached: true,
+      detached: spawnDetached,
     });
 
     let stderr = "";
@@ -166,8 +205,33 @@ export class AgentSession {
     // to open a session until it is logged in advertised how to do that here, and reporting
     // `auth_required` without those methods would leave the user with nothing to act on.
     let advertised: { id: string; name: string }[] = [];
+    // The session, once it exists — the extension handlers below are registered before it does, but
+    // an agent can only reach them from inside a turn, by which time this is set.
+    let live: AgentSession | null = null;
 
     const run = client({ name: "aiBuildOS" })
+      // The typed-record extension (DC-0028): underscore methods, params passed through untouched —
+      // the *application* validates and answers with findings, because a Zod rejection here would
+      // surface as a protocol error the agent cannot conform to.
+      .onRequest(
+        PLAN_METHOD,
+        (params: unknown) => params,
+        async ({ params }) => {
+          const response = options.onPlan
+            ? await options.onPlan(params)
+            : { accepted: false, findings: [{ message: "this client is not accepting plans" }] };
+          live?.extensionEvent(CUSTOM.planProposal, { payload: params, response });
+          return response;
+        },
+      )
+      .onNotification(
+        VERDICT_METHOD,
+        (params: unknown) => params,
+        async ({ params }) => {
+          live?.extensionEvent(CUSTOM.checkVerdict, params);
+          await options.onVerdict?.(params);
+        },
+      )
       .onRequest(methods.client.session.requestPermission, async ({ params }) => {
         // No answerer means no permission. An agent proceeding because nobody was listening is the
         // one outcome this must never produce.
@@ -190,9 +254,13 @@ export class AgentSession {
           const init = await ctx.request(methods.agent.initialize, {
             protocolVersion: PROTOCOL_VERSION,
             clientInfo: { name: "aiBuildOS", version: options.clientVersion ?? "0.0.0" },
-            // Nothing advertised: the agent does its own file and terminal work, and brokering
-            // either on its behalf is its own requirement (EP-0004, out of scope).
-            clientCapabilities: {},
+            // No baseline capabilities advertised: the agent does its own file and terminal work,
+            // and brokering either on its behalf is its own requirement (EP-0004, out of scope).
+            // `_meta` announces the extensions this client accepts, per the spec's own extension
+            // points (DC-0028) — an agent that ignores it gets exactly today's behaviour.
+            clientCapabilities: {
+              _meta: { [TYPED_RECORD]: { version: TYPED_RECORD_VERSION } },
+            },
           });
           advertised = (init.authMethods ?? []).map((m) => ({ id: m.id, name: m.name }));
 
@@ -200,6 +268,7 @@ export class AgentSession {
             const opened = new AgentSession(
               child,
               session,
+              init.agentCapabilities ?? {},
               ctx as unknown as {
                 notify: (m: string, p: unknown) => Promise<void>;
                 request: (m: string, p: unknown) => Promise<unknown>;
@@ -209,6 +278,7 @@ export class AgentSession {
               finished.promise,
               stop,
             );
+            live = opened;
             // Reading starts with the session, not with the first prompt.
             void opened.drain();
             ready.resolve(opened);
@@ -361,6 +431,11 @@ export class AgentSession {
   private emit(batch: BaseEvent[]): void {
     for (const event of batch) this.options.onEvent(event);
   }
+
+  /** Extension traffic leaves as bridged `CUSTOM` events like everything else — no new door. */
+  private extensionEvent(name: string, value: unknown): void {
+    this.emit(this.bridge.extension(name, value));
+  }
 }
 
 /** An agent that will not open a session until it is logged in answers with this JSON-RPC code. */
@@ -372,19 +447,4 @@ function isAuthRequired(cause: unknown): boolean {
 function describe(cause: unknown): string {
   if (cause instanceof Error) return cause.message;
   return typeof cause === "string" ? cause : JSON.stringify(cause);
-}
-
-/**
- * Kill the whole process group.
- *
- * The presets launch through `npx`, so the agent is a grandchild; killing only the child leaves it
- * running and holding its pipes.
- */
-function killTree(child: ChildProcess): void {
-  if (child.pid === undefined || child.exitCode !== null) return;
-  try {
-    process.kill(-child.pid, "SIGTERM");
-  } catch {
-    // Already gone, or never had a group. Nothing left to do either way.
-  }
 }

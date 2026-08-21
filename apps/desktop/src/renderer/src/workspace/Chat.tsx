@@ -1,12 +1,21 @@
 import { CopilotKit, useCopilotChatInternal } from "@copilotkit/react-core";
-import { CopilotChat } from "@copilotkit/react-ui";
+import {
+  CopilotChat,
+  UserMessage as DefaultUserMessage,
+  type UserMessageProps,
+} from "@copilotkit/react-ui";
+import { Terminal } from "lucide-react";
 import { type ComponentProps, useEffect, useState } from "react";
 import { useHarnesses } from "../harness/HarnessPanel.js";
 import type { Session } from "../session/useSession.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
-import { Activity } from "./Activity.js";
-import { Controls } from "./Controls.js";
+import { AgentPopover, SupervisionPill, useAgentControls } from "./AgentPopover.js";
+import { Composer, ComposerMenuProvider, StarterCards } from "./Composer.js";
+import { commandLine } from "./composerCommands.js";
+import { AsksAssistantMessage } from "./QuestionCard.js";
+import type { Tab } from "./TabStrip.js";
 import { ToolCallCard } from "./ToolCallCard.js";
+import { ToolSessionContext } from "./toolCall.js";
 
 /**
  * The conversation (ST-0011).
@@ -28,26 +37,51 @@ export function Chat({
   session,
   pending,
   onSent,
+  onOpen,
 }: {
   projectId: string;
   session: Session;
   /** Text the record rail asked to be sent, or `null`. */
   pending?: string | null;
   onSent?: () => void;
+  /** Opens a background playbook's `session:<id>` tab (RQ-0039#AC-3) — `Workspace.tsx`'s own
+   * `tabs.open`, threaded down to the composer menu that starts one. */
+  onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
 }): React.JSX.Element {
   const { harnesses } = useHarnesses();
   const { state, start } = session;
-  /** A slash command the user picked. It is sent as ordinary text, which is all a command is. */
-  const [command, setCommand] = useState<string | null>(null);
+  // Which harness this session was actually started with — `SessionState` does not carry it, and
+  // it is RQ-0013#AC-6's fallback: what a playbook button runs with when its own preference matches
+  // nothing configured.
+  const [startedWith, setStartedWith] = useState<string | null>(null);
+  // Called unconditionally, ahead of the conditional returns below, so it stays one hook rather than
+  // a conditional one — `sessionId` is `null` outside the ready branch and the hook no-ops on that.
+  const controls = useAgentControls(
+    state.status === "ready" ? state.sessionId : null,
+    state.status === "ready" ? state.offered : {},
+  );
+  const pick = async (harnessId: string): Promise<void> => {
+    setStartedWith(harnessId);
+    await start(harnessId);
+  };
 
   if (state.status === "ready") {
+    const attached = harnesses?.find((harness) => harness.id === startedWith);
+    const attachedHarness = attached?.displayName ?? "the attached harness";
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="chat">
-        {/* What the agent is set to, above the conversation it applies to. */}
-        <Controls
-          sessionId={state.sessionId}
-          offered={state.offered}
-          onCommand={(text) => setCommand(text)}
+        {/* Everything the agent is set to, plus supervision, in one popover (RQ-0042). */}
+        <AgentPopover
+          attachedHarness={attachedHarness}
+          // The record's own supervision mapping (RQ-0050#AC-2) — the same record the display name
+          // above comes from, so the popover reads one harness, not two.
+          supervisionOptions={attached?.supervisionOptions}
+          projectId={projectId}
+          modes={controls.modes}
+          modeId={controls.modeId}
+          options={controls.options}
+          setMode={controls.setMode}
+          setOption={controls.setOption}
         />
         <CopilotKit
           selfManagedAgents={{ default: state.agent }}
@@ -56,14 +90,31 @@ export function Chat({
           // advance — one card draws whatever it ran, where it ran it.
           renderToolCalls={[{ name: "*", render: ToolCallCard as ToolRenderer["render"] }]}
         >
-          <div className="min-h-0 flex-1">
-            <CopilotChat className="h-full" />
-          </div>
-          {/* The plan and any question the agent is waiting on, kept above the composer rather than
-              left to scroll away. */}
-          <Activity sessionId={state.sessionId} />
-          <PendingPrompt text={pending ?? null} onSent={onSent} />
-          <PendingPrompt text={command} onSent={() => setCommand(null)} />
+          {/* Playbooks and the agent's own commands, offered where messages are composed
+              (RQ-0043) — the `+` menu on the composer below, and starter cards on an empty
+              transcript. */}
+          <ComposerMenuProvider
+            projectId={projectId}
+            harnesses={harnesses}
+            attachedHarness={attachedHarness}
+            sessionId={state.sessionId}
+            onOpen={onOpen}
+          >
+            <div className="relative min-h-0 flex-1">
+              {/* The cards CopilotKit renders carry no session of their own; this is how a
+                  ToolCallCard knows which session's stream to read (BG-0008's store). */}
+              <ToolSessionContext value={state.sessionId}>
+                <CopilotChat
+                  className="h-full"
+                  AssistantMessage={AsksAssistantMessage}
+                  UserMessage={CommandUserMessage}
+                  Input={Composer}
+                />
+              </ToolSessionContext>
+              <StarterCards />
+            </div>
+            <PendingPrompt text={pending ?? null} onSent={onSent} />
+          </ComposerMenuProvider>
         </CopilotKit>
       </div>
     );
@@ -103,7 +154,7 @@ export function Chat({
           )}
 
           <div className="mt-4">
-            <HarnessButtons harnesses={harnesses} onPick={start} label="Try again with" />
+            <HarnessButtons harnesses={harnesses} onPick={pick} label="Try again with" />
           </div>
         </div>
       </Centred>
@@ -114,6 +165,7 @@ export function Chat({
   return (
     <Centred>
       <div className="max-w-md">
+        <SupervisionPill projectId={projectId} />
         <p className="text-sm">Nothing has been asked yet.</p>
         <p className="mt-1 text-xs text-neutral-500">
           Pick a coding agent to work on this project. It runs in{" "}
@@ -121,10 +173,45 @@ export function Chat({
           Git and your own credentials.
         </p>
         <div className="mt-4">
-          <HarnessButtons harnesses={harnesses} onPick={start} label="Start with" />
+          <HarnessButtons harnesses={harnesses} onPick={pick} label="Start with" />
         </div>
       </div>
     </Centred>
+  );
+}
+
+/**
+ * `CopilotChat`'s `UserMessage` seam (RQ-0051#AC-2, ST-0069): an invocation reads as a command, not
+ * as a prose bubble. `AsksAssistantMessage`'s counterpart, and it works the same way — one question
+ * asked of the message, and anything that is not a command line falls straight through to the
+ * default component, untouched.
+ *
+ * The card is [RQ-0031](../../../../../docs/requirements/rq-0031.md)'s chrome, deliberately: the same
+ * rule, icon, eyebrow and monospace line an execute call gets in `ToolCallCard.tsx`, so a command the
+ * person ran and a command the agent ran read as the same kind of thing. It is not that card — a send
+ * has no output, no outcome and no duration to show, and inventing them would be a lie.
+ *
+ * Which command it is comes from the text, because the text is all a send carries:
+ * `InputProps.onSend` takes a string, so there is nothing to tag it with (`commandLine`'s own note).
+ */
+function CommandUserMessage(props: UserMessageProps): React.JSX.Element {
+  const content = props.message?.content;
+  const command = typeof content === "string" ? commandLine(content) : null;
+
+  if (command === null) return <DefaultUserMessage {...props} />;
+
+  return (
+    <div
+      data-testid="command-message"
+      className="my-2 flex overflow-hidden rounded border border-neutral-200 dark:border-neutral-800"
+    >
+      <span aria-hidden className="w-0.5 shrink-0 bg-neutral-200 dark:bg-neutral-800" />
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5">
+        <Terminal size={12} className="shrink-0 text-neutral-500" aria-hidden />
+        <span className={eyebrow}>command</span>
+        <span className={`min-w-0 flex-1 truncate text-xs ${mono}`}>{command}</span>
+      </div>
+    </div>
   );
 }
 

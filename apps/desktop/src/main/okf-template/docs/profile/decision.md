@@ -33,7 +33,7 @@ Note the prefix: decisions are `DC`, **not** `ADR`. "ADR" is the common name for
 is the type and `DC` is the frozen OKF prefix.
 
 A decision is never edited into a different decision. When it stops being true, write a new one with
-`supersedes: [DC-…]` and move the old one to `superseded`. The record of *what we used to think* is
-the point.
+`supersedes: [DC-…]` — moving the old one to `superseded` is the person's move, and the `supersedes`
+link is what tells them to make it. The record of *what we used to think* is the point.
 
 **Inbound** (derived): `constrained_by` on whatever the decision constrains; `superseded_by`.

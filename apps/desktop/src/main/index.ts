@@ -1,8 +1,12 @@
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
+import { killChecks } from "./checks.js";
 import { registerIpc } from "./ipc.js";
 import { commandTarget, installMenu } from "./menu.js";
+import { killPreviews } from "./previews.js";
 import { loadSettings, settingsFile } from "./settings.js";
+import { killTerminals } from "./terminals.js";
+import { stopAllWatching } from "./watch.js";
 
 /**
  * Electron main. Runs on Electron's bundled Node, never on Bun (AR-0001, DC-0002).
@@ -65,6 +69,10 @@ void app.whenReady().then(() => {
   // `window-all-closed`, because on macOS closing the window does not quit.
   app.on("before-quit", () => {
     void sessions.closeAll();
+    killChecks();
+    stopAllWatching();
+    killPreviews();
+    killTerminals();
   });
 
   app.on("activate", () => {

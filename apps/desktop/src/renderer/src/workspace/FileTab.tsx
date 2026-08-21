@@ -137,7 +137,20 @@ export function FileTab({
       <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-3 py-1.5 dark:border-neutral-800">
         <span className={`min-w-0 flex-1 truncate text-xs ${mono}`}>{path}</span>
         {/* What is happening, not what to press. Nothing here asks for anything (RQ-0008#AC-5). */}
-        <span data-testid="file-saved" className={eyebrow}>
+        <span data-testid="file-saved" className={`flex items-center gap-1.5 ${eyebrow}`}>
+          {held && (
+            <span
+              data-testid="file-held-dot"
+              role="img"
+              aria-label="held"
+              title={
+                conflict !== null
+                  ? "Held, not saved — resolve the conflict below to save this."
+                  : "Held, not saved — will save once the agent's turn ends."
+              }
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+            />
+          )}
           {saving ? "saving…" : dirty ? "unsaved" : "saved"}
         </span>
       </div>

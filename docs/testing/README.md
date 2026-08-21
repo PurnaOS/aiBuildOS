@@ -13,7 +13,7 @@ back to [docs/README.md](../README.md)
 | [TC-0003](tc-0003.md) | ACP probe reports each failure stage and always reaps the child | active | [RQ-0001](../requirements/rq-0001.md)#AC-7, #AC-8 |
 | [TC-0004](tc-0004.md) | First launch with no harness prompts the user to attach one | active | [RQ-0001](../requirements/rq-0001.md)#AC-3, #AC-4, #AC-10 |
 | [TC-0005](tc-0005.md) | Project registry persists, dedupes by path and refuses to overwrite a bad file | active | [RQ-0002](../requirements/rq-0002.md)#AC-1, #AC-9, #AC-12 |
-| [TC-0006](tc-0006.md) | A created project is a repository with one commit and a valid empty OKF bundle | active | [RQ-0002](../requirements/rq-0002.md)#AC-3, #AC-4 |
+| [TC-0006](tc-0006.md) | A created project is a repository with one commit and a valid OKF bundle | active | [RQ-0002](../requirements/rq-0002.md)#AC-3, #AC-4 |
 | [TC-0007](tc-0007.md) | Git reads branch, working-tree counts and commits, and names its own failures | active | [RQ-0002](../requirements/rq-0002.md)#AC-5, #AC-7, #AC-11 |
 | [TC-0008](tc-0008.md) | A project is created, listed, opened and closed from the launch page | active | [RQ-0002](../requirements/rq-0002.md)#AC-2, #AC-6, #AC-10 |
 | [TC-0009](tc-0009.md) | The bundle loader walks a bundle permissively and summarises it by type and state | active | [RQ-0002](../requirements/rq-0002.md)#AC-8 |
@@ -43,3 +43,92 @@ back to [docs/README.md](../README.md)
 | [TC-0033](tc-0033.md) | A file is made from the tree, in the directory pointed at | active | [RQ-0006](../requirements/rq-0006.md)#AC-9 |
 | [TC-0034](tc-0034.md) | Editing saves itself, except when something else has a claim on the file | active | [RQ-0008](../requirements/rq-0008.md)#AC-1 through #AC-5, #AC-7, #AC-8 |
 | [TC-0035](tc-0035.md) | The sidebar collapses, comes back, and is remembered | active | [RQ-0009](../requirements/rq-0009.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0036](tc-0036.md) | A failed save keeps the work and names the failure | active | [RQ-0008](../requirements/rq-0008.md)#AC-6 |
+| [TC-0037](tc-0037.md) | Collapsing the chrome leaves the panes as the user sized them | active | [RQ-0009](../requirements/rq-0009.md)#AC-4 |
+| [TC-0038](tc-0038.md) | The engine knows which states may follow, and refuses the rest | active | [RQ-0010](../requirements/rq-0010.md)#AC-1 through #AC-4 |
+| [TC-0039](tc-0039.md) | The editor offers only the legal next states, and the record follows | active | [RQ-0010](../requirements/rq-0010.md)#AC-1, #AC-5, #AC-6 |
+| [TC-0040](tc-0040.md) | A board is a derivation of the record, and nothing else | active | [RQ-0011](../requirements/rq-0011.md)#AC-1, #AC-5, #AC-8 |
+| [TC-0041](tc-0041.md) | Moving a card is the state change, and an illegal drop is a refusal | active | [RQ-0011](../requirements/rq-0011.md)#AC-2, #AC-3, #AC-4, #AC-6, #AC-7 |
+| [TC-0042](tc-0042.md) | Findings ride the record read, per artifact | active | [RQ-0012](../requirements/rq-0012.md)#AC-1, #AC-3 |
+| [TC-0043](tc-0043.md) | A problem is marked where the artifact is listed, and a clean record is silent | active | [RQ-0012](../requirements/rq-0012.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0044](tc-0044.md) | Playbooks are discovered from the record and composed with their context | active | [RQ-0013](../requirements/rq-0013.md)#AC-1, #AC-2, #AC-6 |
+| [TC-0045](tc-0045.md) | A pressed playbook says exactly what it sent, in the transcript | active | [RQ-0013](../requirements/rq-0013.md)#AC-2 through #AC-5 |
+| [TC-0046](tc-0046.md) | Approval flips what it may, and refuses what the record's rules refuse | active | [RQ-0014](../requirements/rq-0014.md)#AC-3, #AC-5, #AC-6 |
+| [TC-0047](tc-0047.md) | A proposal lands as drafts, is shaped, and approval schedules it | active | [RQ-0014](../requirements/rq-0014.md)#AC-1, #AC-2, #AC-4, #AC-5, #AC-7 |
+| [TC-0048](tc-0048.md) | The build walk and the send-back are record edits, and survive a restart | active | [RQ-0015](../requirements/rq-0015.md)#AC-1, #AC-4, #AC-6 |
+| [TC-0049](tc-0049.md) | A story is built, reviewed beside its criteria, and accepted | active | [RQ-0015](../requirements/rq-0015.md)#AC-1 through #AC-5 |
+| [TC-0050](tc-0050.md) | A column orders by priority before ID, live | active | [BG-0005](../bugs/bg-0005.md), [RQ-0011](../requirements/rq-0011.md)#AC-5 |
+| [TC-0051](tc-0051.md) | A question fence becomes a card, and a broken one becomes text | active | [RQ-0016](../requirements/rq-0016.md)#AC-1, #AC-5 |
+| [TC-0052](tc-0052.md) | A tap answers the agent, and typing answers it too | active | [RQ-0016](../requirements/rq-0016.md)#AC-1 through #AC-4 |
+| [TC-0053](tc-0053.md) | The interview drafts requirements as it settles them | active | [RQ-0017](../requirements/rq-0017.md)#AC-1, #AC-2, #AC-3, #AC-6 |
+| [TC-0054](tc-0054.md) | An abandoned interview keeps its drafts, as drafts | active | [RQ-0017](../requirements/rq-0017.md)#AC-4, #AC-5 |
+| [TC-0055](tc-0055.md) | Stage, unstage and commit run the user's own Git | active | [RQ-0018](../requirements/rq-0018.md)#AC-1, #AC-2, #AC-3, #AC-6 |
+| [TC-0056](tc-0056.md) | The Git tab commits, and accepting a story offers to | active | [RQ-0018](../requirements/rq-0018.md)#AC-1, #AC-2, #AC-4, #AC-5 |
+| [TC-0057](tc-0057.md) | Fenced check commands run, stream, and answer by exit code | active | [RQ-0019](../requirements/rq-0019.md)#AC-1, #AC-2, #AC-3, #AC-5 |
+| [TC-0058](tc-0058.md) | The checks run beside the review, and a failure goes to the agent | active | [RQ-0019](../requirements/rq-0019.md)#AC-1 through #AC-4 |
+| [TC-0059](tc-0059.md) | The whole loop, in one sitting | active | [RQ-0014](../requirements/rq-0014.md), [RQ-0015](../requirements/rq-0015.md) |
+| [TC-0060](tc-0060.md) | The supervision policy answers what it may, and only that | active | [RQ-0022](../requirements/rq-0022.md)#AC-2, #AC-3, #AC-5 |
+| [TC-0061](tc-0061.md) | Hands-off is visible, and asks still wait for a person | active | [RQ-0022](../requirements/rq-0022.md)#AC-1, #AC-3, #AC-4 |
+| [TC-0062](tc-0062.md) | A TestCase takes the walk's outcome through the guarded save | active | [RQ-0023](../requirements/rq-0023.md)#AC-2, #AC-4 |
+| [TC-0063](tc-0063.md) | The checklist is walked from the review, and the outcome lands | active | [RQ-0023](../requirements/rq-0023.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0064](tc-0064.md) | Impact is a read of the graph, grouped by what it means | active | [RQ-0024](../requirements/rq-0024.md)#AC-1, #AC-2 |
+| [TC-0065](tc-0065.md) | A changed requirement offers the impact, and the re-plan | active | [RQ-0024](../requirements/rq-0024.md)#AC-1, #AC-3, #AC-4 |
+| [TC-0066](tc-0066.md) | Worktree verbs create, checkpoint, merge and reconcile | active | [RQ-0020](../requirements/rq-0020.md)#AC-1, #AC-3, #AC-4, #AC-5 |
+| [TC-0067](tc-0067.md) | A worktree build leaves the workspace free, and lands on accept | active | [RQ-0020](../requirements/rq-0020.md)#AC-1, #AC-2, #AC-4, #AC-6 |
+| [TC-0068](tc-0068.md) | Now derives from the sessions and the record, and counts what waits | active | [RQ-0021](../requirements/rq-0021.md)#AC-2, #AC-3 |
+| [TC-0069](tc-0069.md) | Two builds at once; cancelling one leaves the other | active | [RQ-0021](../requirements/rq-0021.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0070](tc-0070.md) | The run fence starts a server, and nothing outlives its review | active | [RQ-0025](../requirements/rq-0025.md)#AC-1, #AC-3, #AC-4 |
+| [TC-0071](tc-0071.md) | The preview renders beside the review, and closes with it | active | [RQ-0025](../requirements/rq-0025.md)#AC-1, #AC-2 |
+| [TC-0072](tc-0072.md) | A rejected read at turn end still lands on screen | active | [BG-0006](../bugs/bg-0006.md), [RQ-0015](../requirements/rq-0015.md) |
+| [TC-0073](tc-0073.md) | The flip lands in the build's own project, whatever is on screen | active | [BG-0007](../bugs/bg-0007.md), [RQ-0021](../requirements/rq-0021.md) |
+| [TC-0074](tc-0074.md) | A build's stream shows the tool call that ran | active | [BG-0008](../bugs/bg-0008.md), [RQ-0021](../requirements/rq-0021.md) |
+| [TC-0075](tc-0075.md) | The watcher debounces, filters, and caches | active | [RQ-0026](../requirements/rq-0026.md)#AC-4, #AC-6, #AC-7 |
+| [TC-0076](tc-0076.md) | What anything writes, the workspace shows, with no turn ending | active | [RQ-0026](../requirements/rq-0026.md)#AC-1, #AC-2, #AC-3, #AC-5 |
+| [TC-0077](tc-0077.md) | The rail's walk and the board's walk are one walk | active | [RQ-0027](../requirements/rq-0027.md)#AC-1, #AC-2 |
+| [TC-0078](tc-0078.md) | Talking a story into work lands it in review | active | [RQ-0027](../requirements/rq-0027.md)#AC-1, #AC-4 |
+| [TC-0079](tc-0079.md) | The scaffold seeds the instructions, and the seeder never overwrites | active | [RQ-0028](../requirements/rq-0028.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0080](tc-0080.md) | A fresh project's instructions are on disk where agents look | active | [RQ-0028](../requirements/rq-0028.md)#AC-1 |
+| [TC-0081](tc-0081.md) | The rail folds and counts; the chrome asks in its own voice | active | [RQ-0029](../requirements/rq-0029.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0082](tc-0082.md) | Streaming shows on the tab, and what changed says so | active | [RQ-0030](../requirements/rq-0030.md)#AC-1 through #AC-4 |
+| [TC-0083](tc-0083.md) | The card reads the wire: command, chunks, outcome | active | [RQ-0031](../requirements/rq-0031.md)#AC-1, #AC-2, #AC-5, #AC-6 |
+| [TC-0084](tc-0084.md) | A command streams into the transcript and folds when long | active | [RQ-0031](../requirements/rq-0031.md)#AC-1 through #AC-4 |
+| [TC-0085](tc-0085.md) | The sync verbs against a local bare origin | active | [RQ-0032](../requirements/rq-0032.md)#AC-2, #AC-3, #AC-4 |
+| [TC-0086](tc-0086.md) | Push, publish and pull through the interface | active | [RQ-0032](../requirements/rq-0032.md)#AC-1, #AC-3, #AC-6 |
+| [TC-0087](tc-0087.md) | Branch enumeration and ahead/behind parse clean | active | [RQ-0033](../requirements/rq-0033.md)#AC-2, #AC-3 |
+| [TC-0088](tc-0088.md) | The sync header shows the branch and its counts | active | [RQ-0033](../requirements/rq-0033.md)#AC-1, #AC-4 |
+| [TC-0089](tc-0089.md) | pr.ts maps gh output and its absence | active | [RQ-0034](../requirements/rq-0034.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0090](tc-0090.md) | The PR chip with and without gh | active | [RQ-0034](../requirements/rq-0034.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0091](tc-0091.md) | Sprint lifecycle honours its guards | active | [RQ-0035](../requirements/rq-0035.md)#AC-1, #AC-3, #AC-6 |
+| [TC-0092](tc-0092.md) | A sprint starts from picked stories and finishes onto main | active | [RQ-0035](../requirements/rq-0035.md)#AC-1, #AC-3, #AC-5 |
+| [TC-0093](tc-0093.md) | A sprint build bases, merges and reviews against the sprint branch | active | [RQ-0035](../requirements/rq-0035.md)#AC-2 |
+| [TC-0094](tc-0094.md) | Two sprint stories build side by side and land on the sprint | active | [RQ-0035](../requirements/rq-0035.md)#AC-2, #AC-4 |
+| [TC-0095](tc-0095.md) | Resume rides the shared attach and refuses right | active | [RQ-0036](../requirements/rq-0036.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0096](tc-0096.md) | An orphaned build resumes after a relaunch | active | [RQ-0036](../requirements/rq-0036.md)#AC-1, #AC-4 |
+| [TC-0097](tc-0097.md) | The build listing carries every worktree's facts | active | [RQ-0037](../requirements/rq-0037.md)#AC-2, #AC-4 |
+| [TC-0098](tc-0098.md) | The dock's build rows say where and what next | active | [RQ-0037](../requirements/rq-0037.md)#AC-1, #AC-3 |
+| [TC-0099](tc-0099.md) | The terminal registry keeps its books without the native module | active | [RQ-0038](../requirements/rq-0038.md)#AC-1, #AC-4, #AC-6 |
+| [TC-0100](tc-0100.md) | A dock terminal runs the user's shell for real | active | [RQ-0038](../requirements/rq-0038.md)#AC-1, #AC-2, #AC-6 |
+| [TC-0101](tc-0101.md) | Builds and background runs spend from one cap | active | [RQ-0039](../requirements/rq-0039.md)#AC-2 |
+| [TC-0102](tc-0102.md) | A playbook runs in the background while the chat keeps talking | active | [RQ-0039](../requirements/rq-0039.md)#AC-1, #AC-4 |
+| [TC-0103](tc-0103.md) | Every session row carries enough to say what it is | active | [RQ-0040](../requirements/rq-0040.md)#AC-1, #AC-2 |
+| [TC-0104](tc-0104.md) | A blocked background run is found and answered from the dock | active | [RQ-0040](../requirements/rq-0040.md)#AC-3 |
+| [TC-0105](tc-0105.md) | Inbound links are buttons, and the dead props are gone | active | [RQ-0041](../requirements/rq-0041.md)#AC-1, #AC-3 |
+| [TC-0106](tc-0106.md) | Pressable chrome and honest labels in the running app | active | [RQ-0041](../requirements/rq-0041.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0107](tc-0107.md) | The popover groups by origin and never dedupes | active | [RQ-0042](../requirements/rq-0042.md)#AC-1, #AC-2 |
+| [TC-0108](tc-0108.md) | The collision renders whole, and hands-off shows amber | active | [RQ-0042](../requirements/rq-0042.md)#AC-2, #AC-3, #AC-4 |
+| [TC-0109](tc-0109.md) | The + menu composes what the strip composed | active | [RQ-0043](../requirements/rq-0043.md)#AC-1 |
+| [TC-0110](tc-0110.md) | Playbooks start from the composer, and only from there | active | [RQ-0043](../requirements/rq-0043.md)#AC-1 through #AC-4 |
+| [TC-0111](tc-0111.md) | deriveDock reads the whole inventory | active | [RQ-0044](../requirements/rq-0044.md)#AC-2, #AC-3, #AC-4 |
+| [TC-0112](tc-0112.md) | The dock is everywhere, and it moves | active | [RQ-0044](../requirements/rq-0044.md)#AC-1, #AC-4, #AC-5 |
+| [TC-0113](tc-0113.md) | One PermissionCard, one answer | active | [RQ-0044](../requirements/rq-0044.md)#AC-6 |
+| [TC-0114](tc-0114.md) | The same card answers from the dock and the tab | active | [RQ-0044](../requirements/rq-0044.md)#AC-6 |
+| [TC-0115](tc-0115.md) | Three pinned surfaces, one Column | active | [RQ-0045](../requirements/rq-0045.md)#AC-1, #AC-3 |
+| [TC-0116](tc-0116.md) | Plan is browsable, and Build goes parallel | active | [RQ-0045](../requirements/rq-0045.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0117](tc-0117.md) | Scaffolding writes valid guardrail hooks, and only where they belong | active | [RQ-0049](../requirements/rq-0049.md)#AC-1, #AC-3 |
+| [TC-0118](tc-0118.md) | A live harness is actually stopped by the scaffolded guardrails | active | [RQ-0049](../requirements/rq-0049.md)#AC-2, #AC-4 |
+| [TC-0119](tc-0119.md) | Supervision level sets the mapped option, per session and on change | active | [RQ-0050](../requirements/rq-0050.md)#AC-1, #AC-2 |
+| [TC-0120](tc-0120.md) | Both sides of the wire agree about supervision, honestly | active | [RQ-0050](../requirements/rq-0050.md)#AC-3, #AC-4 |
+| [TC-0121](tc-0121.md) | Capabilities are kept, extensions negotiated, payloads forwarded whole | active | [RQ-0052](../requirements/rq-0052.md)#AC-3, #AC-4 |
+| [TC-0122](tc-0122.md) | A typed plan lands validated; a baseline agent still plans in prose | active | [RQ-0052](../requirements/rq-0052.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0123](tc-0123.md) | Commands sit beside playbooks, and the list is alive | active | [RQ-0051](../requirements/rq-0051.md)#AC-1, #AC-3 |
+| [TC-0124](tc-0124.md) | Invoking a command sends the harness's text and reads like a command | active | [RQ-0051](../requirements/rq-0051.md)#AC-2 |

@@ -18,36 +18,81 @@ import {
 } from "@aibuildos/ipc";
 import {
   ArtifactGraph,
+  criteriaRefusal,
   editArtifact,
   type GraphNode,
   insertIndexRow,
+  legalNextStates,
   nextId,
   type Profile,
   parseOkfDocument,
   resolveProfile,
   scaffoldArtifact,
+  transitionRefusal,
   updateIndexRow,
   validate,
 } from "@aibuildos/knowledge-engine";
 import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
 import { app, BrowserWindow, dialog, Menu, nativeTheme } from "electron";
 import {
+  buildChanges,
+  buildDiff,
+  discardBuild,
+  discardSprint,
+  listBuilds,
+  listSessions,
+  mergeBuild,
+  mergeSprint,
+  resumeBuild,
+  startBuild,
+  startSprint,
+} from "./builds.js";
+import { runChecks } from "./checks.js";
+import {
+  branches,
   changes,
+  commitStaged,
+  fetchRemote,
   GitError,
   type GitStatus,
   git,
   ignored,
   initRepo,
+  pull,
+  push,
   recentCommits,
   repoRoot,
+  stagePath,
   status,
+  unstagePath,
 } from "./git.js";
 import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
 import { fileMenuTarget } from "./menus.js";
-import { addProject, loadProjects, markOpened, type Project, removeProject } from "./projects.js";
-import { claimProjectDirectory, fillProject } from "./scaffold.js";
-import { SessionRegistry } from "./sessions.js";
+import { seedPlaybooks } from "./playbooks.js";
+import { prStatus } from "./pr.js";
+import { setPreviewBounds, startPreview, stopPreview } from "./previews.js";
+import {
+  addProject,
+  loadProjects,
+  markOpened,
+  type Project,
+  removeProject,
+  setSupervision,
+} from "./projects.js";
+import { applyArtifactEdit, findingsFor, insideProject } from "./record.js";
+import { claimProjectDirectory, fillProject, harnessSupportsHooks } from "./scaffold.js";
+import { BUSY_CAP, SessionRegistry } from "./sessions.js";
 import { DEFAULTS, readSettings, saveSettings, settingsFile } from "./settings.js";
+import {
+  closeTerminal,
+  killTerminalsForProject,
+  listTerminals,
+  openTerminal,
+  type PtyFactory,
+  resizeTerminal,
+  writeTerminal,
+} from "./terminals.js";
+import { recordGeneration, stopWatching, watchProject } from "./watch.js";
 
 /**
  * Bind the IPC contract to Electron's ipcMain.
@@ -167,37 +212,6 @@ function dirtyCount(tree: GitStatus): number {
 }
 
 /**
- * Resolve a path inside a project, refusing anything that lands outside it.
- *
- * The second half of the defence the contract's `RepoPathSchema` begins. A string check cannot see a
- * **symlink**: `docs/out` may be a perfectly ordinary relative path that points at `/`. Resolving
- * both sides through `realpath` and comparing is the only answer that survives one.
- *
- * The target may not exist yet — a file being saved for the first time — so the nearest existing
- * ancestor is what gets resolved, and the rest is appended to it.
- */
-function insideProject(root: string, path: string): string {
-  const target = resolve(root, path);
-
-  let existing = target;
-  const trailing: string[] = [];
-  while (!existsSync(existing)) {
-    const parent = dirname(existing);
-    // Ran out of path without finding anything: nothing here is inside the project.
-    if (parent === existing) throw new Error(`${path} is not inside this project`);
-    trailing.unshift(existing.slice(parent.length + 1));
-    existing = parent;
-  }
-
-  const real = join(realpathSync(existing), ...trailing);
-  const away = relative(realpathSync(root), real);
-  if (away.startsWith("..") || isAbsolute(away)) {
-    throw new Error(`${path} is not inside this project`);
-  }
-  return real;
-}
-
-/**
  * Load the type profile beside a bundle.
  *
  * `loadBundle` skips `profile/` because it holds type definitions rather than artifacts, so the
@@ -233,38 +247,148 @@ function loadProfile(root: string): { profile: Profile } {
 }
 
 /**
- * The findings for one artifact, each tied to the frontmatter key that caused it where possible.
+ * Error/warning counts per artifact file, from one `validate()` run.
  *
- * A finding carries a line; `keyLines` maps a key to its line. Inverting that is what turns "this
- * file is wrong" into "this field is wrong", which is the difference between a validator and an
- * editor (RQ-0005#AC-9).
+ * Grouped after the fact rather than asked per artifact — RQ-0012#AC-1 wants this beside every row
+ * in the rail, and running the validator once per row is the difference between a record read and a
+ * record read that stalls on a large bundle. A finding whose `file` is not an artifact's own (an
+ * index-level complaint, or a dangling link resolved by an ID rather than a path) has no row to land
+ * on and is silently dropped rather than forced onto one.
  */
-function findingsFor(
+function problemsFor(
   bundle: Parameters<typeof validate>[0],
   profile: Profile,
-  file: string,
-  keyLines: ReadonlyMap<string, number>,
-): { rule: string; severity: string; message: string; key: string | null }[] {
-  const byLine = new Map([...keyLines].map(([key, line]) => [line, key]));
-
-  return validate(bundle, profile)
-    .filter((finding) => finding.file === file)
-    .map((finding) => ({
-      rule: finding.rule,
-      severity: finding.severity,
-      message: finding.message,
-      key: finding.line === undefined ? null : (byLine.get(finding.line) ?? null),
-    }));
+): Map<string, { errors: number; warnings: number }> {
+  const counts = new Map<string, { errors: number; warnings: number }>();
+  for (const finding of validate(bundle, profile)) {
+    const current = counts.get(finding.file) ?? { errors: 0, warnings: 0 };
+    if (finding.severity === "error") current.errors += 1;
+    else current.warnings += 1;
+    counts.set(finding.file, current);
+  }
+  return counts;
 }
 
 /** Every handler that works on a project starts here. An unknown id is a renderer bug. */
+/** Expected git failures are data (DC-0023): the code the UI branches on, git's own words. */
+function gitProblem(cause: unknown): { ok: false; code: string; message: string } {
+  if (cause instanceof GitError) return { ok: false, code: cause.code, message: cause.message };
+  return {
+    ok: false,
+    code: "git_failed",
+    message: cause instanceof Error ? cause.message : String(cause),
+  };
+}
+
+/**
+ * DC-0026: node-pty is a native module built for Electron's ABI and must never be a top-level
+ * import — vitest runs this file on plain Node, where the binary would throw on load. Resolved
+ * once, on the first `terminal:open`, and reused after.
+ */
+let realPty: PtyFactory | null = null;
+async function ptyFactory(): Promise<PtyFactory> {
+  if (realPty) return realPty;
+  const nodePty = await import("node-pty");
+  realPty = ({ cwd, cols, rows, file }) => nodePty.spawn(file, [], { cwd, cols, rows });
+  return realPty;
+}
+
 function requireProject(id: string) {
   const project = loadProjects(projectFile()).find((candidate) => candidate.id === id);
   if (!project) throw new Error(`no project with id ${id}`);
   return project;
 }
 
-function createHandlers(sessions: SessionRegistry): Handlers {
+/**
+ * `project:record`'s answer: the bundle walk, the profile read and the graph build that watching
+ * `docs/` exists to let the cache below skip (RQ-0026#AC-6). Pulled out of the handler so the
+ * cache has a return type to key on rather than restating the response shape by hand.
+ */
+function computeRecord(project: Project) {
+  const root = join(project.path, "docs");
+  if (!isDirectory(root)) return { artifacts: null, problem: null };
+
+  try {
+    const { bundle } = loadBundle(root, project.path);
+    const { profile } = loadProfile(root);
+    const problems = problemsFor(bundle, profile);
+
+    // The engine builds a graph only inside `validate` today, so the rail builds its own. Three
+    // lines, and it is what turns stored links into the reverse the rail actually shows.
+    const nodes: GraphNode[] = bundle.artifacts.flatMap((artifact) => {
+      const {
+        id: artifactId,
+        type,
+        links,
+      } = artifact.frontmatter as {
+        id?: unknown;
+        type?: unknown;
+        links?: unknown;
+      };
+      if (typeof artifactId !== "string" || typeof type !== "string") return [];
+      return [{ id: artifactId, type, links: (links ?? {}) as Record<string, string[]> }];
+    });
+    const graph = new ArtifactGraph(nodes);
+
+    const artifacts = bundle.artifacts.flatMap((artifact) => {
+      const front = artifact.frontmatter as Record<string, unknown>;
+      const artifactId = front.id;
+      if (typeof artifactId !== "string") return [];
+
+      return [
+        {
+          id: artifactId,
+          type: typeof front.type === "string" ? front.type : "",
+          title: typeof front.title === "string" ? front.title : artifactId,
+          state: typeof front.state === "string" ? front.state : "",
+          // Omitted rather than empty when the artifact carries none: the boards sort by it,
+          // and a card without a priority sorts after every prioritised one (BG-0005).
+          ...(typeof front.priority === "string" ? { priority: front.priority } : {}),
+          file: artifact.file,
+          problems: problems.get(artifact.file) ?? { errors: 0, warnings: 0 },
+          // Deduplicated: a test that verifies two criteria of one requirement
+          // (`verifies: [RQ-0004#AC-3, RQ-0004#AC-18]`) is one relationship, not two. The graph
+          // flattens `#AC-n` to the artifact, so without this the rail lists it once per
+          // criterion — four TC-0017s under one requirement.
+          inbound: [
+            ...new Map(
+              graph
+                .incoming(artifactId)
+                .map((edge) => [
+                  `${edge.relationship}:${edge.from}`,
+                  { relationship: edge.relationship, id: edge.from },
+                ]),
+            ).values(),
+          ],
+        },
+      ];
+    });
+
+    artifacts.sort((a, b) => a.id.localeCompare(b.id));
+    return { artifacts, problem: null };
+  } catch (cause) {
+    return { artifacts: null, problem: failure(cause).message };
+  }
+}
+
+/**
+ * `project:record`'s cache (RQ-0026#AC-6), keyed by project id and valid only while `watch.ts`'s
+ * generation for that project's path has not moved. `watchProject` bumps the generation on every
+ * `docs/` change and on watch start, so a project nobody has opened — `recordGeneration` answers
+ * `-1` for it — never gets an entry here at all, which is what keeps every existing test that
+ * calls this handler without opening a project re-parsing exactly as it always did.
+ */
+const recordCache = new Map<
+  string,
+  { generation: number; response: ReturnType<typeof computeRecord> }
+>();
+
+function createHandlers(
+  sessions: SessionRegistry,
+  emitCheckOutput: (payload: { projectId: string; command: string; chunk: string }) => void,
+  emitChanged: (payload: { projectId: string }) => void,
+  emitTerminal: (channel: "terminal:data" | "terminal:exit", payload: unknown) => void,
+): Handlers {
   return {
     "app:info": () => ({
       name: "aiBuildOS",
@@ -351,7 +475,9 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       const project = addProject(projectFile(), { name, path });
 
       try {
-        await fillProject(path, name);
+        // The `.claude/` guardrail layer is seeded only when a configured harness reads it
+        // (RQ-0049#AC-3); with none, this create is instructions-only, exactly as before RQ-0049.
+        await fillProject(path, name, loadHarnesses(harnessFile()).some(harnessSupportsHooks));
         return { ok: true, project };
       } catch (cause) {
         return failure(cause);
@@ -383,6 +509,9 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       // wire code of its own.
       const project = markOpened(file, id, new Date().toISOString());
       if (!project) throw new Error(`no project with id ${id}`);
+      // The open project is the watched project (RQ-0026#AC-7); watching it again replaces any
+      // previous watcher, so switching projects hands the watch over rather than doubling it.
+      watchProject(project.id, project.path, () => emitChanged({ projectId: project.id }));
 
       if (!isDirectory(project.path)) {
         return {
@@ -408,66 +537,34 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       return { project, exists: true, git, gitError, ...readRecord(project.path) };
     },
 
+    "project:set-supervision": ({ id, level }) => {
+      requireProject(id); // an unknown id is a renderer bug, not something a user did
+      try {
+        setSupervision(projectFile(), id, level);
+      } catch (cause) {
+        return { problem: failure(cause).message };
+      }
+      // Out to every open session of this project, and to no other project's (RQ-0050#AC-1). Not
+      // awaited: the setting is saved either way, and a session that cannot take the option says so
+      // on its own stream rather than turning a saved setting into a failed one.
+      void sessions.applySupervision(id, level);
+      return { problem: null };
+    },
+
     "project:record": ({ id }) => {
       const project = requireProject(id);
-      const root = join(project.path, "docs");
-      if (!isDirectory(root)) return { artifacts: null, problem: null };
+      const generation = recordGeneration(project.path);
 
-      try {
-        const { bundle } = loadBundle(root, project.path);
-
-        // The engine builds a graph only inside `validate` today, so the rail builds its own. Three
-        // lines, and it is what turns stored links into the reverse the rail actually shows.
-        const nodes: GraphNode[] = bundle.artifacts.flatMap((artifact) => {
-          const {
-            id: artifactId,
-            type,
-            links,
-          } = artifact.frontmatter as {
-            id?: unknown;
-            type?: unknown;
-            links?: unknown;
-          };
-          if (typeof artifactId !== "string" || typeof type !== "string") return [];
-          return [{ id: artifactId, type, links: (links ?? {}) as Record<string, string[]> }];
-        });
-        const graph = new ArtifactGraph(nodes);
-
-        const artifacts = bundle.artifacts.flatMap((artifact) => {
-          const front = artifact.frontmatter as Record<string, unknown>;
-          const artifactId = front.id;
-          if (typeof artifactId !== "string") return [];
-
-          return [
-            {
-              id: artifactId,
-              type: typeof front.type === "string" ? front.type : "",
-              title: typeof front.title === "string" ? front.title : artifactId,
-              state: typeof front.state === "string" ? front.state : "",
-              file: artifact.file,
-              // Deduplicated: a test that verifies two criteria of one requirement
-              // (`verifies: [RQ-0004#AC-3, RQ-0004#AC-18]`) is one relationship, not two. The graph
-              // flattens `#AC-n` to the artifact, so without this the rail lists it once per
-              // criterion — four TC-0017s under one requirement.
-              inbound: [
-                ...new Map(
-                  graph
-                    .incoming(artifactId)
-                    .map((edge) => [
-                      `${edge.relationship}:${edge.from}`,
-                      { relationship: edge.relationship, id: edge.from },
-                    ]),
-                ).values(),
-              ],
-            },
-          ];
-        });
-
-        artifacts.sort((a, b) => a.id.localeCompare(b.id));
-        return { artifacts, problem: null };
-      } catch (cause) {
-        return { artifacts: null, problem: failure(cause).message };
+      if (generation !== -1) {
+        const cached = recordCache.get(id);
+        if (cached && cached.generation === generation) return cached.response;
       }
+
+      const response = computeRecord(project);
+      // A generation of -1 means nothing is watching this project's path, so nothing is caching
+      // it either — the next read parses again, same as before ST-0043 (RQ-0026#AC-6).
+      if (generation !== -1) recordCache.set(id, { generation, response });
+      return response;
     },
 
     "project:tree": async ({ id, path }) => {
@@ -640,8 +737,13 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         const { profile } = loadProfile(root);
         const definition = profile.get(type);
 
-        // What the profile allows, never a list this application invented (RQ-0005#AC-6).
-        const states = definition?.states?.vocabulary ?? [];
+        // The current state — so the control has something to show even when it is not one of the
+        // type's own — plus exactly what its transitions declare from there, never the whole
+        // vocabulary (RQ-0010#AC-1, AC-3, AC-5).
+        const currentState = String((found.frontmatter as { state?: unknown }).state ?? "");
+        const states = definition?.states
+          ? [...new Set([currentState, ...legalNextStates(definition, currentState)])]
+          : [];
         const stored = (found.frontmatter as { links?: Record<string, string[]> }).links ?? {};
         const links = Object.entries(definition?.links ?? {}).map(([relationship, def]) => ({
           relationship,
@@ -685,59 +787,11 @@ function createHandlers(sessions: SessionRegistry): Handlers {
 
     "project:artifact-save": ({ id, artifactId, frontmatter, body }) => {
       const project = requireProject(id);
-      const root = join(project.path, "docs");
-
       try {
-        const { bundle } = loadBundle(root, project.path);
-        const found = bundle.artifacts.find(
-          (artifact) => (artifact.frontmatter as { id?: unknown }).id === artifactId,
-        );
-        if (!found) {
-          return { problem: `${artifactId} is not in this bundle.`, markdown: null, findings: [] };
-        }
-
-        // The path comes from the bundle walk rather than from the renderer, so nothing untrusted
-        // reaches it — but this is a write, and every write in this process is contained the same
-        // way rather than each one arguing for itself (TC-0023).
-        const file = insideProject(project.path, found.file);
-        // The profile is what knows which relationships this type declares, so it is what vouches
-        // for a link key the file does not carry yet. Anything else missing is still refused.
-        const { profile: dialect } = loadProfile(root);
-        const type = String((found.frontmatter as { type?: unknown }).type ?? "");
-        const create = Object.keys(dialect.get(type)?.links ?? {}).map((rel) => `links.${rel}`);
-
-        // Only the named keys and the body change; the rest of the file is byte-identical.
-        const written = editArtifact(readFileSync(file, "utf8"), {
-          frontmatter,
-          ...(body === undefined ? {} : { body }),
-          create,
-        });
-        writeFileSync(file, written, "utf8");
-
-        // The record must not disagree with itself: the index says what the artifact says (AC-10).
-        const indexFile = join(project.path, found.dir, "README.md");
-        if (existsSync(indexFile)) {
-          const contained = insideProject(project.path, join(found.dir, "README.md"));
-          const title = frontmatter.title;
-          const state = frontmatter.state;
-          writeFileSync(
-            contained,
-            updateIndexRow(readFileSync(contained, "utf8"), artifactId, {
-              ...(typeof title === "string" ? { title } : {}),
-              ...(typeof state === "string" ? { state } : {}),
-            }),
-            "utf8",
-          );
-        }
-
-        // Re-read so what comes back is what the bundle now says, not what was hoped for.
-        const after = loadBundle(root, project.path);
-        const parsed = parseOkfDocument(readFileSync(file, "utf8"));
-        return {
-          problem: null,
-          markdown: written,
-          findings: findingsFor(after.bundle, dialect, found.file, parsed.keyLines),
-        };
+        // The one legal way to change an artifact, shared with the build flip (ST-0041): the
+        // transition check, the append-only criteria, the CST edit, the index row — all in
+        // `record.ts`, not here.
+        return applyArtifactEdit(project.path, artifactId, frontmatter, body);
       } catch (cause) {
         return { problem: failure(cause).message, markdown: null, findings: [] };
       }
@@ -761,7 +815,14 @@ function createHandlers(sessions: SessionRegistry): Handlers {
           const definition = profile.get(name);
           if (!definition || definition.abstract) return [];
           if (!definition.prefix || !definition.dir) return [];
-          return [{ type: name, prefix: definition.prefix, dir: definition.dir }];
+          return [
+            {
+              type: name,
+              prefix: definition.prefix,
+              dir: definition.dir,
+              states: definition.states?.vocabulary ?? [],
+            },
+          ];
         })
         .sort((a, b) => a.type.localeCompare(b.type));
 
@@ -783,6 +844,199 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       } catch (cause) {
         return { problem: failure(cause).message };
       }
+    },
+
+    "project:close": ({ id }) => {
+      stopWatching(id);
+      killTerminalsForProject(id);
+    },
+
+    "project:seed-playbooks": ({ id }) => {
+      const project = requireProject(id);
+      // Same harness gate as `project:create` — a re-seed after Claude Code is configured is how
+      // an older project gains the guardrail layer (RQ-0049#AC-1).
+      return {
+        problem: seedPlaybooks(
+          project.path,
+          loadHarnesses(harnessFile()).some(harnessSupportsHooks),
+        ),
+      };
+    },
+
+    "project:stage": async ({ id, path }) => {
+      const project = requireProject(id);
+      try {
+        insideProject(project.path, path);
+        await stagePath(project.path, path);
+        return { problem: null };
+      } catch (cause) {
+        return { problem: failure(cause).message };
+      }
+    },
+
+    "project:unstage": async ({ id, path }) => {
+      const project = requireProject(id);
+      try {
+        insideProject(project.path, path);
+        await unstagePath(project.path, path);
+        return { problem: null };
+      } catch (cause) {
+        return { problem: failure(cause).message };
+      }
+    },
+
+    "project:commit": async ({ id, message }) => {
+      const project = requireProject(id);
+      try {
+        return { ok: true, hash: await commitStaged(project.path, message) };
+      } catch (cause) {
+        // A rejecting hook lands here too, in its own words — that is not this handler's failure.
+        return failure(cause);
+      }
+    },
+
+    "check:run": async ({ id }) => {
+      const project = requireProject(id);
+      return await runChecks(project.path, (command, chunk) =>
+        emitCheckOutput({ projectId: id, command, chunk }),
+      );
+    },
+
+    "build:start": async ({ projectId, storyId, harnessId, sprintId }) => {
+      const project = requireProject(projectId);
+      const harness = loadHarnesses(harnessFile()).find((entry) => entry.id === harnessId);
+      if (harness === undefined) {
+        return { ok: false, code: "not_found", message: "That harness is no longer configured." };
+      }
+      // The request's own `sprintId` (RQ-0035, DC-0025) was being dropped here — `startBuild`
+      // already knows what to do with it (branch from the sprint, not HEAD), it just never arrived.
+      return await startBuild(sessions, project, storyId, harness, sprintId);
+    },
+
+    "build:list": async ({ projectId }) => {
+      const project = requireProject(projectId);
+      return await listBuilds(sessions, project.path);
+    },
+
+    "build:changes": async ({ projectId, storyId }) => {
+      const project = requireProject(projectId);
+      return await buildChanges(project.path, storyId);
+    },
+
+    "build:diff": async ({ projectId, storyId, path }) => {
+      const project = requireProject(projectId);
+      insideProject(project.path, path);
+      return await buildDiff(project.path, storyId, path);
+    },
+
+    "build:merge": async ({ projectId, storyId }) => {
+      const project = requireProject(projectId);
+      return await mergeBuild(project.path, storyId);
+    },
+
+    "build:discard": async ({ projectId, storyId }) => {
+      const project = requireProject(projectId);
+      return await discardBuild(project.path, storyId);
+    },
+
+    "build:resume": async ({ projectId, storyId, harnessId }) => {
+      return await resumeBuild(sessions, projectId, storyId, harnessId);
+    },
+
+    "sprint:start": async ({ projectId, sprintId }) => {
+      const project = requireProject(projectId);
+      return await startSprint(project.path, sprintId);
+    },
+
+    "sprint:merge": async ({ projectId, sprintId }) => {
+      const project = requireProject(projectId);
+      return await mergeSprint(project.path, sprintId);
+    },
+
+    "sprint:discard": async ({ projectId, sprintId }) => {
+      const project = requireProject(projectId);
+      return await discardSprint(project.path, sprintId);
+    },
+
+    "project:fetch": async ({ id }) => {
+      const project = requireProject(id);
+      try {
+        await fetchRemote(project.path);
+        return { ok: true };
+      } catch (cause) {
+        return gitProblem(cause);
+      }
+    },
+
+    "project:pull": async ({ id }) => {
+      const project = requireProject(id);
+      try {
+        await pull(project.path);
+        return { ok: true };
+      } catch (cause) {
+        return gitProblem(cause);
+      }
+    },
+
+    "project:push": async ({ id }) => {
+      const project = requireProject(id);
+      try {
+        const { branch } = await push(project.path);
+        return { ok: true, branch };
+      } catch (cause) {
+        return gitProblem(cause);
+      }
+    },
+
+    "project:branches": async ({ id }) => {
+      const project = requireProject(id);
+      try {
+        return { ...(await branches(project.path)), problem: null };
+      } catch (cause) {
+        return { current: null, branches: [], problem: gitProblem(cause).message };
+      }
+    },
+
+    "project:pr-status": async ({ id }) => {
+      const project = requireProject(id);
+      return await prStatus(project.path);
+    },
+
+    "terminal:open": async ({ projectId }) => {
+      const project = requireProject(projectId);
+      return openTerminal(await ptyFactory(), project.id, project.path, (channel, payload) =>
+        emitTerminal(channel as "terminal:data" | "terminal:exit", payload),
+      );
+    },
+
+    "terminal:input": ({ terminalId, data }) => {
+      writeTerminal(terminalId, data);
+    },
+
+    "terminal:resize": ({ terminalId, cols, rows }) => {
+      resizeTerminal(terminalId, cols, rows);
+    },
+
+    "terminal:close": ({ terminalId }) => {
+      closeTerminal(terminalId);
+    },
+
+    "terminal:list": ({ projectId }) => ({ terminals: listTerminals(projectId) }),
+
+    "session:list": () => ({ sessions: listSessions(sessions) }),
+
+    "preview:start": async ({ projectId }) => {
+      const project = requireProject(projectId);
+      return await startPreview(project.path);
+    },
+
+    "preview:stop": async ({ projectId }) => {
+      const project = requireProject(projectId);
+      return await stopPreview(project.path);
+    },
+
+    "preview:bounds": (bounds) => {
+      setPreviewBounds(bounds);
     },
 
     "project:create-artifact": async ({ id, type, title }) => {
@@ -913,7 +1167,7 @@ function createHandlers(sessions: SessionRegistry): Handlers {
       });
     },
 
-    "session:start": async ({ projectId, harnessId }) => {
+    "session:start": async ({ projectId, harnessId, background }) => {
       const project = loadProjects(projectFile()).find((candidate) => candidate.id === projectId);
       if (!project) {
         return {
@@ -934,9 +1188,27 @@ function createHandlers(sessions: SessionRegistry): Handlers {
         };
       }
 
+      // A background run holds one of the same 3 slots builds do (RQ-0039) — one ceiling, raised
+      // deliberately. The main conversation stays uncapped.
+      if (background !== undefined && sessions.busyCount() >= BUSY_CAP) {
+        return {
+          ok: false,
+          code: "busy_cap",
+          message: `${BUSY_CAP} agents are already working — the cap is ${BUSY_CAP} at once.`,
+          authMethods: [],
+        };
+      }
+
       // The session runs in the project, not in the harness's own working directory: the agent is
       // being asked to work on *this* repository.
-      return await sessions.start(harness, project.path, app.getVersion());
+      return await sessions.start(
+        harness,
+        project.id,
+        project.path,
+        app.getVersion(),
+        null,
+        background?.label ?? null,
+      );
     },
 
     "session:prompt": async ({ sessionId, text }) => await sessions.prompt(sessionId, text),
@@ -980,7 +1252,22 @@ export function registerIpc(
     send: (channel, payload) => sender()?.send(channel, payload),
   });
 
-  const sessions = new SessionRegistry((event, payload) => emitter.emit(event, payload));
-  createRouter(ipcMain, createHandlers(sessions));
+  const sessions = new SessionRegistry(
+    (event, payload) => emitter.emit(event, payload),
+    // Read fresh from disk on every permission request, never cached — a level change applies from
+    // the next request (RQ-0022#AC-5).
+    (projectId) =>
+      loadProjects(projectFile()).find((project) => project.id === projectId)?.supervision ??
+      "closest",
+  );
+  createRouter(
+    ipcMain,
+    createHandlers(
+      sessions,
+      (payload) => emitter.emit("check:output", payload),
+      (payload) => emitter.emit("project:changed", payload),
+      (channel, payload) => emitter.emit(channel, payload as never),
+    ),
+  );
   return sessions;
 }

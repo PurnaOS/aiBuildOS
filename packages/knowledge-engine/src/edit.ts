@@ -79,15 +79,16 @@ export interface ArtifactEdit {
    */
   readonly body?: string;
   /**
-   * Nested paths this edit is allowed to **create** when the file does not carry them yet.
+   * Paths this edit is allowed to **create** when the file does not carry them yet.
    *
-   * Adding `links.verified_by` to a requirement that has never had one is ordinary editing, but the
-   * engine has no way to tell that apart from a typo — only the profile knows which relationships a
-   * type declares. So the caller vouches for the paths it knows are legal, and every other missing
-   * key is still refused rather than invented.
+   * Adding `links.verified_by` to a requirement that has never had one, or `last_result` to a
+   * TestCase nobody has walked, is ordinary editing, but the engine has no way to tell either apart
+   * from a typo — only the profile knows which relationships and fields a type declares. So the
+   * caller vouches for the paths it knows are legal, and every other missing key is still refused
+   * rather than invented.
    *
-   * Nested and list-valued because that is what the profile has to say about: `links.implements`. A
-   * missing top-level key is refused whatever it is named.
+   * Two shapes: `parent.child` with a list value, for a relationship such as `links.implements`; or a
+   * bare top-level key with a scalar value, for a profile field with no value yet.
    */
   readonly create?: readonly string[];
 }
@@ -119,8 +120,15 @@ function setKeys(
   const remaining: Record<string, FieldValue> = {};
   for (const [path, value] of Object.entries(values)) {
     const inserted = creatable.has(path) ? insertMissing(source, path, value) : null;
-    if (inserted === null) remaining[path] = value;
-    else source = inserted;
+    if (inserted === null) {
+      remaining[path] = value;
+      continue;
+    }
+    source = inserted.source;
+    // A scalar insertion only writes a placeholder; the real value still needs `setExisting`, which
+    // is where `CST.setScalarValue` decides whether it needs quoting — the same place every value set
+    // on an *existing* key already gets that from.
+    if (!inserted.resolved) remaining[path] = value;
   }
   if (Object.keys(remaining).length === 0) return source;
 
@@ -133,16 +141,36 @@ function flow(ids: readonly string[]): string {
 }
 
 /**
- * Insert a nested `parent.child` path if the frontmatter has no such key, returning `null` when it
- * is already there and the ordinary CST edit should handle it.
+ * Insert a missing key when the frontmatter does not carry it yet, returning `null` when it already
+ * does and the ordinary CST edit should handle it instead.
+ *
+ * Two shapes:
+ * - `parent.child` with a list value — the shape every `links:` relationship uses. Written whole, as
+ *   a flow sequence, and reported `resolved: true` since a list has no further quoting question
+ *   `setExisting` could answer.
+ * - A bare top-level key with a scalar value — a profile field with no value yet, such as a
+ *   TestCase's `last_result` before anything has walked it. Only a placeholder is written here;
+ *   `resolved: false` sends the real value on to `setExisting`, which is where quoting is decided.
  */
-function insertMissing(yaml: string, path: string, value: FieldValue): string | null {
+function insertMissing(
+  yaml: string,
+  path: string,
+  value: FieldValue,
+): { source: string; resolved: boolean } | null {
   const [key, nested] = path.split(".") as [string, string | undefined];
-  if (nested === undefined || !Array.isArray(value)) return null;
+
+  if (nested === undefined) {
+    if (Array.isArray(value)) return null; // a bare top-level list has never been asked for
+    if (yaml.split("\n").some((line) => line.startsWith(`${key}:`))) return null;
+    return { source: `${yaml}\n${key}: x`, resolved: false };
+  }
+  if (!Array.isArray(value)) return null;
 
   const lines = yaml.split("\n");
   const parentAt = lines.findIndex((line) => line.startsWith(`${key}:`));
-  if (parentAt === -1) return `${yaml}\n${key}:\n  ${nested}: ${flow(value)}`;
+  if (parentAt === -1) {
+    return { source: `${yaml}\n${key}:\n  ${nested}: ${flow(value)}`, resolved: true };
+  }
 
   // The parent's children are the indented lines that follow it.
   let last = parentAt;
@@ -158,7 +186,7 @@ function insertMissing(yaml: string, path: string, value: FieldValue): string | 
 
   const indent = /^(\s+)/.exec(lines[parentAt + 1] ?? "")?.[1] ?? "  ";
   lines.splice(last + 1, 0, `${indent}${nested}: ${flow(value)}`);
-  return lines.join("\n");
+  return { source: lines.join("\n"), resolved: true };
 }
 
 function setExisting(yaml: string, values: Readonly<Record<string, FieldValue>>): string {

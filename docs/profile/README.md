@@ -16,8 +16,11 @@ The dialect is specified in
 | `TestCase` | `TC` | [testing/](../testing/README.md) | [test-case.md](test-case.md) |
 | `Bug` | `BG` | [bugs/](../bugs/README.md) | [bug.md](bug.md) |
 | `Decision` | `DC` | [decisions/](../decisions/README.md) | [decision.md](decision.md) |
+| `Playbook` | `PB` | [playbooks/](../playbooks/README.md) | [playbook.md](playbook.md) |
+| `Sprint` | `SP` | [sprints/](../sprints/README.md) | [sprint.md](sprint.md) |
+| `Design` | `DS` | [designs/](../designs/README.md) | [design.md](design.md) |
 
-Manifest: [profile.md](profile.md) — `aibuildos-default@0.1.0`, `formats: 1`.
+Manifest: [profile.md](profile.md) — `aibuildos-default@0.2.0`, `formats: 1`.
 
 `Architecture` (`AR`) is ID-reserved but not yet profiled — see
 [OKF conventions §3](../guidelines/okf-conventions.md#3-ids-and-file-layout).

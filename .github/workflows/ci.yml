@@ -12,6 +12,9 @@ jobs:
     # the app (docs/architecture/ar-0001.md). A three-OS matrix because the Electron shell and the
     # OKF store's byte handling are the two things most likely to regress on one platform only.
     strategy:
+      # Every OS reports its own verdict: one platform's failure cancelling the others hides
+      # exactly the per-platform regressions this matrix exists to catch.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}

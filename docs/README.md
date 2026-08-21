@@ -11,6 +11,7 @@ single-subject, and linked. Nothing is duplicated: **repeat IDs and links, never
 
 | If you want to… | Read |
 | --- | --- |
+| know where the product is headed | [How aiBuildOS works](HowItWorks.md) — the vision, in plain terms |
 | know how documents are written | [OKF conventions](guidelines/okf-conventions.md) |
 | add a feature | [Requirement-first development](guidelines/requirement-first.md) |
 | know why the stack is what it is | [Decisions](decisions/README.md) |
@@ -26,10 +27,12 @@ single-subject, and linked. Nothing is duplicated: **repeat IDs and links, never
 | [requirements/](requirements/README.md) | `RQ` | **the canonical source of truth for product requirements** |
 | [epics/](epics/README.md) | `EP` | bodies of work grouping stories |
 | [user-stories/](user-stories/README.md) | `ST` | user-facing slices of work |
+| [sprints/](sprints/README.md) | `SP` | batches of work taken together, each bound to a git branch |
 | [testing/](testing/README.md) | `TC` | test cases — the verifications |
 | [bugs/](bugs/README.md) | `BG` | defects |
 | [decisions/](decisions/README.md) | `DC` | architecture decision records |
 | [architecture/](architecture/README.md) | `AR` | system shape |
+| [playbooks/](playbooks/README.md) | `PB` | named instructions shown as buttons |
 
 ## Traceability
 

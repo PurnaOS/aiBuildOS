@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,7 +37,7 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
         id: "h",
         displayName: "Stub",
         command: process.execPath,
-        args: ["--experimental-strip-types", stub, "--mode=slow"],
+        args: ["--experimental-strip-types", stub, "--mode=slower"],
       },
     ]),
   );
@@ -116,17 +116,51 @@ test("writes at once on the Save command, rather than at the end of the pause", 
   await app.close();
 });
 
+test("a save that fails leaves the work in the editor and says what failed", async () => {
+  // TC-0036 (RQ-0008#AC-6). The write is refused by the filesystem itself — a read-only file — so
+  // the whole reporting path runs against a real failure, not a mocked one.
+  const { app, w, work } = await open();
+
+  await w.getByTestId("file-row").filter({ hasText: "notes.md" }).click();
+  await expect(w.getByTestId("file-tab")).toBeVisible();
+
+  chmodSync(join(work, "notes.md"), 0o444);
+  await type(w, "typed into a wall\n");
+
+  // The failure is named on screen, and the work is still marked as unwritten — not silently "saved".
+  await expect(w.getByTestId("file-save-problem")).toBeVisible({ timeout: 15000 });
+  await expect(w.getByTestId("file-save-problem")).not.toBeEmpty();
+  await expect(w.getByTestId("file-saved")).toHaveText("unsaved");
+  // Nothing on disk was touched, and nothing in the editor was thrown away.
+  expect(readFileSync(join(work, "notes.md"), "utf8")).toBe("one\n");
+  await expect(w.locator(".cm-content")).toContainText("typed into a wall");
+
+  // Writable again: the same work — kept, not retyped — is what lands.
+  chmodSync(join(work, "notes.md"), 0o644);
+  await app.evaluate(({ Menu }) => {
+    Menu.getApplicationMenu()?.getMenuItemById("save")?.click();
+  });
+  await expect(w.getByTestId("file-saved")).toHaveText("saved", { timeout: 15000 });
+  await expect(w.getByTestId("file-save-problem")).toHaveCount(0);
+  expect(readFileSync(join(work, "notes.md"), "utf8")).toBe("typed into a wall\n");
+
+  await app.close();
+});
+
 test("holds the write while a turn is streaming, then makes it", async () => {
   const { app, w, work } = await open();
 
   await w.getByTestId("start-h").click();
   await w.getByTestId("chat").waitFor({ timeout: 20000 });
 
-  // `--mode=slow` streams for long enough to type underneath it.
+  // Everything below has to happen *under* a live turn — the held write and the tab's mark both
+  // key off streaming (RQ-0008#AC-3), so the turn ending early is the test losing its subject, not
+  // the app misbehaving. `--mode=slower` streams ~6s and the assertion below proves it started.
   const composer = w.locator("textarea, [contenteditable=true]").first();
   await composer.click();
   await composer.fill("please proceed");
   await w.keyboard.press("Enter");
+  await expect(w.getByTestId("tab-working-chat")).toBeVisible({ timeout: 10000 });
 
   await w.getByTestId("file-row").filter({ hasText: "notes.md" }).click();
   await expect(w.getByTestId("file-tab")).toBeVisible();

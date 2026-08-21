@@ -27,6 +27,19 @@ Conventions: [OKF conventions](../guidelines/okf-conventions.md) ·
 | [DC-0014](dc-0014.md) | Packaging with electron-builder, updates via GitHub Releases | accepted | [DC-0003](dc-0003.md) |
 | [DC-0015](dc-0015.md) | The repository is the system of record, in OKF | accepted | [AR-0002](../architecture/ar-0002.md) · [DC-0009](dc-0009.md), [DC-0010](dc-0010.md) |
 | [DC-0016](dc-0016.md) | Biome for linting and formatting, markdownlint for the bundle | accepted | [AR-0002](../architecture/ar-0002.md) · [DC-0001](dc-0001.md), [DC-0013](dc-0013.md), [DC-0015](dc-0015.md) |
+| [DC-0017](dc-0017.md) | The ACP to AG-UI bridge runs in main; the renderer drives a custom AbstractAgent | accepted | [RQ-0004](../requirements/rq-0004.md) · [DC-0006](dc-0006.md), [DC-0007](dc-0007.md), [DC-0008](dc-0008.md) |
+| [DC-0018](dc-0018.md) | Renderer libraries for the workspace, chosen against the Content-Security-Policy | accepted | [RQ-0004](../requirements/rq-0004.md), [RQ-0005](../requirements/rq-0005.md) · [DC-0004](dc-0004.md), [DC-0008](dc-0008.md) |
+| [DC-0019](dc-0019.md) | Playbooks are record artifacts, shipped in the project template | accepted | [RQ-0013](../requirements/rq-0013.md) · [DC-0015](dc-0015.md) |
+| [DC-0020](dc-0020.md) | Structured asks ride a fenced-block convention until ACP elicitation is real | accepted | [RQ-0016](../requirements/rq-0016.md) · [DC-0007](dc-0007.md), [DC-0008](dc-0008.md) |
+| [DC-0021](dc-0021.md) | Worktree builds: the branch is the binding, and main owns the process | accepted | [RQ-0020](../requirements/rq-0020.md), [RQ-0021](../requirements/rq-0021.md) · [DC-0010](dc-0010.md), [DC-0015](dc-0015.md) |
+| [DC-0022](dc-0022.md) | A file watcher is the bump's source; the revision counter stays its mechanism | accepted | [RQ-0026](../requirements/rq-0026.md) · [DC-0015](dc-0015.md) |
+| [DC-0023](dc-0023.md) | Remote sync rides the user's own git | accepted | [RQ-0032](../requirements/rq-0032.md) · [DC-0010](dc-0010.md) |
+| [DC-0024](dc-0024.md) | PR status via the optional gh CLI | accepted | [RQ-0034](../requirements/rq-0034.md) · [DC-0023](dc-0023.md) |
+| [DC-0025](dc-0025.md) | A sprint is a branch with its own worktree; -- binds its stories | accepted | [RQ-0035](../requirements/rq-0035.md), [RQ-0036](../requirements/rq-0036.md) · [DC-0021](dc-0021.md) |
+| [DC-0026](dc-0026.md) | The shell is a real PTY: node-pty in main, @xterm/xterm in the dock | accepted | [RQ-0038](../requirements/rq-0038.md) · [EP-0012](../epics/ep-0012.md) |
+| [DC-0027](dc-0027.md) | The activity dock replaces Now; three surfaces | accepted | [RQ-0044](../requirements/rq-0044.md), [RQ-0045](../requirements/rq-0045.md) · [EP-0013](../epics/ep-0013.md) |
+| [DC-0028](dc-0028.md) | Harness capabilities ride ACP extension points | accepted | [RQ-0050](../requirements/rq-0050.md), [RQ-0052](../requirements/rq-0052.md) · [DC-0007](dc-0007.md), [DC-0020](dc-0020.md) |
+| [DC-0029](dc-0029.md) | Hands-off maps to accept-edits, never to bypass | accepted | [RQ-0050](../requirements/rq-0050.md) · [RQ-0022](../requirements/rq-0022.md), [DC-0028](dc-0028.md) |
 
 ## Not yet decided
 
@@ -39,7 +52,3 @@ Recorded here so they are not mistaken for oversights:
 - **Vite 8** — blocked by electron-vite's peer range, see [DC-0004](dc-0004.md).
 - **Type-aware linting** — [DC-0016](dc-0016.md) chose Biome, which cannot run `no-floating-promises`.
   Adding `typescript-eslint` for type-aware rules only remains open.
-| [DC-0017](dc-0017.md) | The ACP to AG-UI bridge runs in main; the renderer drives a custom AbstractAgent | accepted | [RQ-0004](../requirements/rq-0004.md) · [DC-0006](dc-0006.md), [DC-0007](dc-0007.md), [DC-0008](dc-0008.md) |
-| [DC-0018](dc-0018.md) | Renderer libraries for the workspace, chosen against the Content-Security-Policy | accepted | [RQ-0004](../requirements/rq-0004.md), [RQ-0005](../requirements/rq-0005.md) · [DC-0004](dc-0004.md), [DC-0008](dc-0008.md) |
-| [DC-0017](dc-0017.md) | The ACP to AG-UI bridge runs in main; the renderer drives a custom AbstractAgent | accepted | [RQ-0004](../requirements/rq-0004.md) · [DC-0006](dc-0006.md), [DC-0007](dc-0007.md), [DC-0008](dc-0008.md) |
-| [DC-0018](dc-0018.md) | Renderer libraries for the workspace, chosen against the Content-Security-Policy | accepted | [RQ-0004](../requirements/rq-0004.md), [RQ-0005](../requirements/rq-0005.md) · [DC-0004](dc-0004.md), [DC-0008](dc-0008.md) |

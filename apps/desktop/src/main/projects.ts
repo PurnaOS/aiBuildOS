@@ -114,6 +114,23 @@ export function markOpened(file: string, id: string, at: string): Project | unde
   return opened;
 }
 
+/** RQ-0022. Absent on a `Project` reads as `closest`; this is the explicit setting. */
+export type Supervision = NonNullable<Project["supervision"]>;
+
+/** Change a project's supervision level (RQ-0022#AC-1). Returns `undefined` if the id is unknown. */
+export function setSupervision(file: string, id: string, level: Supervision): Project | undefined {
+  const projects = readForWrite(file);
+  const index = projects.findIndex((project) => project.id === id);
+
+  const project = projects[index];
+  if (index === -1 || project === undefined) return undefined;
+
+  const updated: Project = { ...project, supervision: level };
+  projects[index] = updated;
+  write(file, projects);
+  return updated;
+}
+
 /** Forget a project. Touches the registry and nothing else — never the directory (RQ-0002#AC-9). */
 export function removeProject(file: string, id: string): void {
   write(

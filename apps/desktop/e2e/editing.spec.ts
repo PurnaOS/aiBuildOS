@@ -44,6 +44,7 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
       ...process.env,
       AIBUILDOS_PROJECTS_FILE: join(config, "projects.json"),
       AIBUILDOS_HARNESSES_FILE: join(config, "harnesses.json"),
+      AIBUILDOS_SETTINGS_FILE: join(config, "settings.json"),
     },
   });
   const w = await app.firstWindow();

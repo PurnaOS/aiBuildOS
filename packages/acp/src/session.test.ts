@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { BaseEvent } from "@ag-ui/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CUSTOM } from "./bridge.js";
-import { AgentSession, type PermissionRequest, SessionError } from "./session.js";
+import { AgentSession, type PermissionRequest, SessionError, TYPED_RECORD } from "./session.js";
 
 /**
  * TC-0015 and TC-0017. A session that stays open, streams everything, cancels cleanly, and asks.
@@ -25,6 +25,19 @@ const spec = (mode?: string) => ({
 const named = (events: BaseEvent[], name: string): BaseEvent[] =>
   events.filter((event) => (event as unknown as { name?: string }).name === name);
 
+/**
+ * Live processes whose command line carries the marker. `pgrep` runs directly — wrapped in
+ * `sh -c`, Linux's pgrep matches the wrapper shell itself (its argv carries the marker) and
+ * reports a survivor that never existed. Exit code 1 is pgrep's word for "none".
+ */
+function survivorsOf(marker: string): string {
+  try {
+    return execFileSync("pgrep", ["-f", marker], { encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
 describe("a live agent session", () => {
   let cwd: string;
   let events: BaseEvent[];
@@ -38,7 +51,7 @@ describe("a live agent session", () => {
 
   afterEach(async () => {
     for (const session of open) await session.close();
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   const start = async (
@@ -147,32 +160,32 @@ describe("a live agent session", () => {
     ).rejects.toMatchObject({ code: "cwd_not_found" });
   });
 
-  it("reaps the agent and everything it spawned when the session closes", async () => {
-    // The shipped presets are all `npx -y <pkg>`, so the agent is a grandchild of the process this
-    // holds. `sh -c` reproduces that shape offline: a marker process in the background, the stub
-    // `exec`d in the foreground so the session really opens.
-    const marker = "aibuildos-orphan-session";
-    const session = await AgentSession.open(
-      {
-        command: "/bin/sh",
-        args: [
-          "-c",
-          `${process.execPath} -e 'setTimeout(()=>{},30000)' ${marker} & ` +
-            `exec ${process.execPath} --experimental-strip-types ${stub}`,
-        ],
-      },
-      { cwd, onEvent: (event) => events.push(event) },
-    );
-    expect(await session.prompt("hello")).toBe("end_turn");
+  it.skipIf(process.platform === "win32")(
+    "reaps the agent and everything it spawned when the session closes",
+    async () => {
+      // The shipped presets are all `npx -y <pkg>`, so the agent is a grandchild of the process this
+      // holds. `sh -c` reproduces that shape offline: a marker process in the background, the stub
+      // `exec`d in the foreground so the session really opens.
+      const marker = "aibuildos-orphan-session";
+      const session = await AgentSession.open(
+        {
+          command: "/bin/sh",
+          args: [
+            "-c",
+            `${process.execPath} -e 'setTimeout(()=>{},30000)' ${marker} & ` +
+              `exec ${process.execPath} --experimental-strip-types ${stub}`,
+          ],
+        },
+        { cwd, onEvent: (event) => events.push(event) },
+      );
+      expect(await session.prompt("hello")).toBe("end_turn");
 
-    await session.close();
-    await new Promise((resolve) => setTimeout(resolve, 300));
+      await session.close();
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
-    const survivors = execFileSync("/bin/sh", ["-c", `pgrep -f ${marker} || true`], {
-      encoding: "utf8",
-    }).trim();
-    expect(survivors).toBe("");
-  });
+      expect(survivorsOf(marker)).toBe("");
+    },
+  );
 
   it("refuses to prompt a session that has been closed", async () => {
     const session = await start();
@@ -195,7 +208,7 @@ describe("what the agent asks and what it offers", () => {
 
   afterEach(async () => {
     for (const session of open) await session.close();
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   const start = async (
@@ -260,7 +273,12 @@ describe("what the agent asks and what it offers", () => {
   it("reports what the agent offers, and reports nothing when it offers nothing", async () => {
     const offering = await start("controls");
     expect(offering.offered.modes?.availableModes.map((m) => m.id)).toEqual(["plan", "code"]);
-    expect(offering.offered.configOptions?.map((o) => o.id)).toEqual(["model", "thought_level"]);
+    expect(offering.offered.configOptions?.map((o) => o.id)).toEqual([
+      "model",
+      "thought_level",
+      "style",
+      "permission_mode",
+    ]);
 
     const silent = await start("rich");
     // Absent, not an empty set of choices — the difference the design turns on.
@@ -291,5 +309,134 @@ describe("what the agent asks and what it offers", () => {
     const value = (commands as unknown as { value: { availableCommands: { name: string }[] } })
       .value;
     expect(value.availableCommands.map((c) => c.name)).toEqual(["review"]);
+  });
+});
+
+describe("the typed-record extension (RQ-0052, DC-0028)", () => {
+  let cwd: string;
+  let events: BaseEvent[];
+  let open: AgentSession[];
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "aibuildos-session-"));
+    events = [];
+    open = [];
+  });
+
+  afterEach(async () => {
+    for (const session of open) await session.close();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  const start = async (
+    args: string[],
+    extra: Partial<{
+      onPlan: (payload: unknown) => Promise<unknown>;
+      onVerdict: (payload: unknown) => void;
+    }> = {},
+  ) => {
+    const session = await AgentSession.open(
+      { command: process.execPath, args: ["--experimental-strip-types", stub, ...args] },
+      { cwd, onEvent: (event) => events.push(event), ...extra },
+    );
+    open.push(session);
+    return session;
+  };
+
+  const transcript = (): string =>
+    events
+      .filter((e) => e.type === "TEXT_MESSAGE_CONTENT")
+      .map((e) => (e as unknown as { delta: string }).delta)
+      .join("");
+
+  it("retains what initialize advertised, and an agent advertising nothing answers null", async () => {
+    const advertising = await start(["--mode=typed-record"]);
+    expect(advertising.extension(TYPED_RECORD)).toEqual({ version: 1 });
+
+    // The baseline negative control (RQ-0052#AC-4): every other mode advertises nothing, and
+    // absent is the answer — not an empty object to be mistaken for support.
+    const baseline = await start([]);
+    expect(baseline.extension(TYPED_RECORD)).toBeNull();
+    expect(baseline.extension("aibuildos/some-other-extension")).toBeNull();
+  });
+
+  it("carries a typed plan to the handler and the handler's answer back, payload whole", async () => {
+    const proposals: unknown[] = [];
+    const session = await start(["--mode=typed-record"], {
+      onPlan: async (payload) => {
+        proposals.push(payload);
+        return { accepted: true, ids: ["ST-0001", "TC-0001"] };
+      },
+    });
+    await session.prompt("Plan RQ-0001 please");
+
+    // The handler saw the agent's payload as data — including `_meta`, which the known update
+    // kinds strip and an extension payload must keep.
+    expect(proposals).toHaveLength(1);
+    const payload = proposals[0] as {
+      _meta: Record<string, unknown>;
+      stories: { implements: string[] }[];
+    };
+    expect(payload.stories[0]?.implements).toEqual(["RQ-0001"]);
+    expect(payload._meta).toEqual({ [TYPED_RECORD]: { attempt: 1 } });
+
+    // The same payload rode the bridge as a CUSTOM event, whole (TC-0121) — no new door.
+    const [proposal] = named(events, CUSTOM.planProposal);
+    const value = (proposal as unknown as { value: { payload: unknown; response: unknown } }).value;
+    expect(value.payload).toEqual(payload);
+    expect(value.response).toEqual({ accepted: true, ids: ["ST-0001", "TC-0001"] });
+
+    // And the agent acted on the acceptance it was handed back.
+    expect(transcript()).toContain("Proposed 1 typed stories.");
+  });
+
+  it("rejects back with findings, and the agent retries conforming", async () => {
+    const proposals: { title: string }[] = [];
+    const session = await start(["--mode=typed-record", "--flaky-plan"], {
+      onPlan: async (payload) => {
+        const first = (payload as { stories: { title: string }[] }).stories[0];
+        if (first) proposals.push(first);
+        return first?.title === ""
+          ? {
+              accepted: false,
+              findings: [{ rule: "plan/schema", severity: "error", message: "title is empty" }],
+            }
+          : { accepted: true, ids: ["ST-0001", "TC-0001"] };
+      },
+    });
+    await session.prompt("Plan RQ-0001 please");
+
+    // Two proposals: the non-conforming one, then the retry the findings prompted (RQ-0052#AC-1).
+    expect(proposals.map((story) => story.title)).toEqual(["", "Deliver RQ-0001"]);
+    expect(named(events, CUSTOM.planProposal)).toHaveLength(2);
+    expect(transcript()).toContain("Plan rejected; retrying.");
+    expect(transcript()).toContain("Proposed 1 typed stories.");
+  });
+
+  it("refuses a plan when nobody is wired to accept one", async () => {
+    // No `onPlan`: the agent still gets an answer it can act on, not a protocol error.
+    const session = await start(["--mode=typed-record"]);
+    await session.prompt("Plan RQ-0001 please");
+    expect(transcript()).toContain("The plan was rejected.");
+  });
+
+  it("delivers a typed verdict, forwarded whole as an event", async () => {
+    const verdicts: unknown[] = [];
+    const session = await start(["--mode=typed-record"], {
+      onVerdict: (payload) => verdicts.push(payload),
+    });
+    await session.prompt("run the checks for TC-0031");
+
+    expect(verdicts).toEqual([
+      {
+        sessionId: "stub-session",
+        testCaseId: "TC-0031",
+        result: "passed",
+        ranAt: "2026-08-20T00:00:00Z",
+      },
+    ]);
+    const [verdict] = named(events, CUSTOM.checkVerdict);
+    expect((verdict as unknown as { value: unknown }).value).toEqual(verdicts[0]);
+    expect(transcript()).toContain("Reported passed for TC-0031.");
   });
 });

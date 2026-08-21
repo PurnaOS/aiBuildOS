@@ -59,6 +59,7 @@ async function open(options: { bundle?: boolean; identity?: boolean } = {}): Pro
       ...process.env,
       AIBUILDOS_PROJECTS_FILE: join(config, "projects.json"),
       AIBUILDOS_HARNESSES_FILE: join(config, "harnesses.json"),
+      AIBUILDOS_SETTINGS_FILE: join(config, "settings.json"),
       // A repository with no identity means no identity in *any* scope — `git config user.name`
       // reads the global and system files too, and this machine has one.
       ...(options.identity === false
@@ -113,7 +114,11 @@ test("mints an artifact of a type the project's own profile declares", async () 
   await w.getByTestId("new-artifact").click();
 
   // The project's vocabulary, and not an abstract type: nothing can be a WorkItem directly.
-  const offered = await w.getByTestId("new-artifact-type").locator("option").allTextContents();
+  // `allTextContents` reads once and never retries, so it can outrun the render that
+  // fills the select — CI proved it with an empty list. Wait for the options first.
+  const offeredOptions = w.getByTestId("new-artifact-type").locator("option");
+  await expect(offeredOptions.first()).toBeAttached();
+  const offered = await offeredOptions.allTextContents();
   expect(offered.join(" ")).toContain("Requirement · RQ");
   expect(offered.join(" ")).toContain("TestCase · TC");
   expect(offered.join(" ")).not.toContain("WorkItem");

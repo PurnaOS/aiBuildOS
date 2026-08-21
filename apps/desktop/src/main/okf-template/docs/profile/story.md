@@ -10,6 +10,7 @@ states:
   initial: draft
   transitions:
     - { from: draft,    to: ready }
+    - { from: ready,    to: draft }
     - { from: ready,    to: queued }
     - { from: queued,   to: building }
     - { from: building, to: review }

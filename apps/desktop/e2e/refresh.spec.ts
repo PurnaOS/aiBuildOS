@@ -77,6 +77,7 @@ test("picks up what a turn changed, and what the user saves", async () => {
       ...process.env,
       AIBUILDOS_PROJECTS_FILE: join(config, "projects.json"),
       AIBUILDOS_HARNESSES_FILE: join(config, "harnesses.json"),
+      AIBUILDOS_SETTINGS_FILE: join(config, "settings.json"),
     },
   });
   const w = await app.firstWindow();
@@ -84,7 +85,9 @@ test("picks up what a turn changed, and what the user saves", async () => {
   await w.getByTestId("project-open").first().click();
   await w.getByTestId("workspace").waitFor();
 
-  await expect(w.getByTestId("record-empty")).toBeVisible();
+  // The scaffold's playbooks are the whole record so far; the requirement arrives mid-turn below.
+  await expect(w.getByTestId("record-open-PB-0001")).toBeVisible();
+  await expect(w.getByTestId("record-open-RQ-0001")).toHaveCount(0);
 
   // Something already open, so there is a directory that could go stale rather than be read fresh.
   await w.getByTestId("file-row").filter({ hasText: "docs" }).first().click();

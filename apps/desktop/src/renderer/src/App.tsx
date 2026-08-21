@@ -29,6 +29,16 @@ export function App(): React.JSX.Element {
   const activeProjectId = useUiStore((state) => state.activeProjectId);
   const openProject = useUiStore((state) => state.openProject);
   const closeProject = useUiStore((state) => state.closeProject);
+  // Opening is a main-process fact as well as a view change: `project:open` marks the registry's
+  // lastOpened and starts the watcher (RQ-0026#AC-7) — the view never waits on it, and a failure
+  // costs freshness, not the workspace.
+  const open = useCallback(
+    (id: string) => {
+      void window.aibuildos.invoke("project:open", { id }).catch(() => undefined);
+      openProject(id);
+    },
+    [openProject],
+  );
 
   // One owner of each list, passed down: see `useHarnesses` and `useProjects`.
   const harnessState = useHarnesses();
@@ -125,7 +135,12 @@ export function App(): React.JSX.Element {
           <button
             type="button"
             data-testid="project-close"
-            onClick={closeProject}
+            onClick={() => {
+              // The main-process half of "nobody has it open any more" (RQ-0026#AC-7): stops the
+              // watcher before the store forgets which project this was.
+              void window.aibuildos.invoke("project:close", { id: activeProjectId });
+              closeProject();
+            }}
             className={`mt-auto w-full rounded px-2 py-1 text-left text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 ${focusRing}`}
           >
             Close project
@@ -154,7 +169,7 @@ export function App(): React.JSX.Element {
               <AppearancePanel />
             </div>
           ) : (
-            <LaunchPage {...projectState} onOpen={openProject} />
+            <LaunchPage {...projectState} onOpen={open} />
           )}
         </main>
       )}

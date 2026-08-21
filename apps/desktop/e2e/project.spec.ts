@@ -21,6 +21,7 @@ async function launch(config: string, chooses: string): Promise<ElectronApplicat
       ...process.env,
       AIBUILDOS_PROJECTS_FILE: join(config, "projects.json"),
       AIBUILDOS_HARNESSES_FILE: join(config, "harnesses.json"),
+      AIBUILDOS_SETTINGS_FILE: join(config, "settings.json"),
       // The scaffold's first commit needs an identity, and CI has none configured.
       GIT_AUTHOR_NAME: "Test",
       GIT_AUTHOR_EMAIL: "test@example.com",
@@ -87,8 +88,18 @@ test("creates, lists, opens and closes a project, and survives a restart", async
     await expect(window.getByTestId("record-rail")).toBeVisible();
     await expect(window.getByTestId("files-rail")).toBeVisible();
     await expect(window.getByTestId("tab-chat")).toBeVisible();
-    // A freshly created project has a bundle and no artifacts in it, which is not an error.
-    await expect(window.getByTestId("record-empty")).toBeVisible();
+    // A freshly created project has a bundle whose only artifacts are the standard playbooks
+    // (RQ-0013#AC-4): an empty backlog, not an empty record.
+    await expect(window.getByTestId("record-open-PB-0001")).toBeVisible();
+    await expect(window.getByTestId("record-empty")).toHaveCount(0);
+    // TC-0080 (RQ-0028#AC-1): the instructions any agent reads are already on disk, at the root
+    // the files rail shows.
+    await expect(window.getByTestId("file-row").filter({ hasText: "AGENTS.md" })).toBeVisible();
+    await expect(window.getByTestId("file-row").filter({ hasText: "CLAUDE.md" })).toBeVisible();
+    // TC-0117 (RQ-0049#AC-3): the attached harness is a stub with no hook support, so this create
+    // produced no hook file and no error — instructions only, exactly as before RQ-0049. The
+    // hook-supporting path is TC-0117's unit binding, `scaffold.test.ts`.
+    expect(existsSync(join(workspace, "demo", ".claude"))).toBe(false);
 
     // Closing returns to the ledger without a restart (ST-0004#AC-6).
     await window.getByTestId("project-close").click();
