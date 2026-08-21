@@ -72,3 +72,4 @@ back to [docs/README.md](../README.md)
 | [ST-0062](st-0062.md) | The activity dock | ready | [RQ-0044](../requirements/rq-0044.md) · [EP-0013](../epics/ep-0013.md) · [TC-0111](../testing/tc-0111.md), [TC-0112](../testing/tc-0112.md) |
 | [ST-0063](st-0063.md) | One permission card | ready | [RQ-0044](../requirements/rq-0044.md) · [EP-0013](../epics/ep-0013.md) · [TC-0113](../testing/tc-0113.md), [TC-0114](../testing/tc-0114.md) |
 | [ST-0064](st-0064.md) | Three surfaces | ready | [RQ-0045](../requirements/rq-0045.md) · [EP-0013](../epics/ep-0013.md) · [TC-0115](../testing/tc-0115.md), [TC-0116](../testing/tc-0116.md) |
+| [ST-0065](st-0065.md) | A kill reaches the whole process tree | ready | [RQ-0019](../requirements/rq-0019.md), [RQ-0025](../requirements/rq-0025.md) · [EP-0012](../epics/ep-0012.md) · [TC-0057](../testing/tc-0057.md), [TC-0070](../testing/tc-0070.md) |
