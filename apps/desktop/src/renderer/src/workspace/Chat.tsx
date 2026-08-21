@@ -1,11 +1,18 @@
 import { CopilotKit, useCopilotChatInternal } from "@copilotkit/react-core";
-import { CopilotChat } from "@copilotkit/react-ui";
+import {
+  CopilotChat,
+  UserMessage as DefaultUserMessage,
+  type UserMessageProps,
+} from "@copilotkit/react-ui";
+import { Terminal } from "lucide-react";
 import { type ComponentProps, useEffect, useState } from "react";
 import { useHarnesses } from "../harness/HarnessPanel.js";
 import type { Session } from "../session/useSession.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { AgentPopover, SupervisionPill, useAgentControls } from "./AgentPopover.js";
 import { Composer, ComposerMenuProvider, StarterCards } from "./Composer.js";
+import { useSessionCommands } from "./commands.js";
+import { commandLine } from "./composerCommands.js";
 import { AsksAssistantMessage } from "./QuestionCard.js";
 import type { Tab } from "./TabStrip.js";
 import { ToolCallCard } from "./ToolCallCard.js";
@@ -54,6 +61,10 @@ export function Chat({
     state.status === "ready" ? state.sessionId : null,
     state.status === "ready" ? state.offered : {},
   );
+  // What the harness says it can do, live and replaced whole (RQ-0051#AC-3) — the store, not
+  // `controls.commands`, because a withdrawal has to reach the menu and the popover's own state
+  // merges nothing. Nullable sessionId for the same reason `useAgentControls` takes one.
+  const commands = useSessionCommands(state.status === "ready" ? state.sessionId : null);
   const pick = async (harnessId: string): Promise<void> => {
     setStartedWith(harnessId);
     await start(harnessId);
@@ -89,7 +100,7 @@ export function Chat({
             projectId={projectId}
             harnesses={harnesses}
             attachedHarness={attachedHarness}
-            commands={controls.commands}
+            commands={[...commands]}
             sessionId={state.sessionId}
             onOpen={onOpen}
           >
@@ -100,6 +111,7 @@ export function Chat({
                 <CopilotChat
                   className="h-full"
                   AssistantMessage={AsksAssistantMessage}
+                  UserMessage={CommandUserMessage}
                   Input={Composer}
                 />
               </ToolSessionContext>
@@ -169,6 +181,41 @@ export function Chat({
         </div>
       </div>
     </Centred>
+  );
+}
+
+/**
+ * `CopilotChat`'s `UserMessage` seam (RQ-0051#AC-2, ST-0069): an invocation reads as a command, not
+ * as a prose bubble. `AsksAssistantMessage`'s counterpart, and it works the same way — one question
+ * asked of the message, and anything that is not a command line falls straight through to the
+ * default component, untouched.
+ *
+ * The card is [RQ-0031](../../../../../docs/requirements/rq-0031.md)'s chrome, deliberately: the same
+ * rule, icon, eyebrow and monospace line an execute call gets in `ToolCallCard.tsx`, so a command the
+ * person ran and a command the agent ran read as the same kind of thing. It is not that card — a send
+ * has no output, no outcome and no duration to show, and inventing them would be a lie.
+ *
+ * Which command it is comes from the text, because the text is all a send carries:
+ * `InputProps.onSend` takes a string, so there is nothing to tag it with (`commandLine`'s own note).
+ */
+function CommandUserMessage(props: UserMessageProps): React.JSX.Element {
+  const content = props.message?.content;
+  const command = typeof content === "string" ? commandLine(content) : null;
+
+  if (command === null) return <DefaultUserMessage {...props} />;
+
+  return (
+    <div
+      data-testid="command-message"
+      className="my-2 flex overflow-hidden rounded border border-neutral-200 dark:border-neutral-800"
+    >
+      <span aria-hidden className="w-0.5 shrink-0 bg-neutral-200 dark:bg-neutral-800" />
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5">
+        <Terminal size={12} className="shrink-0 text-neutral-500" aria-hidden />
+        <span className={eyebrow}>command</span>
+        <span className={`min-w-0 flex-1 truncate text-xs ${mono}`}>{command}</span>
+      </div>
+    </div>
   );
 }
 

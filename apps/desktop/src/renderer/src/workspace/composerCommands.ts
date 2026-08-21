@@ -20,6 +20,8 @@ import type { PlaybookButton } from "./playbooks.js";
  *   same collision rule `groupAgentSettings` follows for two same-named settings.
  * - **RQ-0051#AC-2** — an entry carries the text invoking it sends: `/name`, exactly, and nothing
  *   else. The echo stub proves that string crossed the wire, so it must not be decorated here.
+ *   `commandLine` is that criterion's other half — how the transcript recognises the send it just
+ *   made and draws a card instead of prose.
  * - **RQ-0051#AC-3 / TC-0123** — the Commands section is *absent* when the session advertises
  *   nothing, rather than present and empty. `commands.ts` replaces the list wholesale, so a
  *   withdrawal down to nothing simply stops producing this section.
@@ -40,6 +42,29 @@ export interface CommandEntry {
   readonly description: string | undefined;
   /** Exactly what invoking sends (AC-2): `/name`, no trailing space, nothing appended. */
   readonly prompt: string;
+}
+
+/**
+ * The command line a sent user message *is*, or `null` when it is ordinary prose (AC-2's second
+ * half). `Chat.tsx`'s `UserMessage` slot draws the first as a command card and lets the second fall
+ * through to CopilotKit's own bubble.
+ *
+ * Judged by shape at send time, deliberately, rather than by looking the name up in what the session
+ * currently advertises: a transcript is a record of what was sent, and a live lookup would demote an
+ * already-sent invocation back to prose the moment the harness withdrew that command — which is a
+ * path AC-3 makes routine, not hypothetical. Shape is also all there is on the send side:
+ * `InputProps.onSend` carries a string, so nothing can ride along with it to be read back here.
+ *
+ * One line, a leading `/`, and a first token that reads as a name — which is what tells `/review` and
+ * `/review the diff` apart from a pasted `/Users/…`, whose first token runs straight into another
+ * separator.
+ */
+// ponytail: shape only, so a typed `/notacommand` reads as a command card too. Narrow it to the
+// names the *send* saw advertised if that ever misleads — never to the live list.
+export function commandLine(text: string): string | null {
+  const line = text.trim();
+  if (line.includes("\n")) return null;
+  return /^\/[A-Za-z][\w:-]*(?:\s|$)/.test(line) ? line : null;
 }
 
 /**

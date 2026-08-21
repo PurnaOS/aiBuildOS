@@ -65,15 +65,25 @@ export function commandsIn(event: {
  *
  * Subscribes *before* asking what was already known, because an agent announces its commands as the
  * session opens — long before any menu exists to hear it — and the answer must not land on top of a
- * newer update. Main writes its cache before forwarding the event, so a snapshot taken after a
- * subscription is never staler than what that subscription has already applied; `sawEvent` is all
- * the ordering this needs. Hydration is unconditional otherwise: a menu that unmounted through a
- * withdrawal and mounted again must not trust what the store still holds.
+ * newer update. Main writes its cache before forwarding the event, so within one run of this effect
+ * a snapshot taken after the subscription is never staler than what that subscription has already
+ * applied; `sawEvent` is all the ordering *that* needs.
+ *
+ * `live` is the other half, and the one `sawEvent` cannot cover: the effect re-runs when `sessionId`
+ * changes, and an invoke still in flight from the previous run belongs to a subscription that is
+ * already gone — its `sawEvent` stays false however much the new subscription has applied since. A
+ * session walked S → T → S would otherwise let the first run's late answer overwrite a withdrawal
+ * the second has already applied, putting a withdrawn command back (AC-3). Same `live` flag
+ * `ComposerMenuProvider` uses on its own load.
+ *
+ * Hydration is unconditional otherwise: a menu that unmounted through a withdrawal and mounted
+ * again must not trust what the store still holds.
  */
 export function useSessionCommands(sessionId: string | null): readonly Command[] {
   useEffect(() => {
     if (sessionId === null) return;
     let sawEvent = false;
+    let live = true;
 
     const unsubscribe = window.aibuildos.subscribe("session:event", (payload) => {
       if (payload.sessionId !== sessionId) return;
@@ -86,11 +96,14 @@ export function useSessionCommands(sessionId: string | null): readonly Command[]
     });
 
     void window.aibuildos.invoke("session:controls", { sessionId }).then((known) => {
-      if (sawEvent) return;
+      if (sawEvent || !live) return;
       setCommands(sessionId, known.commands as unknown as Command[]);
     });
 
-    return unsubscribe;
+    return () => {
+      live = false;
+      unsubscribe();
+    };
   }, [sessionId]);
 
   return useSyncExternalStore(subscribeCommands, () => getCommands(sessionId));

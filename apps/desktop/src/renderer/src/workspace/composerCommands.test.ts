@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composerMenu } from "./composerCommands.js";
+import { commandLine, composerMenu } from "./composerCommands.js";
 
 /**
  * RQ-0051#AC-1 and AC-2, as functions: the composer's menu groups by origin, keeps the harness's own
@@ -98,5 +98,45 @@ describe("the composer menu, grouped by origin", () => {
     const sections = composerMenu([], [{ name: "x" }], "the attached harness");
 
     expect(sections[1]?.heading).toBe("Commands — the attached harness");
+  });
+});
+
+/**
+ * AC-2's second half: what the transcript draws as a command card. `Chat.tsx`'s `UserMessage` slot
+ * is the only consumer; every edge that decides card-or-prose is decided here, where no renderer is
+ * needed to ask (AR-0002).
+ */
+describe("recognising a command in the transcript", () => {
+  it("reads what the menu sends as the command it is", () => {
+    // The exact string `composerMenu` produced, round-tripped: the two halves of AC-2 agree.
+    expect(commandLine("/run-tests")).toBe("/run-tests");
+    expect(commandLine("/plugin:skill")).toBe("/plugin:skill");
+  });
+
+  it("keeps the arguments a typed invocation carries", () => {
+    expect(commandLine("/review the working tree")).toBe("/review the working tree");
+  });
+
+  it("reads prose as prose", () => {
+    expect(commandLine("Please review the working tree")).toBeNull();
+    expect(commandLine("")).toBeNull();
+    expect(commandLine("   ")).toBeNull();
+  });
+
+  it("does not mistake a pasted path for a command", () => {
+    expect(commandLine("/Users/srini/code/aiBuildOS")).toBeNull();
+    expect(commandLine("/ ")).toBeNull();
+    expect(commandLine("/2fast")).toBeNull();
+  });
+
+  it("reads anything longer than a line as the message it is", () => {
+    // A playbook body starts with its own heading, not a slash — but an agent instruction pasted
+    // under a command line is still a message, not a command.
+    expect(commandLine("/review\nand then explain it")).toBeNull();
+  });
+
+  it("ignores the whitespace a composer leaves behind", () => {
+    expect(commandLine("  /review  ")).toBe("/review");
+    expect(commandLine("/review\n")).toBe("/review");
   });
 });
