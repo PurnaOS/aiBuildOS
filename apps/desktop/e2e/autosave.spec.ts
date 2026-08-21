@@ -37,7 +37,7 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
         id: "h",
         displayName: "Stub",
         command: process.execPath,
-        args: ["--experimental-strip-types", stub, "--mode=slow"],
+        args: ["--experimental-strip-types", stub, "--mode=slower"],
       },
     ]),
   );
@@ -153,11 +153,14 @@ test("holds the write while a turn is streaming, then makes it", async () => {
   await w.getByTestId("start-h").click();
   await w.getByTestId("chat").waitFor({ timeout: 20000 });
 
-  // `--mode=slow` streams for long enough to type underneath it.
+  // Everything below has to happen *under* a live turn — the held write and the tab's mark both
+  // key off streaming (RQ-0008#AC-3), so the turn ending early is the test losing its subject, not
+  // the app misbehaving. `--mode=slower` streams ~6s and the assertion below proves it started.
   const composer = w.locator("textarea, [contenteditable=true]").first();
   await composer.click();
   await composer.fill("please proceed");
   await w.keyboard.press("Enter");
+  await expect(w.getByTestId("tab-working-chat")).toBeVisible({ timeout: 10000 });
 
   await w.getByTestId("file-row").filter({ hasText: "notes.md" }).click();
   await expect(w.getByTestId("file-tab")).toBeVisible();
