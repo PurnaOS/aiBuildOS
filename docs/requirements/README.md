@@ -56,7 +56,7 @@ back to [docs/README.md](../README.md)
 | [RQ-0046](rq-0046.md) | Publish to a live URL | draft | [EP-0014](../epics/ep-0014.md) |
 | [RQ-0047](rq-0047.md) | Releases are part of the record | draft | [EP-0014](../epics/ep-0014.md) |
 | [RQ-0048](rq-0048.md) | A requirement can carry a design | draft | [EP-0015](../epics/ep-0015.md) |
-| [RQ-0049](rq-0049.md) | Guardrails are enforcement | built | [EP-0016](../epics/ep-0016.md) |
-| [RQ-0050](rq-0050.md) | Supervision reaches the harness | built | [EP-0016](../epics/ep-0016.md) |
-| [RQ-0051](rq-0051.md) | Playbooks know the harness's commands | built | [EP-0016](../epics/ep-0016.md) |
-| [RQ-0052](rq-0052.md) | Plans and verdicts arrive typed | built | [EP-0016](../epics/ep-0016.md) |
+| [RQ-0049](rq-0049.md) | Guardrails are enforcement | verified | [EP-0016](../epics/ep-0016.md) |
+| [RQ-0050](rq-0050.md) | Supervision reaches the harness | verified | [EP-0016](../epics/ep-0016.md) |
+| [RQ-0051](rq-0051.md) | Playbooks know the harness's commands | verified | [EP-0016](../epics/ep-0016.md) |
+| [RQ-0052](rq-0052.md) | Plans and verdicts arrive typed | verified | [EP-0016](../epics/ep-0016.md) |

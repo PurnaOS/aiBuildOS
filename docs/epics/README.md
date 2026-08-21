@@ -23,4 +23,4 @@ back to [docs/README.md](../README.md)
 | [EP-0013](ep-0013.md) | The workspace flows | done | [RQ-0041](../requirements/rq-0041.md), [RQ-0042](../requirements/rq-0042.md), [RQ-0043](../requirements/rq-0043.md), [RQ-0044](../requirements/rq-0044.md), [RQ-0045](../requirements/rq-0045.md) |
 | [EP-0014](ep-0014.md) | Ship it | draft | [RQ-0046](../requirements/rq-0046.md), [RQ-0047](../requirements/rq-0047.md) |
 | [EP-0015](ep-0015.md) | Design before build | draft | [RQ-0048](../requirements/rq-0048.md) |
-| [EP-0016](ep-0016.md) | The harness, fully driven | active | [RQ-0049](../requirements/rq-0049.md), [RQ-0050](../requirements/rq-0050.md), [RQ-0051](../requirements/rq-0051.md), [RQ-0052](../requirements/rq-0052.md) |
+| [EP-0016](ep-0016.md) | The harness, fully driven | done | [RQ-0049](../requirements/rq-0049.md), [RQ-0050](../requirements/rq-0050.md), [RQ-0051](../requirements/rq-0051.md), [RQ-0052](../requirements/rq-0052.md) |
