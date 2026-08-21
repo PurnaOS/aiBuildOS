@@ -28,6 +28,18 @@ export const HarnessSchema = z.object({
   command: z.string().min(1),
   args: z.array(z.string()),
   cwd: z.string().optional(),
+  /**
+   * Per-supervision-level agent config to apply when a session opens at that level (EP-0016,
+   * RQ-0050): the agent's own config option (`configId`) set to `value`. Partial on purpose — a
+   * harness may configure one level, both, or neither, and every hand-written harnesses.json from
+   * before this field keeps validating.
+   */
+  supervisionOptions: z
+    .partialRecord(
+      z.enum(["closest", "hands-off"]),
+      z.object({ configId: z.string(), value: z.string() }),
+    )
+    .optional(),
 });
 
 const AuthMethodSchema = z.object({ id: z.string(), name: z.string() });
