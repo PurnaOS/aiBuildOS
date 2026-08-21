@@ -96,6 +96,12 @@ test("creates, lists, opens and closes a project, and survives a restart", async
     // the files rail shows.
     await expect(window.getByTestId("file-row").filter({ hasText: "AGENTS.md" })).toBeVisible();
     await expect(window.getByTestId("file-row").filter({ hasText: "CLAUDE.md" })).toBeVisible();
+    // TC-0117 (RQ-0049#AC-1): the guardrail hooks are seeded beside them — listed in the rail,
+    // real on disk. The attached harness is a stub with no hook support, so their presence as
+    // inert files, in a create that succeeded, is also RQ-0049#AC-3.
+    await expect(window.getByTestId("file-row").filter({ hasText: ".claude" })).toBeVisible();
+    expect(existsSync(join(workspace, "demo", ".claude", "settings.json"))).toBe(true);
+    expect(existsSync(join(workspace, "demo", ".claude", "hooks", "guard-record.sh"))).toBe(true);
 
     // Closing returns to the ledger without a restart (ST-0004#AC-6).
     await window.getByTestId("project-close").click();
