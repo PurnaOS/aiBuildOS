@@ -159,16 +159,28 @@ test("offers the current state, its legal next states, and only legal link targe
 
   // The current state plus exactly what Requirement's transitions declare from `draft` — not the
   // whole vocabulary (RQ-0010#AC-1).
-  const states = await w.getByTestId("artifact-state").locator("option").allTextContents();
+  // `allTextContents` reads once and never retries, so it can outrun the render that
+  // fills the select — CI proved it with an empty list. Wait for the options first.
+  const statesOptions = w.getByTestId("artifact-state").locator("option");
+  await expect(statesOptions.first()).toBeAttached();
+  const states = await statesOptions.allTextContents();
   expect(states).toEqual(["draft", "ready", "retired"]);
 
   // `verified_by` targets TestCase, so the requirement next door is not on offer for it.
-  const verifiers = await w.getByTestId("link-add-verified_by").locator("option").allTextContents();
+  // `allTextContents` reads once and never retries, so it can outrun the render that
+  // fills the select — CI proved it with an empty list. Wait for the options first.
+  const verifiersOptions = w.getByTestId("link-add-verified_by").locator("option");
+  await expect(verifiersOptions.first()).toBeAttached();
+  const verifiers = await verifiersOptions.allTextContents();
   expect(verifiers.join(" ")).toContain("TC-0001");
   expect(verifiers.join(" ")).not.toContain("RQ-0002");
 
   // `depends_on` targets Requirement, so the test case is not on offer for that one.
-  const depends = await w.getByTestId("link-add-depends_on").locator("option").allTextContents();
+  // `allTextContents` reads once and never retries, so it can outrun the render that
+  // fills the select — CI proved it with an empty list. Wait for the options first.
+  const dependsOptions = w.getByTestId("link-add-depends_on").locator("option");
+  await expect(dependsOptions.first()).toBeAttached();
+  const depends = await dependsOptions.allTextContents();
   expect(depends.join(" ")).toContain("RQ-0002");
   expect(depends.join(" ")).not.toContain("TC-0001");
 

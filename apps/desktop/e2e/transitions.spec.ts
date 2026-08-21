@@ -108,7 +108,11 @@ test("offers the current state and exactly its legal next states", async () => {
 
   // `draft` plus what Requirement's transitions declare from there — not the whole vocabulary
   // (`building`, `built` and `verified` are all reachable only later, not from here).
-  const states = await w.getByTestId("artifact-state").locator("option").allTextContents();
+  // `allTextContents` reads once and never retries, so it can outrun the render that
+  // fills the select — CI proved it with an empty list. Wait for the options first.
+  const statesOptions = w.getByTestId("artifact-state").locator("option");
+  await expect(statesOptions.first()).toBeAttached();
+  const states = await statesOptions.allTextContents();
   expect(states).toEqual(["draft", "ready", "retired"]);
 
   await app.close();
@@ -197,7 +201,11 @@ test("a state written outside the application is shown as found, with only retir
 
   // The control must report what the file says, not correct it to the first state it does declare.
   await expect(w.getByTestId("artifact-state")).toHaveValue("nonsense");
-  const states = await w.getByTestId("artifact-state").locator("option").allTextContents();
+  // `allTextContents` reads once and never retries, so it can outrun the render that
+  // fills the select — CI proved it with an empty list. Wait for the options first.
+  const statesOptions = w.getByTestId("artifact-state").locator("option");
+  await expect(statesOptions.first()).toBeAttached();
+  const states = await statesOptions.allTextContents();
   expect(states).toEqual(["nonsense", "retired"]);
 
   await app.close();
