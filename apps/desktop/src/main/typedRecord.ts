@@ -154,8 +154,10 @@ function land(
     const doc = parseOkfDocument(source);
     files.push({
       artifact: {
-        file: join("docs", dir, basename),
-        dir: join("docs", dir),
+        // Forward slashes, not `join`: these are engine-facing paths compared against `loadBundle`'s
+        // '/'-normalized artifact files and index keys, and win32 `join` would miss every one.
+        file: `docs/${dir}/${basename}`,
+        dir: `docs/${dir}`,
         basename,
         frontmatter: doc.frontmatter,
         body: doc.body,
@@ -218,7 +220,7 @@ function land(
   // is a validation error, so a directory with no index simply leaves the findings to say so.
   const indexes = new Map(bundle.indexes);
   for (const file of files) {
-    const key = join("docs", file.dir);
+    const key = `docs/${file.dir}`;
     const index = indexes.get(key);
     if (index !== undefined) indexes.set(key, insertIndexRow(index, file.row));
   }
@@ -252,7 +254,7 @@ function land(
     }
     for (const [key, text] of indexes) {
       if (bundle.indexes.get(key) === text) continue;
-      writeFileSync(insideProject(projectPath, join(key, "README.md")), text, "utf8");
+      writeFileSync(insideProject(projectPath, `${key}/README.md`), text, "utf8");
     }
   } catch (cause) {
     for (const target of written) rmSync(target, { force: true });
