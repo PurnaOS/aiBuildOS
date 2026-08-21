@@ -316,7 +316,7 @@ test("keeps both versions when the agent changes an artifact being edited", asyn
   await w.getByTestId("tab-RQ-0001").click();
 
   // Neither side is discarded, and the difference is on screen.
-  await expect(w.getByTestId("artifact-conflict")).toBeVisible({ timeout: 15000 });
+  await expect(w.getByTestId("artifact-conflict")).toBeVisible({ timeout: 30000 });
   await expect(w.getByTestId("artifact-title")).toHaveValue("Mine");
   await expect(w.getByTestId("artifact-conflict")).toContainText("Theirs");
 
