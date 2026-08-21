@@ -101,8 +101,8 @@ describe("loadBundle", () => {
     // Same walk, different base: the CLI reports repo-relative paths, the app project-relative ones.
     const { bundle: fromRoot } = loadBundle(root);
     expect(fromRoot.artifacts.map((a) => a.file).sort()).toEqual([
-      join("requirements", "rq-0001.md"),
-      join("requirements", "rq-0002.md"),
+      "requirements/rq-0001.md",
+      "requirements/rq-0002.md",
     ]);
   });
 
