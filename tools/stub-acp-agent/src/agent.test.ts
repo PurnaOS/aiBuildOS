@@ -84,11 +84,9 @@ describe("stub ACP agent", () => {
   }, 20_000);
 
   it("advertises the typed-record extension in `_meta` only in typed-record mode", async () => {
-    const [advertising] = await exchange(
-      [{ jsonrpc: "2.0", id: 1, method: "initialize" }],
-      1,
-      ["--mode=typed-record"],
-    );
+    const [advertising] = await exchange([{ jsonrpc: "2.0", id: 1, method: "initialize" }], 1, [
+      "--mode=typed-record",
+    ]);
     expect(advertising).toMatchObject({
       result: { agentCapabilities: { _meta: { "aibuildos/typed-record": { version: 1 } } } },
     });

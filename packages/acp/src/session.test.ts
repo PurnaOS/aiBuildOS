@@ -6,12 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { BaseEvent } from "@ag-ui/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CUSTOM } from "./bridge.js";
-import {
-  AgentSession,
-  type PermissionRequest,
-  SessionError,
-  TYPED_RECORD,
-} from "./session.js";
+import { AgentSession, type PermissionRequest, SessionError, TYPED_RECORD } from "./session.js";
 
 /**
  * TC-0015 and TC-0017. A session that stays open, streams everything, cancels cleanly, and asks.
@@ -387,8 +382,7 @@ describe("the typed-record extension (RQ-0052, DC-0028)", () => {
 
     // The same payload rode the bridge as a CUSTOM event, whole (TC-0121) — no new door.
     const [proposal] = named(events, CUSTOM.planProposal);
-    const value = (proposal as unknown as { value: { payload: unknown; response: unknown } })
-      .value;
+    const value = (proposal as unknown as { value: { payload: unknown; response: unknown } }).value;
     expect(value.payload).toEqual(payload);
     expect(value.response).toEqual({ accepted: true, ids: ["ST-0001", "TC-0001"] });
 
