@@ -13,7 +13,13 @@ import { validate } from "@aibuildos/knowledge-engine";
 import { loadBundle, summarize } from "@aibuildos/knowledge-engine/load";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { commitAll, git, recentCommits, repoRoot } from "./git.js";
-import { bundleFiles, claimProjectDirectory, fillProject, scaffoldProject } from "./scaffold.js";
+import {
+  bundleFiles,
+  claimProjectDirectory,
+  fillProject,
+  harnessSupportsHooks,
+  scaffoldProject,
+} from "./scaffold.js";
 
 /**
  * TC-0006. A created project is a repository with one commit and a valid, empty OKF bundle.
@@ -210,7 +216,8 @@ describe("scaffolding a project", () => {
   });
 
   it("seeds the guardrail hooks beside the instructions, the script executable (RQ-0049#AC-1)", async () => {
-    const dir = await scaffoldProject(parent, "demo");
+    // `true`: a hook-supporting harness is configured — the gate `ipc.ts` computes from the store.
+    const dir = await scaffoldProject(parent, "demo", true);
 
     expect(existsSync(join(dir, ".claude", "settings.json"))).toBe(true);
     const script = join(dir, ".claude", "hooks", "guard-record.sh");
@@ -227,12 +234,37 @@ describe("scaffolding a project", () => {
   });
 
   /**
+   * TC-0117 (RQ-0049#AC-3, ST-0066#AC-3). A harness without hook support produces no hook file and
+   * no error: the project scaffolds exactly as it did before RQ-0049 — instructions only.
+   */
+  it("writes no hook file for a harness without hook support, and does not fail", async () => {
+    const dir = await scaffoldProject(parent, "demo");
+
+    expect(existsSync(join(dir, ".claude"))).toBe(false);
+    expect(existsSync(join(dir, "AGENTS.md"))).toBe(true);
+    // The create still commits — no error rode along with the absence (RQ-0049#AC-3).
+    expect(await recentCommits(dir)).toHaveLength(1);
+  });
+
+  /** Hook support is read off the launch spec, the only signal the store keeps. */
+  it("recognises a Claude Code launch spec as hook-supporting, and a plainer one as not", () => {
+    expect(
+      harnessSupportsHooks({
+        command: "npx",
+        args: ["-y", "@agentclientprotocol/claude-agent-acp"],
+      }),
+    ).toBe(true);
+    expect(harnessSupportsHooks({ command: "claude-code-acp", args: [] })).toBe(true);
+    expect(harnessSupportsHooks({ command: "true", args: [] })).toBe(false);
+  });
+
+  /**
    * TC-0118 (RQ-0049 / ST-0066#AC-4). The scaffolded hooks are harness hooks, not git hooks: the
    * app's own checkpoint commits (`commitAll`, the same call `checkpointWorktree` rides) succeed
    * in a project carrying them.
    */
   it("does not block the app's own commits in a hook-carrying project", async () => {
-    const dir = await scaffoldProject(parent, "demo");
+    const dir = await scaffoldProject(parent, "demo", true);
 
     writeFileSync(join(dir, "notes.txt"), "turn work\n", "utf8");
     await commitAll(dir, "checkpoint: ST-0000 turn 1");

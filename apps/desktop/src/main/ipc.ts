@@ -80,7 +80,7 @@ import {
   setSupervision,
 } from "./projects.js";
 import { applyArtifactEdit, findingsFor, insideProject } from "./record.js";
-import { claimProjectDirectory, fillProject } from "./scaffold.js";
+import { claimProjectDirectory, fillProject, harnessSupportsHooks } from "./scaffold.js";
 import { BUSY_CAP, SessionRegistry } from "./sessions.js";
 import { DEFAULTS, readSettings, saveSettings, settingsFile } from "./settings.js";
 import {
@@ -475,7 +475,9 @@ function createHandlers(
       const project = addProject(projectFile(), { name, path });
 
       try {
-        await fillProject(path, name);
+        // The `.claude/` guardrail layer is seeded only when a configured harness reads it
+        // (RQ-0049#AC-3); with none, this create is instructions-only, exactly as before RQ-0049.
+        await fillProject(path, name, loadHarnesses(harnessFile()).some(harnessSupportsHooks));
         return { ok: true, project };
       } catch (cause) {
         return failure(cause);
@@ -847,7 +849,14 @@ function createHandlers(
 
     "project:seed-playbooks": ({ id }) => {
       const project = requireProject(id);
-      return { problem: seedPlaybooks(project.path) };
+      // Same harness gate as `project:create` — a re-seed after Claude Code is configured is how
+      // an older project gains the guardrail layer (RQ-0049#AC-1).
+      return {
+        problem: seedPlaybooks(
+          project.path,
+          loadHarnesses(harnessFile()).some(harnessSupportsHooks),
+        ),
+      };
     },
 
     "project:stage": async ({ id, path }) => {

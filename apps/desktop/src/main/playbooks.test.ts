@@ -63,7 +63,7 @@ describe("seeding playbooks into an adopted project", () => {
   it("refuses without a configured identity — writing no artifacts, but still the hooks", () => {
     adopt({ playbooks: false, profileType: false, hooks: false });
 
-    const problem = seedPlaybooks(dir);
+    const problem = seedPlaybooks(dir, true);
 
     expect(problem).toContain("user.name");
     expect(existsSync(join(dir, "docs", "playbooks"))).toBe(false);
@@ -154,7 +154,7 @@ describe("seeding playbooks into an adopted project", () => {
     adopt({ playbooks: true, profileType: true, hooks: false });
     execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
 
-    const problem = seedPlaybooks(dir);
+    const problem = seedPlaybooks(dir, true);
 
     // The refusal is unchanged; the guardrails landed anyway.
     expect(problem).toContain("already has playbook");
@@ -168,12 +168,26 @@ describe("seeding playbooks into an adopted project", () => {
     writeFileSync(join(dir, ".claude", "settings.json"), '{ "hooks": {} }\n', "utf8");
     execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
 
-    expect(seedPlaybooks(dir)).toBeNull();
+    expect(seedPlaybooks(dir, true)).toBeNull();
 
     // The project's own settings, untouched — not the template's.
     expect(readFileSync(join(dir, ".claude", "settings.json"), "utf8")).toBe('{ "hooks": {} }\n');
     // The script was genuinely absent, so it is still written.
     expect(existsSync(join(dir, ".claude", "hooks", "guard-record.sh"))).toBe(true);
+  });
+
+  /**
+   * TC-0117 (RQ-0049#AC-3, ST-0066#AC-3). A harness without hook support produces no hook file and
+   * no error: the seed writes the playbooks exactly as it did before RQ-0049.
+   */
+  it("writes no hook file for a harness without hook support, and does not fail", () => {
+    adopt({ playbooks: false, profileType: false, hooks: false });
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+
+    expect(seedPlaybooks(dir)).toBeNull();
+
+    expect(existsSync(join(dir, ".claude"))).toBe(false);
+    expect(existsSync(join(dir, "docs", "playbooks", "pb-0001.md"))).toBe(true);
   });
 
   it("refuses when the project already has a playbook, and writes nothing else", () => {
