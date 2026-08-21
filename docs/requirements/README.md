@@ -53,3 +53,10 @@ back to [docs/README.md](../README.md)
 | [RQ-0043](rq-0043.md) | Playbooks live in the composer | ready | [EP-0013](../epics/ep-0013.md), [ST-0061](../user-stories/st-0061.md) · [TC-0109](../testing/tc-0109.md), [TC-0110](../testing/tc-0110.md) |
 | [RQ-0044](rq-0044.md) | The activity dock | ready | [EP-0013](../epics/ep-0013.md), [ST-0062](../user-stories/st-0062.md), [ST-0063](../user-stories/st-0063.md) · [TC-0111](../testing/tc-0111.md), [TC-0112](../testing/tc-0112.md), [TC-0113](../testing/tc-0113.md), [TC-0114](../testing/tc-0114.md) |
 | [RQ-0045](rq-0045.md) | Three surfaces, no nested strips | ready | [EP-0013](../epics/ep-0013.md), [ST-0064](../user-stories/st-0064.md) · [TC-0115](../testing/tc-0115.md), [TC-0116](../testing/tc-0116.md) |
+| [RQ-0046](rq-0046.md) | Publish to a live URL | draft | [EP-0014](../epics/ep-0014.md) |
+| [RQ-0047](rq-0047.md) | Releases are part of the record | draft | [EP-0014](../epics/ep-0014.md) |
+| [RQ-0048](rq-0048.md) | A requirement can carry a design | draft | [EP-0015](../epics/ep-0015.md) |
+| [RQ-0049](rq-0049.md) | Guardrails are enforcement | draft | [EP-0016](../epics/ep-0016.md) |
+| [RQ-0050](rq-0050.md) | Supervision reaches the harness | draft | [EP-0016](../epics/ep-0016.md) |
+| [RQ-0051](rq-0051.md) | Playbooks know the harness's commands | draft | [EP-0016](../epics/ep-0016.md) |
+| [RQ-0052](rq-0052.md) | Plans and verdicts arrive typed | draft | [EP-0016](../epics/ep-0016.md) |

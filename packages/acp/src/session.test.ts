@@ -51,7 +51,7 @@ describe("a live agent session", () => {
 
   afterEach(async () => {
     for (const session of open) await session.close();
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   const start = async (
@@ -208,7 +208,7 @@ describe("what the agent asks and what it offers", () => {
 
   afterEach(async () => {
     for (const session of open) await session.close();
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   const start = async (

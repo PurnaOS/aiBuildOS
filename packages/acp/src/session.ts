@@ -15,6 +15,7 @@ import {
 } from "@agentclientprotocol/sdk";
 import { SessionBridge } from "./bridge.js";
 import type { LaunchSpec } from "./index.js";
+import { killTree, spawnDetached } from "./reap.js";
 
 /**
  * A live agent session, held open across prompts (ST-0009).
@@ -137,7 +138,7 @@ export class AgentSession {
     const child = spawn(spec.command, [...spec.args], {
       cwd: options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      detached: true,
+      detached: spawnDetached,
     });
 
     let stderr = "";
@@ -372,19 +373,4 @@ function isAuthRequired(cause: unknown): boolean {
 function describe(cause: unknown): string {
   if (cause instanceof Error) return cause.message;
   return typeof cause === "string" ? cause : JSON.stringify(cause);
-}
-
-/**
- * Kill the whole process group.
- *
- * The presets launch through `npx`, so the agent is a grandchild; killing only the child leaves it
- * running and holding its pipes.
- */
-function killTree(child: ChildProcess): void {
-  if (child.pid === undefined || child.exitCode !== null) return;
-  try {
-    process.kill(-child.pid, "SIGTERM");
-  } catch {
-    // Already gone, or never had a group. Nothing left to do either way.
-  }
 }

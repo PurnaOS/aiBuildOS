@@ -10,6 +10,7 @@ import {
   RequestError,
 } from "@agentclientprotocol/sdk";
 import type { LaunchSpec } from "./index.js";
+import { killTree, spawnDetached } from "./reap.js";
 
 /**
  * The harness probe: spawn an agent, complete a full ACP round trip, report what happened, and
@@ -109,9 +110,9 @@ export async function probeHarness(spec: LaunchSpec, options: ProbeOptions): Pro
   const child = spawn(spec.command, [...spec.args], {
     cwd: options.cwd,
     stdio: ["pipe", "pipe", "pipe"],
-    // The presets launch through `npx`, so the agent is a grandchild. Its own process group is what
-    // makes it killable; without this, killing `npx` leaves the agent holding its pipes.
-    detached: true,
+    // The presets launch through `npx`, so the agent is a grandchild. On POSIX its own process
+    // group is what makes it killable; Windows reaps by tree instead (see reap.ts).
+    detached: spawnDetached,
   });
 
   child.stderr.setEncoding("utf8");
@@ -221,22 +222,9 @@ export async function probeHarness(spec: LaunchSpec, options: ProbeOptions): Pro
     return { ok: false, ...classify(cause, stage, how), stderr, authMethods };
   } finally {
     run.catch(() => undefined);
-    kill(child.pid);
-  }
-}
-
-/**
- * Signals the whole process group, so an agent launched through `npx` dies with its launcher.
- *
- * ponytail: SIGTERM only, no SIGKILL escalation — an agent that traps SIGTERM survives a probe.
- * Add a grace period and a follow-up SIGKILL if a real agent turns out to ignore it.
- */
-function kill(pid: number | undefined): void {
-  if (pid === undefined) return;
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch {
-    // ESRCH: the group is already gone, which is the outcome we wanted.
+    // ponytail: SIGTERM only (POSIX), no SIGKILL escalation — an agent that traps SIGTERM survives
+    // a probe. Add a grace period and a follow-up SIGKILL if a real agent turns out to ignore it.
+    killTree(child);
   }
 }
 

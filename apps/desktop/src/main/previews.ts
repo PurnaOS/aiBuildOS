@@ -3,9 +3,9 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { get as httpGet } from "node:http";
 import { get as httpsGet } from "node:https";
 import { join } from "node:path";
+import { killTree, spawnDetached } from "@aibuildos/acp/reap";
 import { parseOkfDocument } from "@aibuildos/knowledge-engine";
 import { BrowserWindow, WebContentsView } from "electron";
-import { killTree, spawnDetached } from "./reap.js";
 
 /**
  * Previews (RQ-0025, DC-0012): the project's declared run command as a child server, rendered in a

@@ -1,8 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { killTree, spawnDetached } from "@aibuildos/acp/reap";
 import { parseOkfDocument } from "@aibuildos/knowledge-engine";
-import { killTree, spawnDetached } from "./reap.js";
 
 /**
  * The project's checks (RQ-0019, ST-0033): the fenced ` ```check ` commands of every active checks
@@ -106,7 +106,9 @@ function runOne(
 
     child.on("close", (code) => {
       forget();
-      const outcome = code === 0 ? "passed" : code === 127 ? "could_not_run" : "failed";
+      // 127 is POSIX sh's "command not found"; 9009 is cmd.exe's ("not recognized").
+      const notFound = code === 127 || (process.platform === "win32" && code === 9009);
+      const outcome = code === 0 ? "passed" : notFound ? "could_not_run" : "failed";
       resolve({ command, outcome, exitCode: code });
     });
   });

@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./probe": "./src/probe.ts",
     "./bridge": "./src/bridge.ts",
-    "./session": "./src/session.ts"
+    "./session": "./src/session.ts",
+    "./reap": "./src/reap.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -21,3 +21,6 @@ back to [docs/README.md](../README.md)
 | [EP-0011](ep-0011.md) | Git end to end | ready | [RQ-0032](../requirements/rq-0032.md), [RQ-0033](../requirements/rq-0033.md), [RQ-0034](../requirements/rq-0034.md), [RQ-0035](../requirements/rq-0035.md), [RQ-0036](../requirements/rq-0036.md), [RQ-0037](../requirements/rq-0037.md) |
 | [EP-0012](ep-0012.md) | Shells and background work | ready | [RQ-0038](../requirements/rq-0038.md), [RQ-0039](../requirements/rq-0039.md), [RQ-0040](../requirements/rq-0040.md) |
 | [EP-0013](ep-0013.md) | The workspace flows | ready | [RQ-0041](../requirements/rq-0041.md), [RQ-0042](../requirements/rq-0042.md), [RQ-0043](../requirements/rq-0043.md), [RQ-0044](../requirements/rq-0044.md), [RQ-0045](../requirements/rq-0045.md) |
+| [EP-0014](ep-0014.md) | Ship it | draft | [RQ-0046](../requirements/rq-0046.md), [RQ-0047](../requirements/rq-0047.md) |
+| [EP-0015](ep-0015.md) | Design before build | draft | [RQ-0048](../requirements/rq-0048.md) |
+| [EP-0016](ep-0016.md) | The harness, fully driven | draft | [RQ-0049](../requirements/rq-0049.md), [RQ-0050](../requirements/rq-0050.md), [RQ-0051](../requirements/rq-0051.md), [RQ-0052](../requirements/rq-0052.md) |

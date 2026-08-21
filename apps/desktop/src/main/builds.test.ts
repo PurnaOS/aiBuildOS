@@ -119,8 +119,9 @@ describe("the build's flip", () => {
   afterEach(async () => {
     await sessions.closeAll();
     delete process.env.AIBUILDOS_WORKTREES_ROOT;
-    rmSync(worktrees, { recursive: true, force: true });
-    for (const work of projects) rmSync(work, { recursive: true, force: true });
+    rmSync(worktrees, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    for (const work of projects)
+      rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it("flips the story to review in the build's own project when its turn ends, no renderer anywhere", async () => {

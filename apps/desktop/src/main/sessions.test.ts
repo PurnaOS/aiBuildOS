@@ -65,7 +65,7 @@ describe("the supervision policy", () => {
   });
 
   afterEach(() => {
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   const start = async () => {
