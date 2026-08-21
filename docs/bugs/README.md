@@ -17,3 +17,4 @@ back to [docs/README.md](../README.md)
 | [BG-0007](bg-0007.md) | A build finishing after a project switch flips the wrong project's story | done | [RQ-0021](../requirements/rq-0021.md) · [ST-0041](../user-stories/st-0041.md) · [TC-0073](../testing/tc-0073.md) |
 | [BG-0008](bg-0008.md) | A build session's transcript shows no tool calls | done | [RQ-0021](../requirements/rq-0021.md) · [ST-0042](../user-stories/st-0042.md) · [TC-0074](../testing/tc-0074.md) |
 | [BG-0009](bg-0009.md) | Killing a check or preview reaches only the shell wrapper, not the work | done | [RQ-0019](../requirements/rq-0019.md), [RQ-0025](../requirements/rq-0025.md) · [ST-0065](../user-stories/st-0065.md) · [TC-0057](../testing/tc-0057.md), [TC-0070](../testing/tc-0070.md) |
+| [BG-0010](bg-0010.md) | A directory index can disagree with the artifact it lists, and nothing says so | draft | [RQ-0003](../requirements/rq-0003.md), [RQ-0012](../requirements/rq-0012.md) |
