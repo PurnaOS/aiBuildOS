@@ -33,6 +33,21 @@ import { SessionRegistry } from "./sessions.js";
  * `builds.ts`'s own exported verbs with no session anywhere in the picture. `listBuilds` still wants
  * a `SessionRegistry` to ask what is live; an idle one answers truthfully that nothing is.
  */
+/**
+ * The same directory, however each side spells it.
+ *
+ * Git reports a worktree's path in its own dialect: forward slashes on Windows, and the *long*
+ * name where Node's `mkdtemp` handed back an 8.3 short one (`RUNNER~1` vs `runneradmin`) — CI
+ * proved both. macOS differs a third way, reaching temp through the `/var` → `/private/var`
+ * symlink. Comparing spellings tests the platform; comparing the directory tests the code.
+ */
+function sameDirectory(reported: string | undefined, expected: string): boolean {
+  if (reported === undefined) return false;
+  const key = (path: string): string =>
+    realpathSync.native(path).replaceAll("\\", "/").toLowerCase();
+  return key(reported) === key(expected);
+}
+
 describe("worktree builds", () => {
   let main: string;
   let root: string;
@@ -175,9 +190,7 @@ describe("worktree builds", () => {
     const before = (await listBuilds(sessions, main)).builds.find((b) => b.storyId === "ST-0052");
     expect(before?.sprintId).toBeNull();
     expect(before?.ahead).toBe(0);
-    // `realpathSync`: macOS reaches a temp directory through a symlink (`/var` → `/private/var`),
-    // and Git reports the resolved path (the file's own top comment hits this too).
-    expect(before?.path).toBe(realpathSync(wtPath));
+    expect(sameDirectory(before?.path, wtPath)).toBe(true);
 
     writeFileSync(join(wtPath, "notes.md"), "hello\n");
     await checkpointWorktree(wtPath, "checkpoint: ST-0052 turn 1");
@@ -353,7 +366,7 @@ describe("sprint worktrees", () => {
 
     const row = builds.find((b) => b.storyId === "ST-0051");
     expect(row?.sprintId).toBe("SP-0006");
-    expect(row?.path).toBe(realpathSync(storyWtPath));
+    expect(sameDirectory(row?.path, storyWtPath)).toBe(true);
     expect(row?.ahead).toBe(1);
 
     const sprintRow = sprints.find((s) => s.sprintId === "SP-0006");
