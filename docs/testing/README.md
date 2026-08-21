@@ -124,3 +124,11 @@ back to [docs/README.md](../README.md)
 | [TC-0114](tc-0114.md) | The same card answers from the dock and the tab | draft | [RQ-0044](../requirements/rq-0044.md)#AC-6 |
 | [TC-0115](tc-0115.md) | Three pinned surfaces, one Column | draft | [RQ-0045](../requirements/rq-0045.md)#AC-1, #AC-3 |
 | [TC-0116](tc-0116.md) | Plan is browsable, and Build goes parallel | draft | [RQ-0045](../requirements/rq-0045.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0117](tc-0117.md) | Scaffolding writes valid guardrail hooks, and only where they belong | draft | [RQ-0049](../requirements/rq-0049.md)#AC-1, #AC-3 |
+| [TC-0118](tc-0118.md) | A live harness is actually stopped by the scaffolded guardrails | draft | [RQ-0049](../requirements/rq-0049.md)#AC-2, #AC-4 |
+| [TC-0119](tc-0119.md) | Supervision level sets the mapped option, per session and on change | draft | [RQ-0050](../requirements/rq-0050.md)#AC-1, #AC-2 |
+| [TC-0120](tc-0120.md) | Both sides of the wire agree about supervision, honestly | draft | [RQ-0050](../requirements/rq-0050.md)#AC-3, #AC-4 |
+| [TC-0121](tc-0121.md) | Capabilities are kept, extensions negotiated, payloads forwarded whole | draft | [RQ-0052](../requirements/rq-0052.md)#AC-3, #AC-4 |
+| [TC-0122](tc-0122.md) | A typed plan lands validated; a baseline agent still plans in prose | draft | [RQ-0052](../requirements/rq-0052.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0123](tc-0123.md) | Commands sit beside playbooks, and the list is alive | draft | [RQ-0051](../requirements/rq-0051.md)#AC-1, #AC-3 |
+| [TC-0124](tc-0124.md) | Invoking a command sends the harness's text and reads like a command | draft | [RQ-0051](../requirements/rq-0051.md)#AC-2 |
