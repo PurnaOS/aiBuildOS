@@ -1,5 +1,13 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative as nodeRelative } from "node:path";
+import { hasFrontmatter, parseOkfDocument } from "./parse.js";
+import {
+  type Profile,
+  type ProfileIssue,
+  type RawTypeDefinition,
+  resolveProfile,
+} from "./profile.js";
+import type { Bundle, LoadedArtifact } from "./validate.js";
 
 /**
  * Bundle paths are the graph's keys and the findings' addresses, and they are compared against
@@ -9,14 +17,6 @@ import { join, relative as nodeRelative } from "node:path";
  * the bundle.
  */
 const relative = (from: string, to: string): string => nodeRelative(from, to).replaceAll("\\", "/");
-import { hasFrontmatter, parseOkfDocument } from "./parse.js";
-import {
-  type Profile,
-  type ProfileIssue,
-  type RawTypeDefinition,
-  resolveProfile,
-} from "./profile.js";
-import type { Bundle, LoadedArtifact } from "./validate.js";
 
 /**
  * Reading a bundle off disk (ST-0005, TC-0009).
