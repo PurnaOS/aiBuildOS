@@ -6,7 +6,8 @@ import { Plus, Send, Square } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { button, card, eyebrow, field, focusRing, mono, primary } from "../ui.js";
 import { Activity } from "./Activity.js";
-import type { Command } from "./agentControls.js";
+import { useSessionCommands } from "./commands.js";
+import { composerMenu } from "./composerCommands.js";
 import {
   backgroundHarnessId,
   compose,
@@ -44,7 +45,9 @@ interface ComposerMenuValue {
   seed: () => Promise<void>;
   seeding: boolean;
   seedProblem: string | null;
-  commands: Command[];
+  /** The harness this session was started with — the origin the Commands heading names
+   * (RQ-0051#AC-1), the same string `AgentPopover` groups its options under. */
+  attachedHarness: string;
   /** Starts a playbook exactly as the old strip did: sends at once, or — for intake — opens the
    * idea prompt first. The one function both the `+` menu and the starter cards call, so "picking
    * a card is the same action as the menu entry" (RQ-0043#AC-3) is true by construction. */
@@ -79,7 +82,6 @@ export function ComposerMenuProvider({
   projectId,
   harnesses,
   attachedHarness,
-  commands,
   sessionId,
   onOpen,
   children,
@@ -87,7 +89,6 @@ export function ComposerMenuProvider({
   projectId: string;
   harnesses: { id: string; displayName: string }[] | null;
   attachedHarness: string;
-  commands: Command[];
   sessionId: string;
   /** Opens the `session:<id>` tab a background run starts (RQ-0039#AC-3) — the same tab-opening
    * callback every other surface already threads through, `Workspace.tsx`'s `tabs.open`. */
@@ -247,7 +248,7 @@ export function ComposerMenuProvider({
         seed,
         seeding,
         seedProblem,
-        commands,
+        attachedHarness,
         start,
         startBackground,
         backgroundStarting,
@@ -366,13 +367,17 @@ export function Composer({
     seed,
     seeding,
     seedProblem,
-    commands,
+    attachedHarness,
     start,
     startBackground,
     backgroundStarting,
     backgroundProblems,
     sessionId,
   } = useComposerMenu();
+  // What this menu offers, by origin (RQ-0051#AC-1): the project's playbooks, then — only when the
+  // session advertises any — the harness's own commands. Subscribed here rather than passed down,
+  // because this is the only surface that renders them; the store hydrates a later mount itself.
+  const sections = composerMenu(playbooks ?? [], useSessionCommands(sessionId), attachedHarness);
   const [text, setText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [isComposing, setIsComposing] = useState(false);
@@ -385,12 +390,6 @@ export function Composer({
     if (!canSend) return;
     void onSend(text);
     setText("");
-    textareaRef.current?.focus();
-  };
-
-  const insertCommand = (name: string): void => {
-    setText(`/${name} `);
-    setMenuOpen(false);
     textareaRef.current?.focus();
   };
 
@@ -420,71 +419,87 @@ export function Composer({
               sideOffset={4}
               className="z-20 max-h-[60vh] w-80 overflow-auto rounded border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-800 dark:bg-neutral-950"
             >
-              <p className={`${eyebrow} px-1`}>Playbooks</p>
-              <div className="mt-1 flex flex-col items-stretch gap-1">
-                {playbooks === null && <p className="px-1 text-xs text-neutral-500">Loading…</p>}
-                {playbooks !== null && playbooks.length === 0 && (
-                  <div className="px-1">
-                    <button
-                      type="button"
-                      data-testid="seed-playbooks"
-                      className={`${button} text-xs`}
-                      onClick={() => void seed()}
-                      disabled={seeding}
-                    >
-                      {seeding ? "Adding…" : "Add the standard playbooks"}
-                    </button>
-                    {seedProblem !== null && (
-                      <p data-testid="seed-playbooks-problem" className="mt-1 text-xs text-red-600">
-                        {seedProblem}
-                      </p>
+              {/* One section per origin, in order and never interleaved (RQ-0051#AC-1) —
+                  `composerMenu` decides which sections exist, this only draws them. */}
+              {sections.map((section) => (
+                <div key={section.heading} className="mb-2 last:mb-0">
+                  <p className={`${eyebrow} px-1`}>{section.heading}</p>
+                  <div className="mt-1 flex flex-col items-stretch gap-1">
+                    {section.kind === "playbooks" ? (
+                      <>
+                        {/* `playbooks`, not `section.playbooks`: loading and empty are two states
+                            the section itself cannot tell apart, and only one of them seeds. */}
+                        {playbooks === null && (
+                          <p className="px-1 text-xs text-neutral-500">Loading…</p>
+                        )}
+                        {playbooks !== null && playbooks.length === 0 && (
+                          <div className="px-1">
+                            <button
+                              type="button"
+                              data-testid="seed-playbooks"
+                              className={`${button} text-xs`}
+                              onClick={() => void seed()}
+                              disabled={seeding}
+                            >
+                              {seeding ? "Adding…" : "Add the standard playbooks"}
+                            </button>
+                            {seedProblem !== null && (
+                              <p
+                                data-testid="seed-playbooks-problem"
+                                className="mt-1 text-xs text-red-600"
+                              >
+                                {seedProblem}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {section.playbooks.map((playbook) => (
+                          <PlaybookMenuItem
+                            key={playbook.id}
+                            playbook={playbook}
+                            onPress={() => {
+                              start(playbook);
+                              setMenuOpen(false);
+                            }}
+                            // The menu stays open on a background press (RQ-0039#AC-1): a
+                            // `busy_cap` refusal renders right here, where the user pressed —
+                            // closing first would hide it.
+                            onBackgroundPress={() => {
+                              // Closes on success only — a refusal stays put, where it renders.
+                              void startBackground(playbook).then((ok) => {
+                                if (ok) setMenuOpen(false);
+                              });
+                            }}
+                            backgroundBusy={backgroundStarting.has(playbook.id)}
+                            backgroundProblem={backgroundProblems[playbook.id]}
+                          />
+                        ))}
+                      </>
+                    ) : (
+                      section.commands.map((entry) => (
+                        <button
+                          key={entry.key}
+                          type="button"
+                          data-testid={`command-${entry.name}`}
+                          // Sends, rather than typing `/name ` into the textarea: the invocation
+                          // has to cross the wire for the harness to run it (RQ-0051#AC-2), and
+                          // `onSend` is the same path Enter takes.
+                          onClick={() => {
+                            void onSend(entry.prompt);
+                            setMenuOpen(false);
+                          }}
+                          className={`rounded px-2 py-1.5 text-left text-xs hover:bg-neutral-50 dark:hover:bg-neutral-900 ${focusRing}`}
+                        >
+                          <span className={mono}>/{entry.name}</span>
+                          {entry.description !== undefined && (
+                            <span className="text-neutral-500"> — {entry.description}</span>
+                          )}
+                        </button>
+                      ))
                     )}
                   </div>
-                )}
-                {playbooks?.map((playbook) => (
-                  <PlaybookMenuItem
-                    key={playbook.id}
-                    playbook={playbook}
-                    onPress={() => {
-                      start(playbook);
-                      setMenuOpen(false);
-                    }}
-                    // The menu stays open on a background press (RQ-0039#AC-1): a `busy_cap`
-                    // refusal renders right here, where the user pressed — closing first would
-                    // hide it.
-                    onBackgroundPress={() => {
-                      // Closes on success only — a refusal stays put, right where it renders.
-                      void startBackground(playbook).then((ok) => {
-                        if (ok) setMenuOpen(false);
-                      });
-                    }}
-                    backgroundBusy={backgroundStarting.has(playbook.id)}
-                    backgroundProblem={backgroundProblems[playbook.id]}
-                  />
-                ))}
-              </div>
-
-              {commands.length > 0 && (
-                <>
-                  <p className={`${eyebrow} mt-2 px-1`}>Commands</p>
-                  <div className="mt-1 flex flex-col items-stretch gap-1">
-                    {commands.map((command) => (
-                      <button
-                        key={command.name}
-                        type="button"
-                        data-testid={`command-${command.name}`}
-                        onClick={() => insertCommand(command.name)}
-                        className={`rounded px-2 py-1.5 text-left text-xs hover:bg-neutral-50 dark:hover:bg-neutral-900 ${focusRing}`}
-                      >
-                        <span className={mono}>/{command.name}</span>
-                        {command.description !== undefined && (
-                          <span className="text-neutral-500"> — {command.description}</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+                </div>
+              ))}
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>

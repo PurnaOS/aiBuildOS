@@ -4,7 +4,6 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { eyebrow, focusRing, mono } from "../ui.js";
 import {
-  type Command,
   type ConfigOption,
   groupAgentSettings,
   type Mode,
@@ -35,14 +34,13 @@ interface Offered {
 const CUSTOM = {
   mode: "acp.mode",
   configOptions: "acp.config_options",
-  commands: "acp.commands",
 };
 
 /**
  * What the agent is set to, live: loaded once from what the session already knows, then followed
- * as the agent's own `session:event` corrections arrive. Called once, in `Chat.tsx`'s ready branch —
- * the popover renders `modes`/`options`, the composer's `+` menu renders `commands`, and neither
- * re-subscribes on its own.
+ * as the agent's own `session:event` corrections arrive. Settings only — the harness's advertised
+ * commands are `commands.ts`'s per-session store now (RQ-0051), read by the one surface that
+ * renders them, rather than a second copy of the same feed kept here.
  *
  * `sessionId` is nullable so this can be called unconditionally, ahead of `Chat.tsx`'s own
  * `state.status === "ready"` branch, rather than becoming a conditional hook itself.
@@ -54,16 +52,14 @@ export function useAgentControls(
   modes: Mode[];
   modeId: string | null;
   options: ConfigOption[];
-  commands: Command[];
   setMode: (id: string) => void;
   setOption: (option: ConfigOption, value: string) => void;
 } {
   const [modeId, setModeId] = useState(offered.modes?.currentModeId ?? null);
   const [options, setOptions] = useState<ConfigOption[]>(offered.configOptions ?? []);
-  const [commands, setCommands] = useState<Command[]>([]);
 
-  // Where things stood before this mounted. An agent announces its commands and its mode as the
-  // session opens, which is before any of this exists to hear it.
+  // Where things stood before this mounted. An agent announces its mode as the session opens, which
+  // is before any of this exists to hear it.
   useEffect(() => {
     if (sessionId === null) return;
     let live = true;
@@ -72,7 +68,6 @@ export function useAgentControls(
       if (known.modeId !== null) setModeId(known.modeId);
       if (known.configOptions.length > 0)
         setOptions(known.configOptions as unknown as ConfigOption[]);
-      if (known.commands.length > 0) setCommands(known.commands as unknown as Command[]);
     });
     return () => {
       live = false;
@@ -94,9 +89,6 @@ export function useAgentControls(
       if (event.name === CUSTOM.configOptions) {
         setOptions((event.value as { configOptions?: ConfigOption[] })?.configOptions ?? []);
       }
-      if (event.name === CUSTOM.commands) {
-        setCommands((event.value as { availableCommands?: Command[] })?.availableCommands ?? []);
-      }
     });
   }, [sessionId]);
 
@@ -104,7 +96,6 @@ export function useAgentControls(
     modes: offered.modes?.availableModes ?? [],
     modeId,
     options,
-    commands,
     setMode: (id) =>
       void (
         sessionId !== null && window.aibuildos.invoke("session:set-mode", { sessionId, modeId: id })
