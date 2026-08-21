@@ -6,7 +6,7 @@ import { CUSTOM } from "@aibuildos/acp/bridge";
 import type { EventPayload } from "@aibuildos/ipc";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Harness } from "./harnesses.js";
-import { SessionRegistry, type SupervisionLevel } from "./sessions.js";
+import { BUSY_CAP, SessionRegistry, type SupervisionLevel } from "./sessions.js";
 
 /**
  * TC-0060. The supervision policy at the permission flow in main: closest blocks for a person exactly
@@ -125,5 +125,118 @@ describe("the supervision policy", () => {
     expect(permissionEvents[1]?.automatic).toBe(true);
 
     await registry.close(sessionId);
+  });
+});
+
+/**
+ * TC-0101. `busyCount()` — busy means `storyId ≠ null` or `label ≠ null` — is the single check
+ * `build:start` and background `session:start` both consult, `BUSY_CAP` living beside it.
+ */
+describe("the concurrency cap", () => {
+  let cwd: string;
+  let registry: SessionRegistry;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "aibuildos-sessions-cap-"));
+    registry = new SessionRegistry(
+      () => {},
+      () => "closest",
+    );
+  });
+
+  afterEach(async () => {
+    await registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  const startSession = async (storyId: string | null, label: string | null) => {
+    const result = await registry.start(harness, "project-1", cwd, "1.0.0", storyId, label);
+    if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+    return result.sessionId;
+  };
+
+  it("counts builds and background runs together, and never a plain chat, toward the cap", async () => {
+    const build1 = await startSession("story-1", null);
+    const build2 = await startSession("story-2", null);
+    const background = await startSession(null, "Draft requirements");
+
+    // Three busy sessions of any mix — whichever door a fourth start knocks on, both
+    // `build:start` and background `session:start` read this same number and refuse.
+    expect(registry.busyCount()).toBe(BUSY_CAP);
+
+    // Plain chat sessions carry neither field and spend nothing from the cap.
+    const chat1 = await startSession(null, null);
+    const chat2 = await startSession(null, null);
+    expect(registry.busyCount()).toBe(BUSY_CAP);
+
+    // Ending one busy session frees a slot for the next start.
+    await registry.close(build1);
+    expect(registry.busyCount()).toBe(BUSY_CAP - 1);
+
+    await registry.close(build2);
+    await registry.close(background);
+    await registry.close(chat1);
+    await registry.close(chat2);
+  });
+});
+
+/**
+ * TC-0103. Every `session:list` row carries `label` and `startedAt`, and kind is derived from
+ * `storyId`/`label` alone — never stored.
+ */
+describe("session inventory rows", () => {
+  let cwd: string;
+  let registry: SessionRegistry;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "aibuildos-sessions-rows-"));
+    registry = new SessionRegistry(
+      () => {},
+      () => "closest",
+    );
+  });
+
+  afterEach(async () => {
+    await registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  it("carries label and startedAt on a build, a background run and a chat alike, kind derived not stored", async () => {
+    const build = await registry.start(harness, "project-1", cwd, "1.0.0", "story-1", null);
+    const background = await registry.start(
+      harness,
+      "project-1",
+      cwd,
+      "1.0.0",
+      null,
+      "Draft requirements",
+    );
+    const chat = await registry.start(harness, "project-1", cwd, "1.0.0");
+    if (!build.ok || !background.ok || !chat.ok) throw new Error("expected all three to open");
+
+    const rows = registry.list();
+    const byId = new Map(rows.map((row) => [row.sessionId, row]));
+    const buildRow = byId.get(build.sessionId);
+    const backgroundRow = byId.get(background.sessionId);
+    const chatRow = byId.get(chat.sessionId);
+    if (!buildRow || !backgroundRow || !chatRow) throw new Error("expected all three rows");
+
+    for (const row of [buildRow, backgroundRow, chatRow]) {
+      expect(new Date(row.startedAt).toISOString()).toBe(row.startedAt);
+      // No stored kind field anywhere — the row shape itself is the proof.
+      expect(row).not.toHaveProperty("kind");
+    }
+
+    // storyId set reads as build, label set as task, neither as chat.
+    expect(buildRow.storyId).toBe("story-1");
+    expect(buildRow.label).toBeNull();
+    expect(backgroundRow.storyId).toBeNull();
+    expect(backgroundRow.label).toBe("Draft requirements");
+    expect(chatRow.storyId).toBeNull();
+    expect(chatRow.label).toBeNull();
+
+    await registry.close(build.sessionId);
+    await registry.close(background.sessionId);
+    await registry.close(chat.sessionId);
   });
 });

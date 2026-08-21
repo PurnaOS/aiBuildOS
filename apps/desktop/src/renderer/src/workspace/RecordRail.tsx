@@ -309,7 +309,7 @@ export function RecordRail({
   );
 }
 
-function Row({
+export function Row({
   artifact,
   expanded,
   changed,
@@ -398,9 +398,17 @@ function Row({
                   {DERIVED[relationship] ?? relationship}
                 </p>
                 {ids.map((id) => (
-                  <p key={id} className={`py-0.5 text-[11px] text-neutral-500 ${mono}`}>
+                  <button
+                    key={id}
+                    type="button"
+                    data-testid={`record-inbound-${id}`}
+                    // Same call shape the row's own click uses (RQ-0041#AC-1) — a preview open, not
+                    // a pin.
+                    onClick={() => onOpen({ id, kind: "artifact", title: id }, { preview: true })}
+                    className={`block w-full py-0.5 text-left text-[11px] text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 ${mono} ${focusRing}`}
+                  >
                     {id}
-                  </p>
+                  </button>
                 ))}
               </div>
             ))}

@@ -280,10 +280,18 @@ function gitProblem(cause: unknown): { ok: false; code: string; message: string 
   };
 }
 
-/** The real factory arrives with ST-0056 as ipc.ts's one dynamic `import("node-pty")`. */
-const noPty: PtyFactory = () => {
-  throw new Error("terminals are not implemented yet.");
-};
+/**
+ * DC-0026: node-pty is a native module built for Electron's ABI and must never be a top-level
+ * import — vitest runs this file on plain Node, where the binary would throw on load. Resolved
+ * once, on the first `terminal:open`, and reused after.
+ */
+let realPty: PtyFactory | null = null;
+async function ptyFactory(): Promise<PtyFactory> {
+  if (realPty) return realPty;
+  const nodePty = await import("node-pty");
+  realPty = ({ cwd, cols, rows, file }) => nodePty.spawn(file, [], { cwd, cols, rows });
+  return realPty;
+}
 
 function requireProject(id: string) {
   const project = loadProjects(projectFile()).find((candidate) => candidate.id === id);
@@ -979,9 +987,9 @@ function createHandlers(
       return await prStatus(project.path);
     },
 
-    "terminal:open": ({ projectId }) => {
+    "terminal:open": async ({ projectId }) => {
       const project = requireProject(projectId);
-      return openTerminal(noPty, project.id, project.path, (channel, payload) =>
+      return openTerminal(await ptyFactory(), project.id, project.path, (channel, payload) =>
         emitTerminal(channel as "terminal:data" | "terminal:exit", payload),
       );
     },

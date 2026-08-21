@@ -3,15 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  branches,
   commitAll,
   commitStaged,
+  fetchRemote,
   GitError,
   git,
   initRepo,
+  pull,
+  push,
   recentCommits,
   repoRoot,
   stagePath,
   status,
+  toGitError,
   unstagePath,
 } from "./git.js";
 
@@ -350,5 +355,184 @@ describe("the first writes (RQ-0018)", () => {
     const [commit] = await recentCommits(dir);
     expect(commit?.subject).toBe(trickyMessage);
     expect(hash).toMatch(/^[0-9a-f]{40}$/);
+  });
+});
+
+/**
+ * RQ-0032. `toGitError`'s regex mappings, fed canned stderr directly — no real Git run, because
+ * the point is the string matching, not the plumbing `git.test.ts`'s other suites already cover.
+ */
+describe("toGitError's mapped codes (RQ-0032)", () => {
+  it.each([
+    "remote: Invalid username or password.\nfatal: Authentication failed for 'https://example.com/repo.git/'",
+    "fatal: could not read Username for 'https://example.com': No such device or address",
+    "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.",
+    "error: terminal prompts disabled because GIT_TERMINAL_PROMPT=0",
+  ])("maps %j to git_auth", (stderr) => {
+    const error = toGitError({ stderr });
+    expect(error.code).toBe("git_auth");
+    expect(error.stderr).toBe(stderr);
+  });
+
+  it.each([
+    "fatal: No configured push destination.\nEither specify the URL from the command-line or configure a remote repository using\n\n    git remote add <name> <url>",
+    "fatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.",
+    "fatal: no remote repository specified. Please, specify either a URL or a\nremote name from which new revisions should be fetched.",
+  ])("maps %j to no_remote", (stderr) => {
+    const error = toGitError({ stderr });
+    expect(error.code).toBe("no_remote");
+    expect(error.stderr).toBe(stderr);
+  });
+
+  it("falls back to git_failed for a wording neither maps", () => {
+    const error = toGitError({ stderr: "fatal: something else entirely went wrong" });
+    expect(error.code).toBe("git_failed");
+  });
+});
+
+/**
+ * RQ-0032, RQ-0033. Fetch, pull and push against a real bare origin — the same discipline as the
+ * suites above, because there is no second implementation of Git's remote protocol to test
+ * against either.
+ */
+describe("remote sync (RQ-0032, RQ-0033)", () => {
+  let origin: string;
+  let work: string;
+  let branch: string;
+  const extra: string[] = [];
+
+  const identify = async (repo: string): Promise<void> => {
+    await git(repo, "config", "user.name", "Test");
+    await git(repo, "config", "user.email", "test@example.com");
+    await git(repo, "config", "commit.gpgsign", "false");
+    // A machine with this on globally makes a plain `push` on an unpublished branch succeed
+    // without `-u`, which would let the retry path pass without ever exercising it.
+    await git(repo, "config", "push.autoSetupRemote", "false");
+  };
+
+  /** A second clone of `origin`, configured and ready to commit — for the pull/fetch tests. */
+  const cloneFrom = async (): Promise<string> => {
+    const scratch = mkdtempSync(join(tmpdir(), "aibuildos-git-clone-"));
+    extra.push(scratch);
+    await git(scratch, "clone", "--quiet", origin, "clone");
+    const clone = join(scratch, "clone");
+    await identify(clone);
+    return clone;
+  };
+
+  beforeEach(async () => {
+    origin = mkdtempSync(join(tmpdir(), "aibuildos-git-origin-"));
+    work = mkdtempSync(join(tmpdir(), "aibuildos-git-work-"));
+    extra.push(origin, work);
+
+    await git(origin, "init", "--quiet", "--bare");
+    await git(work, "init", "--quiet");
+    await identify(work);
+    writeFileSync(join(work, "a.txt"), "one", "utf8");
+    await commitAll(work, "seed");
+    await git(work, "remote", "add", "origin", origin);
+    // Never hardcoded: `init.defaultBranch` varies by machine.
+    branch = (await git(work, "rev-parse", "--abbrev-ref", "HEAD")).trim();
+  });
+
+  afterEach(() => {
+    for (const d of extra.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  it("publishes a new branch via the retry path, landing the commit in the bare repo", async () => {
+    const result = await push(work);
+
+    expect(result).toEqual({ branch });
+    expect((await git(origin, "rev-parse", branch)).trim()).toBe(
+      (await git(work, "rev-parse", "HEAD")).trim(),
+    );
+  });
+
+  it("pushes plainly once the upstream is set", async () => {
+    await push(work);
+    writeFileSync(join(work, "b.txt"), "two", "utf8");
+    await commitAll(work, "add b");
+
+    const result = await push(work);
+
+    expect(result).toEqual({ branch });
+    expect((await git(origin, "rev-parse", branch)).trim()).toBe(
+      (await git(work, "rev-parse", "HEAD")).trim(),
+    );
+  });
+
+  it("fast-forwards on pull", async () => {
+    await push(work);
+    const clone = await cloneFrom();
+    writeFileSync(join(clone, "c.txt"), "three", "utf8");
+    await commitAll(clone, "add c");
+    await push(clone);
+
+    await pull(work);
+
+    expect((await git(work, "rev-parse", "HEAD")).trim()).toBe(
+      (await git(clone, "rev-parse", "HEAD")).trim(),
+    );
+  });
+
+  it("refuses to pull a diverged branch, in git's own words", async () => {
+    await push(work);
+    const clone = await cloneFrom();
+    writeFileSync(join(clone, "c.txt"), "three", "utf8");
+    await commitAll(clone, "add c");
+    await push(clone);
+
+    // work diverges from what the clone published — neither is an ancestor of the other.
+    writeFileSync(join(work, "d.txt"), "four", "utf8");
+    await commitAll(work, "add d");
+
+    const error = await pull(work).catch((cause) => cause);
+
+    expect(error).toBeInstanceOf(GitError);
+    expect(error.code).toBe("git_failed");
+    expect(error.message.length).toBeGreaterThan(0);
+  });
+
+  it("updates refs/remotes on fetch without touching the working tree", async () => {
+    await push(work);
+    const clone = await cloneFrom();
+    writeFileSync(join(clone, "c.txt"), "three", "utf8");
+    await commitAll(clone, "add c");
+    await push(clone);
+    const before = (await git(work, "rev-parse", "HEAD")).trim();
+
+    await fetchRemote(work);
+
+    expect((await git(work, "rev-parse", "HEAD")).trim()).toBe(before);
+    expect((await git(work, "rev-parse", `origin/${branch}`)).trim()).toBe(
+      (await git(clone, "rev-parse", "HEAD")).trim(),
+    );
+  });
+
+  it("reports ahead 1 behind 0 after pushing and committing locally (RQ-0033#AC-1)", async () => {
+    await push(work);
+    writeFileSync(join(work, "b.txt"), "two", "utf8");
+    await commitAll(work, "add b");
+
+    expect(await status(work)).toMatchObject({ ahead: 1, behind: 0 });
+  });
+
+  it("lists every branch with its upstream and counts, and nulls for one with none (RQ-0033#AC-2,3)", async () => {
+    await push(work);
+    await git(work, "branch", "topic");
+
+    const result = await branches(work);
+
+    expect(result.current).toBe(branch);
+    expect(result.branches.find((b) => b.name === branch)).toMatchObject({
+      upstream: `origin/${branch}`,
+      ahead: 0,
+      behind: 0,
+    });
+    expect(result.branches.find((b) => b.name === "topic")).toMatchObject({
+      upstream: null,
+      ahead: null,
+      behind: null,
+    });
   });
 });

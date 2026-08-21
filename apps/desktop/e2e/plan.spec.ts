@@ -76,11 +76,8 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
   });
   const w = await app.firstWindow();
   await w.setViewportSize({ width: 1440, height: 900 });
-  // Retire's confirm is `PlanTab`'s own plain `window.confirm` — unrelated to `TabStrip`'s close,
-  // which now asks through its own styled dialog (RQ-0029#AC-3) rather than a native one. This
-  // native confirm is still native, so Playwright still dismisses an unhandled one; register before
-  // anything that could trigger it.
-  w.on("dialog", (dialog) => void dialog.accept());
+  // Retire's confirm is now the same Radix dialog idiom `TabStrip`'s close uses (RQ-0041#AC-2) —
+  // no native `window.confirm` left in the renderer to register a handler for.
 
   await w.getByTestId("project-open").first().click();
   await w.getByTestId("workspace").waitFor();
@@ -228,6 +225,7 @@ test("a proposal lands as drafts, is shaped, and approval schedules it", async (
 
   // AC-4/AC-3(ST-0027): a draft retires from the plan with the same tab-close-style confirm.
   await w.getByTestId("plan-story-retire-ST-0002").click();
+  await w.getByTestId("plan-retire-confirm").click();
   await expect(w.getByTestId("plan-story-ST-0002")).toHaveCount(0);
   expect(readFileSync(join(work, "docs/user-stories/st-0002.md"), "utf8")).toContain(
     "state: retired",

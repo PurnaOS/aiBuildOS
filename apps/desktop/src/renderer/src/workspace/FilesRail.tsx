@@ -474,7 +474,7 @@ function CommitBar({
           onClick={() => void commit()}
           className={`${primary} shrink-0 py-1 text-xs ${focusRing}`}
         >
-          Commit
+          Commit staged
         </button>
       </div>
     </div>

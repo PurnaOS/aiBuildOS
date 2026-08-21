@@ -48,7 +48,6 @@ export function NowTab({
 }: {
   projectId: string;
   onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
-  onPrompt: (text: string) => void;
 }): React.JSX.Element {
   const revision = useRevision();
   const [builds, setBuilds] = useState<BuildRow[]>([]);

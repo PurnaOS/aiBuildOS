@@ -1,4 +1,5 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useState } from "react";
 import { Loading } from "../Loading.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
@@ -34,6 +35,9 @@ export function PlanTab({
   const [record, setRecord] = useState<Record_ | null>(null);
   const [refusals, setRefusals] = useState<Record<string, string>>({});
   const [approving, setApproving] = useState(false);
+  /** What Retire is asking about — the application's own dialog (RQ-0041#AC-2), the same Radix
+   * idiom `TabStrip`'s discard dialog uses, in place of `window.confirm` blocking the renderer. */
+  const [retiring, setRetiring] = useState<{ id: string; title: string } | null>(null);
 
   // `revision` is the trigger, not a read — the same rule every other rail follows.
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision is a trigger, not a read
@@ -96,8 +100,13 @@ export function PlanTab({
     }
   };
 
-  const retire = async (artifactId: string, title: string): Promise<void> => {
-    if (!window.confirm(`Retire ${title}? This cannot be undone from the plan.`)) return;
+  const askRetire = (artifactId: string, title: string): void =>
+    setRetiring({ id: artifactId, title });
+
+  const confirmRetire = async (): Promise<void> => {
+    if (retiring === null) return;
+    const { id: artifactId } = retiring;
+    setRetiring(null);
     await window.aibuildos.invoke("project:artifact-save", {
       id: projectId,
       artifactId,
@@ -130,11 +139,53 @@ export function PlanTab({
             group={group}
             projectId={projectId}
             onOpen={onOpen}
-            onRetire={retire}
+            onRetire={askRetire}
             refusals={refusals}
           />
         ))}
       </div>
+
+      {/* The application's own dialog (RQ-0041#AC-2), the `TabStrip` discard idiom: Radix, styled
+          for both appearances, in place of `window.confirm` blocking the renderer. */}
+      <Dialog.Root
+        open={retiring !== null}
+        onOpenChange={(next) => {
+          if (!next) setRetiring(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+          <Dialog.Content
+            data-testid="plan-retire-dialog"
+            className="fixed top-1/2 left-1/2 w-[26rem] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-800 dark:bg-neutral-950"
+          >
+            <Dialog.Title className="text-lg font-semibold tracking-tight">
+              Retire {retiring?.title ?? "this"}?
+            </Dialog.Title>
+            <Dialog.Description className="mt-1 mb-4 text-sm text-neutral-500">
+              This cannot be undone from the plan.
+            </Dialog.Description>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                data-testid="plan-retire-cancel"
+                onClick={() => setRetiring(null)}
+                className={`${button} ${focusRing}`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="plan-retire-confirm"
+                onClick={() => void confirmRetire()}
+                className={`${primary} ${focusRing}`}
+              >
+                Retire
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

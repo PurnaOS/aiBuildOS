@@ -186,7 +186,7 @@ export function Checks({
           onClick={() => hand(failures)}
           className={`${button} ${focusRing} mt-2 text-xs`}
         >
-          Hand this to the agent
+          Hand to main chat
         </button>
       )}
     </div>

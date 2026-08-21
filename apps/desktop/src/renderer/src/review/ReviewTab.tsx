@@ -4,7 +4,6 @@ import { button, eyebrow, field, focusRing, mono, primary } from "../ui.js";
 import { splitBody } from "../workspace/ArtifactTab.js";
 import { Diff } from "../workspace/Diff.js";
 import { useBump, useRevision } from "../workspace/revision.js";
-import type { Tab } from "../workspace/TabStrip.js";
 import { Checks } from "./Checks.js";
 import { ManualChecks } from "./ManualChecks.js";
 import { Preview } from "./Preview.js";
@@ -24,12 +23,10 @@ type DiffResult = ChannelResponse<"project:diff">;
 export function ReviewTab({
   projectId,
   storyId,
-  onOpen: _onOpen,
   onPrompt,
 }: {
   projectId: string;
   storyId: string;
-  onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
   onPrompt: (text: string) => void;
 }): React.JSX.Element {
   const revision = useRevision();
@@ -352,7 +349,9 @@ export function ReviewTab({
                 onClick={() => void sendBack()}
                 className={`${button} ${focusRing} shrink-0`}
               >
-                Send back
+                {/* Names where the note lands (RQ-0041#AC-4): a worktree build's own session, or —
+                    when there is none — the main chat, which `sendBack` itself falls back to. */}
+                {worktree ? "Send back to build session" : "Send back"}
               </button>
             </div>
             <p className="text-[11px] text-neutral-500">
@@ -440,7 +439,7 @@ function CommitOffer({
           onClick={() => void commit()}
           className={`${primary} ${focusRing}`}
         >
-          Commit
+          Commit all changes
         </button>
         <button
           type="button"

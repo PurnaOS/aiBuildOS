@@ -239,7 +239,7 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                   ) : tab.kind === "board" ? (
                     <BoardTab projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
                   ) : tab.kind === "now" ? (
-                    <NowTab projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
+                    <NowTab projectId={projectId} onOpen={tabs.open} />
                   ) : tab.kind === "session" ? (
                     <SessionTab projectId={projectId} sessionId={tab.id.replace(/^session:/, "")} />
                   ) : tab.kind === "plan" ? (
@@ -248,7 +248,6 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                     <ReviewTab
                       projectId={projectId}
                       storyId={tab.id.replace(/^review:/, "")}
-                      onOpen={tabs.open}
                       onPrompt={setPending}
                     />
                   ) : tab.kind === "diff" ? (
