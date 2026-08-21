@@ -38,20 +38,28 @@ import {
   buildChanges,
   buildDiff,
   discardBuild,
+  discardSprint,
   listBuilds,
   listSessions,
   mergeBuild,
+  mergeSprint,
+  resumeBuild,
   startBuild,
+  startSprint,
 } from "./builds.js";
 import { runChecks } from "./checks.js";
 import {
+  branches,
   changes,
   commitStaged,
+  fetchRemote,
   GitError,
   type GitStatus,
   git,
   ignored,
   initRepo,
+  pull,
+  push,
   recentCommits,
   repoRoot,
   stagePath,
@@ -61,6 +69,7 @@ import {
 import { loadHarnesses, removeHarness, saveHarness } from "./harnesses.js";
 import { fileMenuTarget } from "./menus.js";
 import { seedPlaybooks } from "./playbooks.js";
+import { prStatus } from "./pr.js";
 import { setPreviewBounds, startPreview, stopPreview } from "./previews.js";
 import {
   addProject,
@@ -72,8 +81,17 @@ import {
 } from "./projects.js";
 import { applyArtifactEdit, findingsFor, insideProject } from "./record.js";
 import { claimProjectDirectory, fillProject } from "./scaffold.js";
-import { SessionRegistry } from "./sessions.js";
+import { BUSY_CAP, SessionRegistry } from "./sessions.js";
 import { DEFAULTS, readSettings, saveSettings, settingsFile } from "./settings.js";
+import {
+  closeTerminal,
+  killTerminalsForProject,
+  listTerminals,
+  openTerminal,
+  type PtyFactory,
+  resizeTerminal,
+  writeTerminal,
+} from "./terminals.js";
 import { recordGeneration, stopWatching, watchProject } from "./watch.js";
 
 /**
@@ -252,6 +270,21 @@ function problemsFor(
 }
 
 /** Every handler that works on a project starts here. An unknown id is a renderer bug. */
+/** Expected git failures are data (DC-0023): the code the UI branches on, git's own words. */
+function gitProblem(cause: unknown): { ok: false; code: string; message: string } {
+  if (cause instanceof GitError) return { ok: false, code: cause.code, message: cause.message };
+  return {
+    ok: false,
+    code: "git_failed",
+    message: cause instanceof Error ? cause.message : String(cause),
+  };
+}
+
+/** The real factory arrives with ST-0056 as ipc.ts's one dynamic `import("node-pty")`. */
+const noPty: PtyFactory = () => {
+  throw new Error("terminals are not implemented yet.");
+};
+
 function requireProject(id: string) {
   const project = loadProjects(projectFile()).find((candidate) => candidate.id === id);
   if (!project) throw new Error(`no project with id ${id}`);
@@ -346,6 +379,7 @@ function createHandlers(
   sessions: SessionRegistry,
   emitCheckOutput: (payload: { projectId: string; command: string; chunk: string }) => void,
   emitChanged: (payload: { projectId: string }) => void,
+  emitTerminal: (channel: "terminal:data" | "terminal:exit", payload: unknown) => void,
 ): Handlers {
   return {
     "app:info": () => ({
@@ -800,6 +834,7 @@ function createHandlers(
 
     "project:close": ({ id }) => {
       stopWatching(id);
+      killTerminalsForProject(id);
     },
 
     "project:seed-playbooks": ({ id }) => {
@@ -880,6 +915,90 @@ function createHandlers(
       const project = requireProject(projectId);
       return await discardBuild(project.path, storyId);
     },
+
+    "build:resume": async ({ projectId, storyId, harnessId }) => {
+      return await resumeBuild(sessions, projectId, storyId, harnessId);
+    },
+
+    "sprint:start": async ({ projectId, sprintId }) => {
+      const project = requireProject(projectId);
+      return await startSprint(project.path, sprintId);
+    },
+
+    "sprint:merge": async ({ projectId, sprintId }) => {
+      const project = requireProject(projectId);
+      return await mergeSprint(project.path, sprintId);
+    },
+
+    "sprint:discard": async ({ projectId, sprintId }) => {
+      const project = requireProject(projectId);
+      return await discardSprint(project.path, sprintId);
+    },
+
+    "project:fetch": async ({ id }) => {
+      const project = requireProject(id);
+      try {
+        await fetchRemote(project.path);
+        return { ok: true };
+      } catch (cause) {
+        return gitProblem(cause);
+      }
+    },
+
+    "project:pull": async ({ id }) => {
+      const project = requireProject(id);
+      try {
+        await pull(project.path);
+        return { ok: true };
+      } catch (cause) {
+        return gitProblem(cause);
+      }
+    },
+
+    "project:push": async ({ id }) => {
+      const project = requireProject(id);
+      try {
+        const { branch } = await push(project.path);
+        return { ok: true, branch };
+      } catch (cause) {
+        return gitProblem(cause);
+      }
+    },
+
+    "project:branches": async ({ id }) => {
+      const project = requireProject(id);
+      try {
+        return { ...(await branches(project.path)), problem: null };
+      } catch (cause) {
+        return { current: null, branches: [], problem: gitProblem(cause).message };
+      }
+    },
+
+    "project:pr-status": async ({ id }) => {
+      const project = requireProject(id);
+      return await prStatus(project.path);
+    },
+
+    "terminal:open": ({ projectId }) => {
+      const project = requireProject(projectId);
+      return openTerminal(noPty, project.id, project.path, (channel, payload) =>
+        emitTerminal(channel as "terminal:data" | "terminal:exit", payload),
+      );
+    },
+
+    "terminal:input": ({ terminalId, data }) => {
+      writeTerminal(terminalId, data);
+    },
+
+    "terminal:resize": ({ terminalId, cols, rows }) => {
+      resizeTerminal(terminalId, cols, rows);
+    },
+
+    "terminal:close": ({ terminalId }) => {
+      closeTerminal(terminalId);
+    },
+
+    "terminal:list": ({ projectId }) => ({ terminals: listTerminals(projectId) }),
 
     "session:list": () => ({ sessions: listSessions(sessions) }),
 
@@ -1025,7 +1144,7 @@ function createHandlers(
       });
     },
 
-    "session:start": async ({ projectId, harnessId }) => {
+    "session:start": async ({ projectId, harnessId, background }) => {
       const project = loadProjects(projectFile()).find((candidate) => candidate.id === projectId);
       if (!project) {
         return {
@@ -1046,9 +1165,27 @@ function createHandlers(
         };
       }
 
+      // A background run holds one of the same 3 slots builds do (RQ-0039) — one ceiling, raised
+      // deliberately. The main conversation stays uncapped.
+      if (background !== undefined && sessions.busyCount() >= BUSY_CAP) {
+        return {
+          ok: false,
+          code: "busy_cap",
+          message: `${BUSY_CAP} agents are already working — the cap is ${BUSY_CAP} at once.`,
+          authMethods: [],
+        };
+      }
+
       // The session runs in the project, not in the harness's own working directory: the agent is
       // being asked to work on *this* repository.
-      return await sessions.start(harness, project.id, project.path, app.getVersion());
+      return await sessions.start(
+        harness,
+        project.id,
+        project.path,
+        app.getVersion(),
+        null,
+        background?.label ?? null,
+      );
     },
 
     "session:prompt": async ({ sessionId, text }) => await sessions.prompt(sessionId, text),
@@ -1106,6 +1243,7 @@ export function registerIpc(
       sessions,
       (payload) => emitter.emit("check:output", payload),
       (payload) => emitter.emit("project:changed", payload),
+      (channel, payload) => emitter.emit(channel, payload as never),
     ),
   );
   return sessions;

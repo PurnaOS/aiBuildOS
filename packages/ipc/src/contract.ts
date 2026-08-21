@@ -157,7 +157,22 @@ const GitStatusSchema = z.object({
   unstaged: z.number().int(),
   untracked: z.number().int(),
   conflicted: z.number().int(),
+  /**
+   * Commits ahead of / behind the branch's upstream, from porcelain v2's `# branch.ab` record
+   * (RQ-0033). `null` — not 0 — when the branch has no upstream: "never published" and "in sync"
+   * must read differently.
+   */
+  ahead: z.number().int().nullable(),
+  behind: z.number().int().nullable(),
   commits: z.array(GitCommitSchema),
+});
+
+/** One local branch, from `for-each-ref` (RQ-0033). */
+const BranchSchema = z.object({
+  name: z.string(),
+  upstream: z.string().nullable(),
+  ahead: z.number().int().nullable(),
+  behind: z.number().int().nullable(),
 });
 
 /**
@@ -329,7 +344,16 @@ export const channels = {
    * rather than as an empty menu (RQ-0004#AC-12).
    */
   "session:start": {
-    request: z.object({ projectId: z.string(), harnessId: z.string() }),
+    request: z.object({
+      projectId: z.string(),
+      harnessId: z.string(),
+      /**
+       * Present for a background playbook run (RQ-0039): the session opens on the project like the
+       * main chat, but is labelled with the playbook's title, listed by `session:list`, and counted
+       * against the shared busy cap of 3. The main conversation never sets this.
+       */
+      background: z.object({ label: z.string().min(1) }).optional(),
+    }),
     response: z.discriminatedUnion("ok", [
       z.object({
         ok: z.literal(true),
@@ -681,6 +705,28 @@ export const channels = {
    * the worktree on `aibuildos/<story>`, spawn the session there. Failures are data, as always.
    */
   "build:start": {
+    request: z.object({
+      projectId: z.string(),
+      storyId: z.string(),
+      harnessId: z.string(),
+      /**
+       * Build inside a sprint (RQ-0035, DC-0025): the story's worktree branches from the sprint
+       * branch — `aibuildos/<sprint>--<story>` — and its accept merges back into it. Requires the
+       * sprint's own worktree to exist (`no_sprint` otherwise). Absent: a plain build from HEAD.
+       */
+      sprintId: z.string().optional(),
+    }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), sessionId: z.string() }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /**
+   * Re-attach a fresh session to a worktree that survived a restart (RQ-0036) — the branch is the
+   * binding, so nothing but the worktree's existence is needed. Walks the story `review → building`.
+   * Failures are data: `not_found` · `already_attached` · `build_cap` · session-start codes.
+   */
+  "build:resume": {
     request: z.object({ projectId: z.string(), storyId: z.string(), harnessId: z.string() }),
     response: z.discriminatedUnion("ok", [
       z.object({ ok: z.literal(true), sessionId: z.string() }),
@@ -698,6 +744,25 @@ export const channels = {
           /** `null` for a build that survived a restart and has no session yet (DC-0021). */
           sessionId: z.string().nullable(),
           dirty: z.boolean(),
+          /** Where the worktree lives on disk (RQ-0037). */
+          path: z.string(),
+          /** The sprint this build belongs to, parsed from the branch name; `null` outside one. */
+          sprintId: z.string().nullable(),
+          /** Checkpoints on the branch since its base — `rev-list --count` (RQ-0037). */
+          ahead: z.number().int(),
+          /** ISO date of the newest commit on the branch; `null` on an unborn branch. */
+          lastCheckpointAt: z.string().nullable(),
+        }),
+      ),
+      /** Sprint worktrees, classified out of the same enumeration (RQ-0035). */
+      sprints: z.array(
+        z.object({
+          sprintId: z.string(),
+          branch: z.string(),
+          path: z.string(),
+          dirty: z.boolean(),
+          /** Live story builds branched off this sprint. */
+          stories: z.number().int(),
         }),
       ),
       problem: z.string().nullable(),
@@ -732,7 +797,7 @@ export const channels = {
     request: z.object({ projectId: z.string(), storyId: z.string() }),
     response: z.object({ problem: z.string().nullable() }),
   },
-  /** Every live session the registry holds — what the Now surface derives from (RQ-0021). */
+  /** Every live session the registry holds — what the activity surface derives from (RQ-0021). */
   "session:list": {
     request: z.object({}),
     response: z.object({
@@ -742,8 +807,139 @@ export const channels = {
           projectId: z.string(),
           /** The story a build session is for; `null` for the workspace's own conversation. */
           storyId: z.string().nullable(),
+          /**
+           * A background run's label — the playbook's title (RQ-0040). `null` for the main chat
+           * and for builds. Kind is derived, never stored: story → build, label → task, else chat.
+           */
+          label: z.string().nullable(),
+          /** ISO-8601, stamped by the registry when the session opened (RQ-0040). */
+          startedAt: z.string(),
         }),
       ),
+    }),
+  },
+  /**
+   * Start a sprint (RQ-0035, DC-0025): mint nothing — the record's Sprint artifact is the
+   * renderer's business through the ordinary guarded save. This creates the *git* side: the branch
+   * `aibuildos/<sprint>` from main's HEAD, checked out in the sprint's own worktree, which is where
+   * its stories' accepts merge and where its conflicts resolve.
+   */
+  "sprint:start": {
+    request: z.object({ projectId: z.string(), sprintId: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), branch: z.string() }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /**
+   * Finish a sprint: `--no-ff` merge of the sprint branch into main, then the worktree and branch
+   * are removed. Refused — `stories_live` — while any of its story worktrees exist: finish or
+   * discard the stories first. `conflict` aborts cleanly, leaving main untouched.
+   */
+  "sprint:merge": {
+    request: z.object({ projectId: z.string(), sprintId: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true) }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /** Force-remove a sprint's worktree and branch. Same `stories_live` guard as the merge. */
+  "sprint:discard": {
+    request: z.object({ projectId: z.string(), sprintId: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true) }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /**
+   * Remote sync (RQ-0032, DC-0023): the user's own git, the user's own credential chain, always a
+   * deliberate press — never automatic. `GIT_TERMINAL_PROMPT=0` means missing credentials fail
+   * fast as `git_auth`; a repo with no remote answers `no_remote`. Both are states, not errors.
+   */
+  "project:fetch": {
+    request: z.object({ id: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true) }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /** `--ff-only`: divergence fails in git's own words rather than picking merge-vs-rebase silently. */
+  "project:pull": {
+    request: z.object({ id: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true) }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /** Push; a branch with no upstream is published (`-u origin <branch>`) in the same press. */
+  "project:push": {
+    request: z.object({ id: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), branch: z.string() }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /** Local branches with upstream tracking (RQ-0033) — the sync header's menu. */
+  "project:branches": {
+    request: z.object({ id: z.string() }),
+    response: z.object({
+      current: z.string().nullable(),
+      branches: z.array(BranchSchema),
+      problem: z.string().nullable(),
+    }),
+  },
+  /**
+   * PR status for the current branch via the `gh` CLI (RQ-0034, DC-0024). On demand only — no
+   * polling, no tokens. A machine without `gh` (or without auth) answers `gh_missing`/`gh_failed`
+   * as data, with the command's own words.
+   */
+  "project:pr-status": {
+    request: z.object({ id: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({
+        ok: z.literal(true),
+        url: z.string(),
+        state: z.string(),
+        mergeable: z.string(),
+        reviewDecision: z.string().nullable(),
+        checks: z.array(z.object({ name: z.string(), status: z.string() })),
+      }),
+      z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+    ]),
+  },
+  /**
+   * A real PTY terminal in the project (RQ-0038, DC-0026). The shell and cwd are resolved in main
+   * from the project registry — the renderer names a project, never a path or a program. The
+   * user's own typed commands cross no supervision: same trust as their system terminal.
+   */
+  "terminal:open": {
+    request: z.object({ projectId: z.string() }),
+    response: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), terminalId: z.string() }),
+      z.object({ ok: z.literal(false), message: z.string() }),
+    ]),
+  },
+  "terminal:input": {
+    request: z.object({ terminalId: z.string(), data: z.string() }),
+    response: z.void(),
+  },
+  /** Required, not optional — a PTY that cannot resize breaks every full-screen program. */
+  "terminal:resize": {
+    request: z.object({
+      terminalId: z.string(),
+      cols: z.number().int().min(1),
+      rows: z.number().int().min(1),
+    }),
+    response: z.void(),
+  },
+  "terminal:close": {
+    request: z.object({ terminalId: z.string() }),
+    response: z.void(),
+  },
+  "terminal:list": {
+    request: z.object({ projectId: z.string() }),
+    response: z.object({
+      terminals: z.array(z.object({ terminalId: z.string(), startedAt: z.string() })),
     }),
   },
   /**
@@ -886,6 +1082,16 @@ export const events = {
     projectId: z.string(),
     command: z.string(),
     chunk: z.string(),
+  }),
+  /** One chunk of a terminal's output (RQ-0038). node-pty emits decoded UTF-8 strings. */
+  "terminal:data": z.object({
+    terminalId: z.string(),
+    chunk: z.string(),
+  }),
+  /** The terminal's shell exited — the row reads "exited", the pane keeps its last screen. */
+  "terminal:exit": z.object({
+    terminalId: z.string(),
+    exitCode: z.number().int().nullable(),
   }),
 } as const satisfies Record<string, z.ZodType>;
 

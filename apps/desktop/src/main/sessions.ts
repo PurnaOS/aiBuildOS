@@ -24,6 +24,10 @@ export type Emit = <E extends EventName>(event: E, payload: EventPayload<E>) => 
  * blocks for a person, as every session did before this setting existed. */
 export type SupervisionLevel = "closest" | "hands-off";
 
+/** RQ-0021's consequence #2, shared with RQ-0039: a ceiling raised deliberately, never discovered
+ * under load. Builds and background runs draw from the same 3 slots (`busyCount`). */
+export const BUSY_CAP = 3;
+
 interface Held {
   readonly session: AgentSession;
   /** Which project this session belongs to — what the supervision level is read against. */
@@ -31,6 +35,10 @@ interface Held {
   /** The story this is a build session for; `null` for the workspace's own conversation
    * (RQ-0021 — what `session:list` and the concurrency cap distinguish on). */
   readonly storyId: string | null;
+  /** A background run's label — the playbook's title (RQ-0039/RQ-0040); `null` otherwise. */
+  readonly label: string | null;
+  /** ISO-8601, stamped when the session opened (RQ-0040). */
+  readonly startedAt: string;
   /** Permission requests this session is waiting on, by the id we gave them. */
   readonly pending: Map<string, (optionId: string | null) => void>;
   /**
@@ -47,6 +55,8 @@ export interface SessionRow {
   readonly sessionId: string;
   readonly projectId: string;
   readonly storyId: string | null;
+  readonly label: string | null;
+  readonly startedAt: string;
 }
 
 export interface Controls {
@@ -86,6 +96,8 @@ export class SessionRegistry {
     clientVersion: string,
     /** Set only for a build session (RQ-0020); `null` for the workspace's own conversation. */
     storyId: string | null = null,
+    /** Set only for a background playbook run (RQ-0039); `null` otherwise. */
+    label: string | null = null,
   ): Promise<StartResult> {
     // The id the pending map is keyed by has to exist before the session does, because the agent can
     // ask for permission during the very first turn.
@@ -130,7 +142,15 @@ export class SessionRegistry {
       if (controls.configOptions.length === 0) {
         controls.configOptions = (session.offered.configOptions ?? []) as { id: string }[];
       }
-      this.held.set(sessionId, { session, projectId, storyId, pending, controls });
+      this.held.set(sessionId, {
+        session,
+        projectId,
+        storyId,
+        label,
+        startedAt: new Date().toISOString(),
+        pending,
+        controls,
+      });
       this.emit("session:state", { sessionId, state: "ready", error: null });
 
       return {
@@ -195,11 +215,22 @@ export class SessionRegistry {
 
   /** Every live session, for `session:list` (RQ-0021) and for `builds.ts`'s concurrency cap — the
    * registry is the one place that knows about every session, build or not. */
+  /**
+   * Sessions holding one of the 3 busy slots (RQ-0039): builds and background runs, never the
+   * main conversation. The one number `build:start` and a background `session:start` both read.
+   */
+  busyCount(): number {
+    return [...this.held.values()].filter((held) => held.storyId !== null || held.label !== null)
+      .length;
+  }
+
   list(): SessionRow[] {
     return [...this.held.entries()].map(([sessionId, held]) => ({
       sessionId,
       projectId: held.projectId,
       storyId: held.storyId,
+      label: held.label,
+      startedAt: held.startedAt,
     }));
   }
 

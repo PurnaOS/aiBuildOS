@@ -5,6 +5,7 @@ import { registerIpc } from "./ipc.js";
 import { commandTarget, installMenu } from "./menu.js";
 import { killPreviews } from "./previews.js";
 import { loadSettings, settingsFile } from "./settings.js";
+import { killTerminals } from "./terminals.js";
 import { stopAllWatching } from "./watch.js";
 
 /**
@@ -71,6 +72,7 @@ void app.whenReady().then(() => {
     killChecks();
     stopAllWatching();
     killPreviews();
+    killTerminals();
   });
 
   app.on("activate", () => {

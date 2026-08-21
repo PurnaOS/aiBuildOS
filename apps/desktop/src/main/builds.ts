@@ -16,7 +16,7 @@ import {
   worktreeRemove,
 } from "./git.js";
 import { applyArtifactEdit } from "./record.js";
-import type { SessionRegistry, SessionRow } from "./sessions.js";
+import { BUSY_CAP, type SessionRegistry, type SessionRow } from "./sessions.js";
 
 /**
  * Worktree builds (RQ-0020, RQ-0021), exactly as DC-0021 settles them: the branch is the binding,
@@ -32,11 +32,26 @@ export interface BuildRow {
   readonly branch: string;
   readonly sessionId: string | null;
   readonly dirty: boolean;
+  /** Where the worktree lives on disk (RQ-0037). */
+  readonly path: string;
+  /** The sprint this build belongs to, parsed from the branch name; `null` outside one (RQ-0035). */
+  readonly sprintId: string | null;
+  /** Checkpoints on the branch since its base (RQ-0037). */
+  readonly ahead: number;
+  /** ISO date of the newest commit on the branch; `null` on an unborn branch (RQ-0037). */
+  readonly lastCheckpointAt: string | null;
+}
+
+/** One sprint worktree, classified out of the same enumeration (RQ-0035). */
+export interface SprintRow {
+  readonly sprintId: string;
+  readonly branch: string;
+  readonly path: string;
+  readonly dirty: boolean;
+  readonly stories: number;
 }
 
 const BRANCH_PREFIX = "aibuildos/";
-/** RQ-0021's consequence #2: a ceiling to raise deliberately, not a limit discovered under load. */
-const CONCURRENCY_CAP = 3;
 
 function branchFor(storyId: string): string {
   return `${BRANCH_PREFIX}${storyId.toLowerCase()}`;
@@ -141,12 +156,11 @@ export async function startBuild(
   // A ceiling raised deliberately, per RQ-0021's own consequence — the registry is the source of
   // truth for what is actually live, not this module's own bookkeeping (which can outlive a session
   // that crashed without going through `close()`).
-  const busy = sessions.list().filter((row) => row.storyId !== null).length;
-  if (busy >= CONCURRENCY_CAP) {
+  if (sessions.busyCount() >= BUSY_CAP) {
     return {
       ok: false,
       code: "build_cap",
-      message: `${CONCURRENCY_CAP} builds are already running — the cap is ${CONCURRENCY_CAP} at once.`,
+      message: `${BUSY_CAP} builds are already running — the cap is ${BUSY_CAP} at once.`,
     };
   }
 
@@ -203,7 +217,7 @@ export async function startBuild(
 export async function listBuilds(
   sessions: SessionRegistry,
   projectPath: string,
-): Promise<{ builds: BuildRow[]; problem: string | null }> {
+): Promise<{ builds: BuildRow[]; sprints: SprintRow[]; problem: string | null }> {
   try {
     // "On build:list: worktree prune first, then enumerate" (DC-0021) — a worktree deleted by hand
     // must not go on being reported as though it were still there.
@@ -229,13 +243,18 @@ export async function listBuilds(
           branch: worktree.branch,
           sessionId: sessionByStory.get(storyId) ?? null,
           dirty: tree === null ? false : tree.changed > 0,
+          path: worktree.path,
+          // ponytail: sprint parse, ahead count and checkpoint date land with RQ-0035/RQ-0037.
+          sprintId: null,
+          ahead: 0,
+          lastCheckpointAt: null,
         };
       }),
     );
 
-    return { builds, problem: null };
+    return { builds, sprints: [], problem: null };
   } catch (cause) {
-    return { builds: [], problem: messageOf(cause) };
+    return { builds: [], sprints: [], problem: messageOf(cause) };
   }
 }
 
@@ -355,6 +374,38 @@ export async function discardBuild(
   }
 
   return { problem: null };
+}
+
+/** RQ-0036 — lands with ST-0054. */
+export async function resumeBuild(
+  _sessions: SessionRegistry,
+  _projectId: string,
+  _storyId: string,
+  _harnessId: string,
+): Promise<{ ok: true; sessionId: string } | { ok: false; code: string; message: string }> {
+  return { ok: false, code: "not_implemented", message: "build resume is not implemented yet." };
+}
+
+/** RQ-0035 — the sprint lifecycle lands with ST-0052. */
+export async function startSprint(
+  _projectPath: string,
+  _sprintId: string,
+): Promise<{ ok: true; branch: string } | { ok: false; code: string; message: string }> {
+  return { ok: false, code: "not_implemented", message: "sprints are not implemented yet." };
+}
+
+export async function mergeSprint(
+  _projectPath: string,
+  _sprintId: string,
+): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  return { ok: false, code: "not_implemented", message: "sprints are not implemented yet." };
+}
+
+export async function discardSprint(
+  _projectPath: string,
+  _sprintId: string,
+): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  return { ok: false, code: "not_implemented", message: "sprints are not implemented yet." };
 }
 
 export function listSessions(sessions: SessionRegistry): SessionRow[] {

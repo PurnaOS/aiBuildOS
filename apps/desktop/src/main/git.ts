@@ -21,6 +21,10 @@ export type GitErrorCode =
   | "git_missing"
   /** `user.name` / `user.email` are not configured, so nothing can be committed. */
   | "git_identity"
+  /** A network verb failed for want of credentials — `GIT_TERMINAL_PROMPT=0` fails fast (RQ-0032). */
+  | "git_auth"
+  /** No remote is configured to sync with (RQ-0032). A first-run state, not an exception. */
+  | "no_remote"
   /** Git ran and said no. `stderr` carries its own words. */
   | "git_failed";
 
@@ -172,6 +176,20 @@ export interface GitStatus {
   readonly unstaged: number;
   readonly untracked: number;
   readonly conflicted: number;
+  /**
+   * Commits ahead of / behind the upstream, from porcelain v2's `# branch.ab` (RQ-0033). `null` —
+   * not 0 — when there is no upstream: "never published" and "in sync" must read differently.
+   */
+  readonly ahead: number | null;
+  readonly behind: number | null;
+}
+
+/** One local branch with its upstream tracking (RQ-0033). */
+export interface Branch {
+  readonly name: string;
+  readonly upstream: string | null;
+  readonly ahead: number | null;
+  readonly behind: number | null;
 }
 
 /** ASCII unit separator. A commit subject can contain anything printable, but not this. */
@@ -296,6 +314,9 @@ export async function status(dir: string): Promise<GitStatus> {
 
   return {
     branch,
+    // ponytail: the `# branch.ab` parse lands with ST-0050; until then no upstream is reported.
+    ahead: null,
+    behind: null,
     changed: entries.length,
     staged: entries.filter((entry) => !entry.untracked && entry.staged !== ".").length,
     unstaged: entries.filter((entry) => !entry.untracked && entry.unstaged !== ".").length,
@@ -444,4 +465,24 @@ export async function deleteBranch(
   force = false,
 ): Promise<void> {
   await git(projectPath, "branch", force ? "-D" : "-d", branch);
+}
+
+/** RQ-0032 — lands with ST-0049. */
+export async function fetchRemote(_dir: string): Promise<void> {
+  throw new GitError("git_failed", "fetch is not implemented yet.");
+}
+
+export async function pull(_dir: string): Promise<void> {
+  throw new GitError("git_failed", "pull is not implemented yet.");
+}
+
+export async function push(_dir: string): Promise<{ branch: string }> {
+  throw new GitError("git_failed", "push is not implemented yet.");
+}
+
+/** RQ-0033 — lands with ST-0050. */
+export async function branches(
+  _dir: string,
+): Promise<{ current: string | null; branches: Branch[] }> {
+  throw new GitError("git_failed", "branch listing is not implemented yet.");
 }
