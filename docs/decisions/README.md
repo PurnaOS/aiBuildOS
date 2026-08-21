@@ -38,8 +38,8 @@ Conventions: [OKF conventions](../guidelines/okf-conventions.md) ·
 | [DC-0025](dc-0025.md) | A sprint is a branch with its own worktree; -- binds its stories | accepted | [RQ-0035](../requirements/rq-0035.md), [RQ-0036](../requirements/rq-0036.md) · [DC-0021](dc-0021.md) |
 | [DC-0026](dc-0026.md) | The shell is a real PTY: node-pty in main, @xterm/xterm in the dock | accepted | [RQ-0038](../requirements/rq-0038.md) · [EP-0012](../epics/ep-0012.md) |
 | [DC-0027](dc-0027.md) | The activity dock replaces Now; three surfaces | accepted | [RQ-0044](../requirements/rq-0044.md), [RQ-0045](../requirements/rq-0045.md) · [EP-0013](../epics/ep-0013.md) |
-| [DC-0028](dc-0028.md) | Harness capabilities ride ACP extension points | proposed | [RQ-0050](../requirements/rq-0050.md), [RQ-0052](../requirements/rq-0052.md) · [DC-0007](dc-0007.md), [DC-0020](dc-0020.md) |
-| [DC-0029](dc-0029.md) | Hands-off maps to accept-edits, never to bypass | proposed | [RQ-0050](../requirements/rq-0050.md) · [RQ-0022](../requirements/rq-0022.md), [DC-0028](dc-0028.md) |
+| [DC-0028](dc-0028.md) | Harness capabilities ride ACP extension points | accepted | [RQ-0050](../requirements/rq-0050.md), [RQ-0052](../requirements/rq-0052.md) · [DC-0007](dc-0007.md), [DC-0020](dc-0020.md) |
+| [DC-0029](dc-0029.md) | Hands-off maps to accept-edits, never to bypass | accepted | [RQ-0050](../requirements/rq-0050.md) · [RQ-0022](../requirements/rq-0022.md), [DC-0028](dc-0028.md) |
 
 ## Not yet decided
 
