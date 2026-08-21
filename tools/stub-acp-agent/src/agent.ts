@@ -47,6 +47,7 @@ type Mode =
   | "rich"
   | "permission"
   | "slow"
+  | "slower"
   | "controls"
   | "echo"
   | "plan-writer"
@@ -150,6 +151,20 @@ const CONFIG_OPTIONS = [
     options: [
       { value: "think", name: "Think" },
       { value: "think_hard", name: "Think hard" },
+    ],
+  },
+  // RQ-0042's real two-MODE collision: the harness's own option lands on the same word as the ACP
+  // session mode control. `id` is deliberately not "mode" — that id is already the session control's
+  // own chip testid, and colliding on it would break the popover rather than exercise it.
+  {
+    id: "style",
+    name: "Mode",
+    category: "style",
+    type: "select",
+    currentValue: "auto",
+    options: [
+      { value: "auto", name: "Auto" },
+      { value: "manual", name: "Manual" },
     ],
   },
 ];
@@ -453,7 +468,7 @@ async function permissionTurn(): Promise<string> {
  * Streams with pauses so a cancel can land mid-turn — and keeps sending afterwards, because the
  * protocol says a client must go on accepting updates after cancelling.
  */
-async function slowTurn(): Promise<string> {
+async function slowTurn(delayMs = 25): Promise<string> {
   for (let index = 0; index < 20; index += 1) {
     if (cancelled) {
       update({ sessionUpdate: "tool_call_update", toolCallId: "call-1", status: "failed" });
@@ -461,7 +476,7 @@ async function slowTurn(): Promise<string> {
       return "cancelled";
     }
     chunk(`${index} `, "message-1");
-    await sleep(25);
+    await sleep(delayMs);
   }
   return "end_turn";
 }
@@ -553,6 +568,8 @@ async function handle(line: string): Promise<void> {
       if (mode === "rich") stopReason = await richTurn();
       else if (mode === "permission") stopReason = await permissionTurn();
       else if (mode === "slow") stopReason = await slowTurn();
+      // Long enough that a spec can edit, assert, and close *under* the stream on a slow CI runner.
+      else if (mode === "slower") stopReason = await slowTurn(300);
       else if (mode === "echo") {
         // The prompt is content blocks; echoing the text back proves on the transcript both what
         // was sent and what arrived — which is what a playbook test needs and a mock cannot give.

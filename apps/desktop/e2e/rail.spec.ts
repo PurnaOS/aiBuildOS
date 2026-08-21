@@ -70,7 +70,7 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
         id: "h",
         displayName: "Stub",
         command: process.execPath,
-        args: ["--experimental-strip-types", stub, "--mode=slow"],
+        args: ["--experimental-strip-types", stub, "--mode=slower"],
       },
     ]),
   );
@@ -159,8 +159,9 @@ test("a dirty tab's close asks through the application's own dialog, in dark app
   await w.getByTestId("start-h").click();
   await w.getByTestId("chat").waitFor({ timeout: 20000 });
 
-  // `--mode=slow` streams for long enough to type underneath it (autosave.spec.ts's own scene) —
-  // which is what keeps the tab dirty: autosave holds its write while the turn streams (RQ-0008#AC-3).
+  // `--mode=slower` streams for ~6s — the dirty dot and the discard dialog both key off *held*
+  // (dirty while a turn streams, RQ-0008#AC-3/AC-8), so every act below must happen under a live
+  // stream; CI runners proved ~500ms of slow-mode is not enough room.
   const composer = w.locator("textarea, [contenteditable=true]").first();
   await composer.click();
   await composer.fill("please proceed");
@@ -182,9 +183,15 @@ test("a dirty tab's close asks through the application's own dialog, in dark app
   await expect(dialog).toHaveCount(0);
   await expect(w.getByTestId("tab-RQ-0001")).toBeVisible();
 
-  // Re-arm the dirty flag through the title input, not CodeMirror: a re-shown editor can swallow
-  // the first keystrokes while it re-measures (CI-proven), where `fill` on a plain input is
-  // deterministic. The close lands well inside autosave's 800ms debounce.
+  // Re-arm under a FRESH stream — held needs one — and prove the turn started before editing;
+  // the title input, not CodeMirror, because a re-shown editor can swallow first keystrokes while
+  // it re-measures (CI-proven).
+  await w.getByTestId("tab-chat").click();
+  await composer.click();
+  await composer.fill("keep going");
+  await w.keyboard.press("Enter");
+  await expect(w.getByTestId("tab-working-chat")).toBeVisible({ timeout: 10000 });
+  await w.getByTestId("tab-RQ-0001").click();
   await w.getByTestId("artifact-title").fill("Alpha thing, edited again");
   await expect(w.getByTestId("tab-dirty-RQ-0001")).toBeVisible();
 
