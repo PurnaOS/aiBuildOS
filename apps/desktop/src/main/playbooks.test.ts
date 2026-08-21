@@ -102,7 +102,7 @@ describe("seeding playbooks into an adopted project", () => {
 
     const agents = readFileSync(join(dir, "AGENTS.md"), "utf8");
     const claude = readFileSync(join(dir, "CLAUDE.md"), "utf8");
-    expect(agents).toContain("ready → queued → building → review");
+    expect(agents).toContain("Never edit a `state:` field");
     expect(claude).toContain("@AGENTS.md");
     // Neither carries frontmatter, so unlike the playbooks the owner token never applies.
     expect(agents).not.toContain("{{OWNER}}");

@@ -285,14 +285,23 @@ describe("scaffolding a project", () => {
 
     // AC-2: an import, not a second copy that can drift.
     expect(claude).toContain("@AGENTS.md");
-    expect(claude.toLowerCase()).not.toContain("ready → queued");
+    expect(claude).not.toContain("Never edit a `state:` field");
 
-    // AC-2 (ST-0045#AC-2): the owner's state discipline, word for word where it matters.
-    expect(agents).toContain("work states only");
-    expect(agents).toContain("ready → queued → building → review");
-    expect(agents.toLowerCase()).toContain("draft → ready");
+    // AC-2 (ST-0045#AC-2): the owner's state discipline, word for word where it matters — narrowed
+    // by ST-0066 to match the guard the same scaffold seeds.
+    expect(agents).toContain("## State discipline");
+    expect(agents).toContain("Never edit a `state:` field");
     expect(agents.toLowerCase()).toContain("scheduling is the person's");
-    expect(agents.toLowerCase()).toContain("worktree");
-    expect(agents).toContain("leave every `state:` field exactly as");
+    expect(agents).toContain("`accepted`, `done`, `rejected`");
+
+    // The regression ST-0066 exists to prevent: the seeded instructions must not promise a state
+    // walk that the seeded guard denies. No permission to walk, no walk sequence to follow.
+    expect(agents).not.toContain("work states only");
+    expect(agents).not.toContain("You may walk");
+    expect(agents).not.toContain("ready → queued");
+    // The build playbook the same bundle seeds carries no worktree-only escape clause either.
+    const playbook = bundleFiles().get("docs/playbooks/pb-0003.md") ?? "";
+    expect(playbook).toContain("Leave every `state:` field exactly as you found it");
+    expect(playbook).not.toContain("If you are building in a worktree");
   });
 });
