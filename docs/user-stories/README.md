@@ -76,4 +76,4 @@ back to [docs/README.md](../README.md)
 | [ST-0066](st-0066.md) | Scaffolding writes the harness's guardrails | building | [RQ-0049](../requirements/rq-0049.md) · [EP-0016](../epics/ep-0016.md) · [TC-0117](../testing/tc-0117.md), [TC-0118](../testing/tc-0118.md) |
 | [ST-0067](st-0067.md) | Supervision maps to the harness's permission option | ready | [RQ-0050](../requirements/rq-0050.md) · [EP-0016](../epics/ep-0016.md) · [TC-0119](../testing/tc-0119.md), [TC-0120](../testing/tc-0120.md) |
 | [ST-0068](st-0068.md) | The ACP extension carries typed plans and verdicts | building | [RQ-0052](../requirements/rq-0052.md) · [EP-0016](../epics/ep-0016.md) · [TC-0121](../testing/tc-0121.md), [TC-0122](../testing/tc-0122.md) |
-| [ST-0069](st-0069.md) | Harness commands join the composer | queued | [RQ-0051](../requirements/rq-0051.md) · [EP-0016](../epics/ep-0016.md) · [TC-0123](../testing/tc-0123.md), [TC-0124](../testing/tc-0124.md) |
+| [ST-0069](st-0069.md) | Harness commands join the composer | building | [RQ-0051](../requirements/rq-0051.md) · [EP-0016](../epics/ep-0016.md) · [TC-0123](../testing/tc-0123.md), [TC-0124](../testing/tc-0124.md) |
