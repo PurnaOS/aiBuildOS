@@ -33,6 +33,11 @@ Conventions: [OKF conventions](../guidelines/okf-conventions.md) ·
 | [DC-0020](dc-0020.md) | Structured asks ride a fenced-block convention until ACP elicitation is real | accepted | [RQ-0016](../requirements/rq-0016.md) · [DC-0007](dc-0007.md), [DC-0008](dc-0008.md) |
 | [DC-0021](dc-0021.md) | Worktree builds: the branch is the binding, and main owns the process | accepted | [RQ-0020](../requirements/rq-0020.md), [RQ-0021](../requirements/rq-0021.md) · [DC-0010](dc-0010.md), [DC-0015](dc-0015.md) |
 | [DC-0022](dc-0022.md) | A file watcher is the bump's source; the revision counter stays its mechanism | accepted | [RQ-0026](../requirements/rq-0026.md) · [DC-0015](dc-0015.md) |
+| [DC-0023](dc-0023.md) | Remote sync rides the user's own git | accepted | [RQ-0032](../requirements/rq-0032.md) · [DC-0010](dc-0010.md) |
+| [DC-0024](dc-0024.md) | PR status via the optional gh CLI | accepted | [RQ-0034](../requirements/rq-0034.md) · [DC-0023](dc-0023.md) |
+| [DC-0025](dc-0025.md) | A sprint is a branch with its own worktree; -- binds its stories | accepted | [RQ-0035](../requirements/rq-0035.md), [RQ-0036](../requirements/rq-0036.md) · [DC-0021](dc-0021.md) |
+| [DC-0026](dc-0026.md) | The shell is a real PTY: node-pty in main, @xterm/xterm in the dock | accepted | [RQ-0038](../requirements/rq-0038.md) · [EP-0012](../epics/ep-0012.md) |
+| [DC-0027](dc-0027.md) | The activity dock replaces Now; three surfaces | accepted | [RQ-0044](../requirements/rq-0044.md), [RQ-0045](../requirements/rq-0045.md) · [EP-0013](../epics/ep-0013.md) |
 
 ## Not yet decided
 

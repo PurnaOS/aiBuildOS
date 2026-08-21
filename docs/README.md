@@ -27,6 +27,7 @@ single-subject, and linked. Nothing is duplicated: **repeat IDs and links, never
 | [requirements/](requirements/README.md) | `RQ` | **the canonical source of truth for product requirements** |
 | [epics/](epics/README.md) | `EP` | bodies of work grouping stories |
 | [user-stories/](user-stories/README.md) | `ST` | user-facing slices of work |
+| [sprints/](sprints/README.md) | `SP` | batches of work taken together, each bound to a git branch |
 | [testing/](testing/README.md) | `TC` | test cases — the verifications |
 | [bugs/](bugs/README.md) | `BG` | defects |
 | [decisions/](decisions/README.md) | `DC` | architecture decision records |

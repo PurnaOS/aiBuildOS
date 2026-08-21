@@ -92,3 +92,35 @@ back to [docs/README.md](../README.md)
 | [TC-0082](tc-0082.md) | Streaming shows on the tab, and what changed says so | active | [RQ-0030](../requirements/rq-0030.md)#AC-1 through #AC-4 |
 | [TC-0083](tc-0083.md) | The card reads the wire: command, chunks, outcome | active | [RQ-0031](../requirements/rq-0031.md)#AC-1, #AC-2, #AC-5, #AC-6 |
 | [TC-0084](tc-0084.md) | A command streams into the transcript and folds when long | active | [RQ-0031](../requirements/rq-0031.md)#AC-1 through #AC-4 |
+| [TC-0085](tc-0085.md) | The sync verbs against a local bare origin | draft | [RQ-0032](../requirements/rq-0032.md)#AC-2, #AC-3, #AC-4 |
+| [TC-0086](tc-0086.md) | Push, publish and pull through the interface | draft | [RQ-0032](../requirements/rq-0032.md)#AC-1, #AC-3, #AC-6 |
+| [TC-0087](tc-0087.md) | Branch enumeration and ahead/behind parse clean | draft | [RQ-0033](../requirements/rq-0033.md)#AC-2, #AC-3 |
+| [TC-0088](tc-0088.md) | The sync header shows the branch and its counts | draft | [RQ-0033](../requirements/rq-0033.md)#AC-1, #AC-4 |
+| [TC-0089](tc-0089.md) | pr.ts maps gh output and its absence | draft | [RQ-0034](../requirements/rq-0034.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0090](tc-0090.md) | The PR chip with and without gh | draft | [RQ-0034](../requirements/rq-0034.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0091](tc-0091.md) | Sprint lifecycle honours its guards | draft | [RQ-0035](../requirements/rq-0035.md)#AC-1, #AC-3, #AC-6 |
+| [TC-0092](tc-0092.md) | A sprint starts from picked stories and finishes onto main | draft | [RQ-0035](../requirements/rq-0035.md)#AC-1, #AC-3, #AC-5 |
+| [TC-0093](tc-0093.md) | A sprint build bases, merges and reviews against the sprint branch | draft | [RQ-0035](../requirements/rq-0035.md)#AC-2 |
+| [TC-0094](tc-0094.md) | Two sprint stories build side by side and land on the sprint | draft | [RQ-0035](../requirements/rq-0035.md)#AC-2, #AC-4 |
+| [TC-0095](tc-0095.md) | Resume rides the shared attach and refuses right | draft | [RQ-0036](../requirements/rq-0036.md)#AC-1, #AC-2, #AC-3 |
+| [TC-0096](tc-0096.md) | An orphaned build resumes after a relaunch | draft | [RQ-0036](../requirements/rq-0036.md)#AC-1, #AC-4 |
+| [TC-0097](tc-0097.md) | The build listing carries every worktree's facts | draft | [RQ-0037](../requirements/rq-0037.md)#AC-2, #AC-4 |
+| [TC-0098](tc-0098.md) | The dock's build rows say where and what next | draft | [RQ-0037](../requirements/rq-0037.md)#AC-1, #AC-3 |
+| [TC-0099](tc-0099.md) | The terminal registry keeps its books without the native module | draft | [RQ-0038](../requirements/rq-0038.md)#AC-1, #AC-4, #AC-6 |
+| [TC-0100](tc-0100.md) | A dock terminal runs the user's shell for real | draft | [RQ-0038](../requirements/rq-0038.md)#AC-1, #AC-2, #AC-6 |
+| [TC-0101](tc-0101.md) | Builds and background runs spend from one cap | draft | [RQ-0039](../requirements/rq-0039.md)#AC-2 |
+| [TC-0102](tc-0102.md) | A playbook runs in the background while the chat keeps talking | draft | [RQ-0039](../requirements/rq-0039.md)#AC-1, #AC-4 |
+| [TC-0103](tc-0103.md) | Every session row carries enough to say what it is | draft | [RQ-0040](../requirements/rq-0040.md)#AC-1, #AC-2 |
+| [TC-0104](tc-0104.md) | A blocked background run is found and answered from the dock | draft | [RQ-0040](../requirements/rq-0040.md)#AC-3 |
+| [TC-0105](tc-0105.md) | Inbound links are buttons, and the dead props are gone | draft | [RQ-0041](../requirements/rq-0041.md)#AC-1, #AC-3 |
+| [TC-0106](tc-0106.md) | Pressable chrome and honest labels in the running app | draft | [RQ-0041](../requirements/rq-0041.md)#AC-1, #AC-2, #AC-4 |
+| [TC-0107](tc-0107.md) | The popover groups by origin and never dedupes | draft | [RQ-0042](../requirements/rq-0042.md)#AC-1, #AC-2 |
+| [TC-0108](tc-0108.md) | The collision renders whole, and hands-off shows amber | draft | [RQ-0042](../requirements/rq-0042.md)#AC-2, #AC-3, #AC-4 |
+| [TC-0109](tc-0109.md) | The + menu composes what the strip composed | draft | [RQ-0043](../requirements/rq-0043.md)#AC-1 |
+| [TC-0110](tc-0110.md) | Playbooks start from the composer, and only from there | draft | [RQ-0043](../requirements/rq-0043.md)#AC-1 through #AC-4 |
+| [TC-0111](tc-0111.md) | deriveDock reads the whole inventory | draft | [RQ-0044](../requirements/rq-0044.md)#AC-2, #AC-3, #AC-4 |
+| [TC-0112](tc-0112.md) | The dock is everywhere, and it moves | draft | [RQ-0044](../requirements/rq-0044.md)#AC-1, #AC-4, #AC-5 |
+| [TC-0113](tc-0113.md) | One PermissionCard, one answer | draft | [RQ-0044](../requirements/rq-0044.md)#AC-6 |
+| [TC-0114](tc-0114.md) | The same card answers from the dock and the tab | draft | [RQ-0044](../requirements/rq-0044.md)#AC-6 |
+| [TC-0115](tc-0115.md) | Three pinned surfaces, one Column | draft | [RQ-0045](../requirements/rq-0045.md)#AC-1, #AC-3 |
+| [TC-0116](tc-0116.md) | Plan is browsable, and Build goes parallel | draft | [RQ-0045](../requirements/rq-0045.md)#AC-1, #AC-2, #AC-4 |

@@ -1,6 +1,6 @@
 ---
 name: aibuildos-default
-version: 0.1.0
+version: 0.2.0
 formats: 1
 ---
 
@@ -10,5 +10,5 @@ The SDLC profile for this repository: the artifact types the validator understan
 See [OKF conventions §6](../guidelines/okf-conventions.md#6-the-profile--types-are-data) for the
 dialect, and [the profile index](README.md) for the type list.
 
-Eight files, seven concrete types plus one abstract base — the minimum that supports the traceability
+Nine files, eight concrete types plus one abstract base — the minimum that supports the traceability
 chains in [docs/README.md](../README.md). The profile grows when a requirement asks it to, not before.
