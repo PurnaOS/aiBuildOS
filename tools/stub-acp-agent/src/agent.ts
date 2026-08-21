@@ -444,10 +444,11 @@ async function execStreamerTurn(): Promise<string> {
 let planAttempts = 0;
 
 function typedPlanPayload(picked: string[]): unknown {
+  planAttempts += 1;
   return {
     sessionId: SESSION,
     // `_meta` rides the payload so the client's forwarding of it is provable end to end.
-    _meta: { "aibuildos/typed-record": { attempt: (planAttempts += 1) } },
+    _meta: { "aibuildos/typed-record": { attempt: planAttempts } },
     stories: picked.map((requirement) => ({
       title: `Deliver ${requirement}`,
       implements: [requirement],
@@ -485,7 +486,8 @@ async function typedRecordTurn(prompt: string): Promise<string> {
   if (flakyPlan && planAttempts === 1) {
     // Non-conforming on purpose: an empty title fails the client's schema, and the findings that
     // come back are what prompt the conforming retry below.
-    (payload as { stories: { title: string }[] }).stories[0].title = "";
+    const first = (payload as { stories: { title: string }[] }).stories[0];
+    if (first) first.title = "";
   }
   let answer = (await callClient("_aibuildos/plan", payload)) as {
     accepted?: boolean;
@@ -611,9 +613,7 @@ async function handle(line: string): Promise<void> {
         // Extension support is advertised in the capability object's `_meta`, per the spec
         // (DC-0028). Every other mode advertises nothing — the baseline negative control.
         agentCapabilities:
-          mode === "typed-record"
-            ? { _meta: { "aibuildos/typed-record": { version: 1 } } }
-            : {},
+          mode === "typed-record" ? { _meta: { "aibuildos/typed-record": { version: 1 } } } : {},
         agentInfo: { name: "stub-acp-agent", version: "0.1.0" },
         ...(mode === "auth-required"
           ? { authMethods: [{ id: "stub-login", name: "Log in to the stub" }] }
@@ -653,7 +653,9 @@ async function handle(line: string): Promise<void> {
       // Persisted, not just echoed: mapping over the list and forgetting the result was a real
       // stub bug — a second change would silently revert the first on the wire.
       configOptions = configOptions.map((option) =>
-        option.id === params?.configId ? { ...option, currentValue: params?.value } : option,
+        option.id === params?.configId
+          ? { ...option, currentValue: params?.value ?? option.currentValue }
+          : option,
       );
       respond(message.id, { configOptions });
       update({ sessionUpdate: "config_option_update", configOptions });

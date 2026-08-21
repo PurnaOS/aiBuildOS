@@ -4,6 +4,7 @@ import { CUSTOM } from "@aibuildos/acp/bridge";
 import { AgentSession, type PermissionRequest, SessionError } from "@aibuildos/acp/session";
 import type { EventName, EventPayload } from "@aibuildos/ipc";
 import type { Harness } from "./harnesses.js";
+import { landPlan, recordVerdict } from "./typedRecord.js";
 
 /**
  * Every live agent session this application is holding (ST-0009).
@@ -129,6 +130,19 @@ export class SessionRegistry {
             }
           },
           onPermission: (request) => this.ask(() => sessionId, pending, projectId, request),
+          // The typed-record extension's landing half (RQ-0052): a plan becomes draft artifacts in
+          // this session's own working tree, a verdict a guarded frontmatter save — both in main,
+          // never the renderer, riding the same session events everything else rides (no new IPC
+          // channel, DC-0028). An agent that never advertised the extension never calls either.
+          onPlan: (payload) => landPlan(cwd, harness.displayName, payload),
+          onVerdict: (payload) => {
+            const problem = recordVerdict(cwd, harness.displayName, payload);
+            // A notification cannot be rejected, so an invalid verdict is dropped — but narrated,
+            // the same way a checkpoint's refusal is (`aibuildos.flip`'s idiom).
+            if (problem !== null) {
+              this.noteCustom(sessionId, "aibuildos.verdict", { ok: false, message: problem });
+            }
+          },
         },
       );
 

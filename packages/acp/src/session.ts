@@ -213,17 +213,25 @@ export class AgentSession {
       // The typed-record extension (DC-0028): underscore methods, params passed through untouched —
       // the *application* validates and answers with findings, because a Zod rejection here would
       // surface as a protocol error the agent cannot conform to.
-      .onRequest(PLAN_METHOD, (params: unknown) => params, async ({ params }) => {
-        const response = options.onPlan
-          ? await options.onPlan(params)
-          : { accepted: false, findings: [{ message: "this client is not accepting plans" }] };
-        live?.extensionEvent(CUSTOM.planProposal, { payload: params, response });
-        return response;
-      })
-      .onNotification(VERDICT_METHOD, (params: unknown) => params, async ({ params }) => {
-        live?.extensionEvent(CUSTOM.checkVerdict, params);
-        await options.onVerdict?.(params);
-      })
+      .onRequest(
+        PLAN_METHOD,
+        (params: unknown) => params,
+        async ({ params }) => {
+          const response = options.onPlan
+            ? await options.onPlan(params)
+            : { accepted: false, findings: [{ message: "this client is not accepting plans" }] };
+          live?.extensionEvent(CUSTOM.planProposal, { payload: params, response });
+          return response;
+        },
+      )
+      .onNotification(
+        VERDICT_METHOD,
+        (params: unknown) => params,
+        async ({ params }) => {
+          live?.extensionEvent(CUSTOM.checkVerdict, params);
+          await options.onVerdict?.(params);
+        },
+      )
       .onRequest(methods.client.session.requestPermission, async ({ params }) => {
         // No answerer means no permission. An agent proceeding because nobody was listening is the
         // one outcome this must never produce.
