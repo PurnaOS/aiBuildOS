@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseOkfDocument } from "@aibuildos/knowledge-engine";
+import { killTree, spawnDetached } from "./reap.js";
 
 /**
  * The project's checks (RQ-0019, ST-0033): the fenced ` ```check ` commands of every active checks
@@ -86,7 +87,12 @@ function runOne(
   onOutput: (command: string, chunk: string) => void,
 ): Promise<CheckResult> {
   return new Promise((resolve) => {
-    const child = spawn(command, { shell: true, cwd: projectPath, windowsHide: true });
+    const child = spawn(command, {
+      shell: true,
+      cwd: projectPath,
+      windowsHide: true,
+      detached: spawnDetached,
+    });
     live.add(child);
     const forget = (): void => void live.delete(child);
 
@@ -131,15 +137,11 @@ export async function runChecks(
 
 /**
  * Kill every check still running. Called from the application's `before-quit` (RQ-0019#AC-5) —
- * closing the window must not leave an orphaned check process behind.
- *
- * ponytail: kills the direct child only. For one simple command `sh -c` execs into it (proven
- * empirically: same pid, no orphan), but a compound fence (`a && b`) or a command that itself forks
- * (`bun run typecheck` spawning `tsc`) can leave a grandchild behind. Upgrade path if that turns out
- * to matter: `spawn(command, { ..., detached: true })` and `process.kill(-child.pid)` to signal the
- * whole process group instead of one pid.
+ * closing the window must not leave an orphaned check process behind. Group kill, not
+ * `child.kill()`: dash (Linux's `/bin/sh`) wraps even a single command, and killing the wrapper
+ * alone orphans the work — see `reap.ts`.
  */
 export function killChecks(): void {
-  for (const child of live) child.kill();
+  for (const child of live) killTree(child);
   live.clear();
 }

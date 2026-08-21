@@ -5,6 +5,7 @@ import { get as httpsGet } from "node:https";
 import { join } from "node:path";
 import { parseOkfDocument } from "@aibuildos/knowledge-engine";
 import { BrowserWindow, WebContentsView } from "electron";
+import { killTree, spawnDetached } from "./reap.js";
 
 /**
  * Previews (RQ-0025, DC-0012): the project's declared run command as a child server, rendered in a
@@ -95,7 +96,7 @@ let current: CurrentPreview | null = null;
 function stopCurrent(): void {
   if (current === null) return;
   const { child, window, view } = current;
-  child.kill();
+  killTree(child);
   if (window !== null && view !== null) window.contentView.removeChildView(view);
   current = null;
 }
@@ -188,7 +189,12 @@ export async function startPreview(
   stopCurrent();
 
   const { command, url } = declaration;
-  const child = spawn(command, { shell: true, cwd: projectPath, windowsHide: true });
+  const child = spawn(command, {
+    shell: true,
+    cwd: projectPath,
+    windowsHide: true,
+    detached: spawnDetached,
+  });
   let output = "";
   const capture = (chunk: Buffer): void => {
     output = (output + chunk.toString("utf8")).slice(-OUTPUT_CAP);
@@ -243,11 +249,8 @@ export function setPreviewBounds(bounds: {
 
 /**
  * Kills whatever preview is running. Called from `before-quit` (mirrors `killChecks`) — closing the
- * window must not leave an orphaned dev server holding a port.
- *
- * ponytail: `child.kill()` signals the direct child only, same ceiling `killChecks` already marked
- * — a compound run command can leave a grandchild behind. Same upgrade path: `detached: true` and
- * `process.kill(-child.pid)`.
+ * window must not leave an orphaned dev server holding a port. Group kill via `reap.ts`: a dev
+ * server is exactly the forking case where killing only the shell wrapper leaves the port held.
  */
 export function killPreviews(): void {
   stopCurrent();

@@ -25,6 +25,19 @@ const spec = (mode?: string) => ({
 const named = (events: BaseEvent[], name: string): BaseEvent[] =>
   events.filter((event) => (event as unknown as { name?: string }).name === name);
 
+/**
+ * Live processes whose command line carries the marker. `pgrep` runs directly — wrapped in
+ * `sh -c`, Linux's pgrep matches the wrapper shell itself (its argv carries the marker) and
+ * reports a survivor that never existed. Exit code 1 is pgrep's word for "none".
+ */
+function survivorsOf(marker: string): string {
+  try {
+    return execFileSync("pgrep", ["-f", marker], { encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
 describe("a live agent session", () => {
   let cwd: string;
   let events: BaseEvent[];
@@ -147,32 +160,32 @@ describe("a live agent session", () => {
     ).rejects.toMatchObject({ code: "cwd_not_found" });
   });
 
-  it("reaps the agent and everything it spawned when the session closes", async () => {
-    // The shipped presets are all `npx -y <pkg>`, so the agent is a grandchild of the process this
-    // holds. `sh -c` reproduces that shape offline: a marker process in the background, the stub
-    // `exec`d in the foreground so the session really opens.
-    const marker = "aibuildos-orphan-session";
-    const session = await AgentSession.open(
-      {
-        command: "/bin/sh",
-        args: [
-          "-c",
-          `${process.execPath} -e 'setTimeout(()=>{},30000)' ${marker} & ` +
-            `exec ${process.execPath} --experimental-strip-types ${stub}`,
-        ],
-      },
-      { cwd, onEvent: (event) => events.push(event) },
-    );
-    expect(await session.prompt("hello")).toBe("end_turn");
+  it.skipIf(process.platform === "win32")(
+    "reaps the agent and everything it spawned when the session closes",
+    async () => {
+      // The shipped presets are all `npx -y <pkg>`, so the agent is a grandchild of the process this
+      // holds. `sh -c` reproduces that shape offline: a marker process in the background, the stub
+      // `exec`d in the foreground so the session really opens.
+      const marker = "aibuildos-orphan-session";
+      const session = await AgentSession.open(
+        {
+          command: "/bin/sh",
+          args: [
+            "-c",
+            `${process.execPath} -e 'setTimeout(()=>{},30000)' ${marker} & ` +
+              `exec ${process.execPath} --experimental-strip-types ${stub}`,
+          ],
+        },
+        { cwd, onEvent: (event) => events.push(event) },
+      );
+      expect(await session.prompt("hello")).toBe("end_turn");
 
-    await session.close();
-    await new Promise((resolve) => setTimeout(resolve, 300));
+      await session.close();
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
-    const survivors = execFileSync("/bin/sh", ["-c", `pgrep -f ${marker} || true`], {
-      encoding: "utf8",
-    }).trim();
-    expect(survivors).toBe("");
-  });
+      expect(survivorsOf(marker)).toBe("");
+    },
+  );
 
   it("refuses to prompt a session that has been closed", async () => {
     const session = await start();

@@ -25,6 +25,19 @@ const stub = (mode?: string) => ({
 
 const cwd = process.cwd();
 
+/**
+ * Live processes whose command line carries the marker. `pgrep` runs directly — wrapped in
+ * `sh -c`, Linux's pgrep matches the wrapper shell itself (its argv carries the marker) and
+ * reports a survivor that never existed. Exit code 1 is pgrep's word for "none".
+ */
+function survivorsOf(marker: string): string {
+  try {
+    return execFileSync("pgrep", ["-f", marker], { encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
 describe("probeHarness — TC-0002, the round trip", () => {
   it("completes handshake, session and prompt, and reports what the agent advertised", async () => {
     const result = await probeHarness(stub(), { cwd, timeoutMs: 20_000 });
@@ -89,33 +102,34 @@ describe("probeHarness — TC-0003, the failure modes", () => {
     expect(result.code).toBe("cwd_not_found");
   });
 
-  it("reaps a grandchild process, not just the launcher it spawned", async () => {
-    // The shipped presets are all `npx -y <pkg>`, so the agent is a grandchild of the process the
-    // probe holds. `sh -c` reproduces that shape offline: a marker process in the background, and
-    // the stub `exec`d in the foreground so the probe hangs long enough to time out.
-    const marker = "aibuildos-orphan-probe";
-    const result = await probeHarness(
-      {
-        command: "/bin/sh",
-        args: [
-          "-c",
-          `${process.execPath} -e 'setTimeout(()=>{},30000)' ${marker} & ` +
-            `exec ${process.execPath} --experimental-strip-types ${STUB} --mode=silent`,
-        ],
-      },
-      { cwd, timeoutMs: 750 },
-    );
+  it.skipIf(process.platform === "win32")(
+    "reaps a grandchild process, not just the launcher it spawned",
+    async () => {
+      // The shipped presets are all `npx -y <pkg>`, so the agent is a grandchild of the process the
+      // probe holds. `sh -c` reproduces that shape offline: a marker process in the background, and
+      // the stub `exec`d in the foreground so the probe hangs long enough to time out.
+      const marker = "aibuildos-orphan-probe";
+      const result = await probeHarness(
+        {
+          command: "/bin/sh",
+          args: [
+            "-c",
+            `${process.execPath} -e 'setTimeout(()=>{},30000)' ${marker} & ` +
+              `exec ${process.execPath} --experimental-strip-types ${STUB} --mode=silent`,
+          ],
+        },
+        { cwd, timeoutMs: 750 },
+      );
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.code).toBe("timeout");
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.code).toBe("timeout");
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const survivors = execFileSync("/bin/sh", ["-c", `pgrep -f ${marker} || true`], {
-      encoding: "utf8",
-    }).trim();
-    expect(survivors).toBe("");
-  }, 20_000);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(survivorsOf(marker)).toBe("");
+    },
+    20_000,
+  );
 
   it("reports authentication as its own outcome, with the methods the agent offers", async () => {
     const result = await probeHarness(stub("auth-required"), { cwd, timeoutMs: 20_000 });
