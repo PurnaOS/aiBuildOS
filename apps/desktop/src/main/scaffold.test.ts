@@ -303,5 +303,16 @@ describe("scaffolding a project", () => {
     const playbook = bundleFiles().get("docs/playbooks/pb-0003.md") ?? "";
     expect(playbook).toContain("Leave every `state:` field exactly as you found it");
     expect(playbook).not.toContain("If you are building in a worktree");
+
+    // Nor does the guideline AGENTS.md names by path — an agent reaches it directly, so it has to
+    // say the same thing: the state moves on an existing artifact are the person's.
+    const guideline = bundleFiles().get("docs/guidelines/requirement-first.md") ?? "";
+    expect(guideline).toContain("leave the requirement in `draft`");
+    expect(guideline.toLowerCase()).toContain("scheduling is the person's");
+    expect(guideline).not.toContain("Move to `state: ready` only once");
+    expect(guideline).toContain("old one is the person's move");
+    expect(guideline).not.toContain("old one to `retired`");
+    // Minting a new artifact still carries its own `state:` — the guard allows it, PB-0001 needs it.
+    expect(guideline).toContain("set `state: draft`");
   });
 });
