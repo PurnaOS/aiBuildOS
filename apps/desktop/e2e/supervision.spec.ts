@@ -20,7 +20,20 @@ import {
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const stub = fileURLToPath(new URL("../../../tools/stub-acp-agent/src/agent.ts", import.meta.url));
 
-async function open(mode: string): Promise<{ app: ElectronApplication; w: Page }> {
+/**
+ * The harness record's supervision mapping (RQ-0050#AC-2) onto the stub's own permission-flavoured
+ * config option. Written into the file exactly as the form would save it — a saved harness carries
+ * whatever id it was given, so the mapping has to travel on the record, not be looked up by id.
+ */
+const MAPPED = {
+  closest: { configId: "permission_mode", value: "ask" },
+  "hands-off": { configId: "permission_mode", value: "auto" },
+};
+
+async function open(
+  mode: string,
+  supervisionOptions?: typeof MAPPED,
+): Promise<{ app: ElectronApplication; w: Page }> {
   const config = mkdtempSync(join(tmpdir(), "supervision-config-"));
   const work = mkdtempSync(join(tmpdir(), "supervision-work-"));
   execFileSync("git", ["-C", work, "init", "--quiet"]);
@@ -33,6 +46,7 @@ async function open(mode: string): Promise<{ app: ElectronApplication; w: Page }
         displayName: "Stub",
         command: process.execPath,
         args: ["--experimental-strip-types", stub, `--mode=${mode}`],
+        ...(supervisionOptions === undefined ? {} : { supervisionOptions }),
       },
     ]),
   );
@@ -141,6 +155,73 @@ test("the popover disambiguates a name collision by origin, and hands-off echoes
   await w.keyboard.press("Escape");
   const trigger = w.getByTestId("agent-popover-trigger");
   await expect(trigger).toContainText("hands-off");
+
+  await app.close();
+});
+
+/**
+ * TC-0120. RQ-0050#AC-3 and AC-4 through the running application: what the Supervision section
+ * claims about its own reach, against a harness that maps the stub's `permission_mode` option and
+ * one that maps nothing at all — the same stub either way, so the difference can only be the record.
+ */
+test("a mapped harness carries the level to the agent, and the display follows the agent back", async () => {
+  const { app, w } = await open("controls", MAPPED);
+
+  await w.getByTestId("start-h").click();
+  await w.getByTestId("chat").waitFor({ timeout: 20000 });
+  await w.getByTestId("agent-popover-trigger").click();
+  const popover = w.getByTestId("agent-popover");
+
+  // The session opened at closest, so the agent's own option is where that level put it — and the
+  // section says which option, rather than leaving the reach to be guessed at.
+  await expect(popover.getByTestId("control-permission_mode")).toContainText("Ask");
+  await expect(popover.getByTestId("supervision-reach")).toHaveText(
+    "Also sets Stub's Permission mode to Ask.",
+  );
+
+  // Changing the level mid-session reaches the open session: the chip moves because the *agent*
+  // confirmed it, not because the click did (RQ-0050#AC-1 through the app).
+  await popover.getByTestId("supervision").click();
+  await expect(popover.getByTestId("supervision")).toContainText("hands-off");
+  await expect(popover.getByTestId("control-permission_mode")).toContainText("Auto", {
+    timeout: 10000,
+  });
+  await expect(popover.getByTestId("supervision-reach")).toHaveText(
+    "Also sets Stub's Permission mode to Auto.",
+  );
+
+  // AC-4: the option moves on the agent's side while the level stays hands-off. The level is still
+  // hands-off — it still governs this application's own answering — and the line says the agent no
+  // longer agrees, instead of quietly going on claiming it does.
+  await popover.getByTestId("control-permission_mode").click();
+  await popover.getByTestId("control-permission_mode-ask").click();
+  await expect(popover.getByTestId("supervision-reach")).toHaveText(
+    "Stub's Permission mode is now Ask — changed on the agent's side.",
+  );
+  await expect(popover.getByTestId("supervision")).toContainText("hands-off");
+
+  await app.close();
+});
+
+test("an unmapped harness behaves exactly as today, and the surface says the level is app-side only", async () => {
+  const { app, w } = await open("controls");
+
+  await w.getByTestId("start-h").click();
+  await w.getByTestId("chat").waitFor({ timeout: 20000 });
+  await w.getByTestId("agent-popover-trigger").click();
+  const popover = w.getByTestId("agent-popover");
+
+  await expect(popover.getByTestId("supervision-reach")).toHaveText(
+    "Applies in aiBuildOS only — Stub offers no option this level can set.",
+  );
+
+  // The toggle still works, and nothing was sent: the agent's option is exactly where it woke up.
+  await popover.getByTestId("supervision").click();
+  await expect(popover.getByTestId("supervision")).toContainText("hands-off");
+  await expect(popover.getByTestId("control-permission_mode")).toContainText("Ask");
+  await expect(popover.getByTestId("supervision-reach")).toHaveText(
+    "Applies in aiBuildOS only — Stub offers no option this level can set.",
+  );
 
   await app.close();
 });

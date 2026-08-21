@@ -75,6 +75,62 @@ export function groupAgentSettings(
   return groups;
 }
 
+/** What a harness record maps one supervision level onto — `supervisionOptions[level]` (RQ-0050). */
+export interface SupervisionMapping {
+  readonly configId: string;
+  readonly value: string;
+}
+
+/** How far the supervision level actually reaches, and whether the agent has since disagreed. */
+export interface SupervisionReach {
+  readonly note: string;
+  /** The agent's own option no longer holds what the level put there — shown, never silent. */
+  readonly diverged: boolean;
+}
+
+/**
+ * What the Supervision section says about its own reach (RQ-0050#AC-3, AC-4) — a decision, so it
+ * lives here where a test can call it rather than inside JSX.
+ *
+ * Three honest answers. Nothing to set: either the record maps no option to this level or the agent
+ * advertises none by that id, which from the reader's seat are the same fact — the level holds in
+ * this application alone, and saying more would imply depth that is not there. Set and holding: name
+ * the option and the value, so what the level did is visible. Set and moved: the agent changed it
+ * from its own side, and a line still claiming the first would be exactly the silent disagreement
+ * AC-4 forbids.
+ *
+ * The level shown is deliberately *not* rewritten to match the agent. This application's own
+ * hands-off answering still follows the project's level, so a display that flipped to follow the
+ * agent would misreport the half the reader can actually feel.
+ */
+export function supervisionReach(
+  mapping: SupervisionMapping | undefined,
+  options: readonly ConfigOption[],
+  harnessDisplayName: string,
+): SupervisionReach {
+  const option =
+    mapping === undefined
+      ? undefined
+      : options.find((candidate) => candidate.id === mapping.configId);
+
+  if (mapping === undefined || option === undefined) {
+    return {
+      note: `Applies in aiBuildOS only — ${harnessDisplayName} offers no option this level can set.`,
+      diverged: false,
+    };
+  }
+
+  return option.currentValue === mapping.value
+    ? {
+        note: `Also sets ${harnessDisplayName}'s ${option.name} to ${valueName(option)}.`,
+        diverged: false,
+      }
+    : {
+        note: `${harnessDisplayName}'s ${option.name} is now ${valueName(option)} — changed on the agent's side.`,
+        diverged: true,
+      };
+}
+
 /** The text a setting's chip shows for its current value — a boolean reads as on/off, a select
  * option reads as its own name, and anything else is shown as-is. */
 export function valueName(option: ConfigOption): string {

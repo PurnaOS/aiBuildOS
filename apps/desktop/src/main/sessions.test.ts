@@ -2,10 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { HARNESS_PRESETS } from "@aibuildos/acp";
 import { CUSTOM } from "@aibuildos/acp/bridge";
 import type { EventPayload } from "@aibuildos/ipc";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Harness } from "./harnesses.js";
+import { type Harness, loadHarnesses, saveHarness } from "./harnesses.js";
 import { BUSY_CAP, SessionRegistry, type SupervisionLevel } from "./sessions.js";
 
 /**
@@ -238,5 +239,152 @@ describe("session inventory rows", () => {
     await registry.close(build.sessionId);
     await registry.close(background.sessionId);
     await registry.close(chat.sessionId);
+  });
+});
+
+/**
+ * TC-0119 (RQ-0050#AC-1, AC-2). The supervision mapping as the registry actually uses it: applied at
+ * session start, fanned out to every open session of one project when the level changes, and read
+ * only ever as `harness.supervisionOptions?.[level]` — so the same stub proves both a mapped harness
+ * and an unmapped one with no branch in the registry naming either.
+ *
+ * `--mode=controls`, because it is the only stub mode that advertises config options at all; the
+ * `permission_mode` entry it offers is the spec's own example of a permission-flavoured one.
+ */
+const CONTROLS = ["--experimental-strip-types", stub, "--mode=controls"];
+
+const mapped: Harness = {
+  id: "stub-mapped",
+  displayName: "Stub",
+  command: process.execPath,
+  args: CONTROLS,
+  supervisionOptions: {
+    closest: { configId: "permission_mode", value: "ask" },
+    "hands-off": { configId: "permission_mode", value: "auto" },
+  },
+};
+
+const unmapped: Harness = {
+  id: "stub-unmapped",
+  displayName: "Stub",
+  command: process.execPath,
+  args: CONTROLS,
+};
+
+describe("the supervision mapping", () => {
+  let cwd: string;
+  let registry: SessionRegistry;
+  let level: SupervisionLevel;
+  /** Every `acp.config_options` the agents announced, in order, with the session that said it. */
+  let announced: { sessionId: string; permissionMode: string | undefined }[];
+  /** The registry's own narration when a mapped option is not on offer. */
+  let notes: { sessionId: string; message: string }[];
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "aibuildos-supervision-"));
+    level = "closest";
+    announced = [];
+    notes = [];
+    registry = new SessionRegistry(
+      (event, payload) => {
+        if (event !== "session:event") return;
+        const { sessionId, event: inner } = payload as EventPayload<"session:event">;
+        const { name, value } = inner as unknown as { name?: string; value?: unknown };
+        if (name === CUSTOM.configOptions) {
+          const options = (value as { configOptions?: { id: string; currentValue?: string }[] })
+            ?.configOptions;
+          announced.push({
+            sessionId,
+            permissionMode: options?.find((option) => option.id === "permission_mode")
+              ?.currentValue,
+          });
+        }
+        if (name === "aibuildos.supervision") {
+          notes.push({ sessionId, message: (value as { message: string }).message });
+        }
+      },
+      () => level,
+    );
+  });
+
+  afterEach(async () => {
+    await registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  const open = async (harness: Harness, projectId: string): Promise<string> => {
+    const result = await registry.start(harness, projectId, cwd, "1.0.0");
+    if (!result.ok) throw new Error(`${result.code}: ${result.message}`);
+    return result.sessionId;
+  };
+
+  it("sends the level's mapped option to the agent as the session starts", async () => {
+    level = "hands-off";
+    const sessionId = await open(mapped, "project-1");
+
+    // The stub wakes at "ask" and persists what it is told, so "auto" can only have come from the
+    // level being applied over the real wire.
+    await waitFor(() => announced.length === 1);
+    expect(announced[0]).toEqual({ sessionId, permissionMode: "auto" });
+  });
+
+  it("fans a level change out to every open session of that project, and to no other's", async () => {
+    const first = await open(mapped, "project-1");
+    const second = await open(mapped, "project-1");
+    const other = await open(mapped, "project-2");
+    await waitFor(() => announced.length === 3); // each start applied "closest" — "ask"
+    announced = [];
+
+    await registry.applySupervision("project-1", "hands-off");
+    await waitFor(() => announced.length === 2);
+
+    expect(announced.map((entry) => entry.permissionMode)).toEqual(["auto", "auto"]);
+    expect(new Set(announced.map((entry) => entry.sessionId))).toEqual(new Set([first, second]));
+    expect(announced.some((entry) => entry.sessionId === other)).toBe(false);
+  });
+
+  it("sends nothing at all for a harness that maps nothing", async () => {
+    const sessionId = await open(unmapped, "project-1");
+
+    // A round trip on the same pipe: anything the stub had queued to say arrives before this
+    // resolves, so an empty list afterwards is an absence rather than a race.
+    await registry.prompt(sessionId, "ping");
+
+    expect(announced).toEqual([]);
+    expect(notes).toEqual([]);
+  });
+
+  it("narrates a mapped option the agent never advertised instead of failing the session", async () => {
+    // `--mode=permission` offers no config options — the same mapped record, an agent that cannot
+    // take it.
+    level = "hands-off";
+    const sessionId = await open({ ...mapped, args: harness.args }, "project-1");
+
+    expect(announced).toEqual([]);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.sessionId).toBe(sessionId);
+    expect(notes[0]?.message).toContain("permission_mode");
+
+    // And the level still does everything it did before RQ-0050 existed: this turn's permission
+    // request is answered hands-off, on this side, with nothing having reached the agent.
+    expect(await registry.prompt(sessionId, "run the tests")).toEqual({ stopReason: "end_turn" });
+  });
+
+  it("round-trips the mapping through the harness record, prefilled from the shipped presets", () => {
+    const file = join(cwd, "harnesses.json");
+    const preset = HARNESS_PRESETS.find((candidate) => candidate.id === "claude-code");
+    if (preset?.supervisionOptions === undefined) throw new Error("expected a mapped preset");
+
+    // Saved the way the form saves it: no id, so one is minted. That minted id is precisely why the
+    // mapping has to live on the record — nothing downstream could find the preset again.
+    const saved = saveHarness(file, {
+      displayName: preset.displayName,
+      command: preset.command,
+      args: [...preset.args],
+      supervisionOptions: preset.supervisionOptions,
+    });
+    expect(saved.id).not.toBe(preset.id);
+
+    expect(loadHarnesses(file)[0]?.supervisionOptions).toEqual(preset.supervisionOptions);
   });
 });

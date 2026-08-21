@@ -33,6 +33,9 @@ interface Held {
   readonly session: AgentSession;
   /** Which project this session belongs to — what the supervision level is read against. */
   readonly projectId: string;
+  /** The harness record this session was started from — where the supervision mapping lives
+   * (RQ-0050#AC-2), read again whenever the level changes mid-run. */
+  readonly harness: Harness;
   /** The story this is a build session for; `null` for the workspace's own conversation
    * (RQ-0021 — what `session:list` and the concurrency cap distinguish on). */
   readonly storyId: string | null;
@@ -156,15 +159,23 @@ export class SessionRegistry {
       if (controls.configOptions.length === 0) {
         controls.configOptions = (session.offered.configOptions ?? []) as { id: string }[];
       }
-      this.held.set(sessionId, {
+      const held: Held = {
         session,
         projectId,
+        harness,
         storyId,
         label,
         startedAt: new Date().toISOString(),
         pending,
         controls,
-      });
+      };
+      this.held.set(sessionId, held);
+
+      // The project's supervision level, reaching the agent (RQ-0050#AC-1). Awaited before `ready`
+      // so the controls cache the renderer reads on mount already holds what the level applied,
+      // rather than the value the agent happened to wake up with.
+      await this.push(sessionId, held, this.supervisionOf(projectId));
+
       this.emit("session:state", { sessionId, state: "ready", error: null });
 
       return {
@@ -246,6 +257,47 @@ export class SessionRegistry {
       label: held.label,
       startedAt: held.startedAt,
     }));
+  }
+
+  /**
+   * Carry a supervision level to every open session of one project, and to no other project's
+   * (RQ-0050#AC-1) — the fan-out `project:set-supervision` calls when the level changes mid-run.
+   *
+   * Reading `held` is the whole project→sessions index: one map already keyed by session id and
+   * carrying `projectId` on every entry, so a second index would only be a second thing to keep
+   * true. Each session's push settles on its own — one agent refusing must not skip the rest.
+   */
+  async applySupervision(projectId: string, level: SupervisionLevel): Promise<void> {
+    await Promise.all(
+      [...this.held.entries()]
+        .filter(([, held]) => held.projectId === projectId)
+        .map(([sessionId, held]) => this.push(sessionId, held, level)),
+    );
+  }
+
+  /**
+   * One session's half of that, and the only place the mapping is read: a pure lookup on the
+   * harness record, so no harness is named in code (RQ-0050#AC-2).
+   *
+   * The record says what this harness maps; the *agent* says what it actually offers, and only the
+   * agent is the authority on the second. An option it never advertised is narrated on the session's
+   * own stream and left alone — the level still holds on this side, which is exactly what AC-3 asks
+   * the surface to say rather than a failure to invent.
+   */
+  private async push(sessionId: string, held: Held, level: SupervisionLevel): Promise<void> {
+    const mapped = held.harness.supervisionOptions?.[level];
+    if (mapped === undefined) return;
+
+    const message = held.controls.configOptions.some((option) => option.id === mapped.configId)
+      ? await held.session
+          .setConfigOption(mapped.configId, mapped.value)
+          .then(() => null)
+          .catch((cause: unknown) => (cause instanceof Error ? cause.message : String(cause)))
+      : `${held.harness.displayName} advertises no "${mapped.configId}" option, so supervision applies in aiBuildOS only.`;
+
+    if (message !== null) {
+      this.noteCustom(sessionId, "aibuildos.supervision", { ok: false, message });
+    }
   }
 
   /** Hear this session's turns end (RQ-0020#AC-3). Returns the unsubscribe; `close()` also clears

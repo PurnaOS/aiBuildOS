@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,10 @@ test("prompts to attach a harness on an empty config, and not once one exists", 
     await window.getByTestId("preset-claude-code").click();
     await expect(window.getByTestId("harness-command")).toHaveValue("npx");
 
+    // Switching presets replaces the prefill rather than accumulating it: Gemini maps no
+    // supervision option, so Claude's mapping must not survive the second click (RQ-0050#AC-3).
+    await window.getByTestId("preset-gemini").click();
+
     await window.getByTestId("harness-name").fill("Stub");
     await window.getByTestId("harness-command").fill(process.execPath);
     // `--experimental-strip-types` is the default only from Node 22.18; `engines` admits 22.0.
@@ -38,6 +42,7 @@ test("prompts to attach a harness on an empty config, and not once one exists", 
 
     await expect(window.getByTestId("attach-dialog")).toBeHidden();
     await expect(window.getByTestId("harness-row")).toHaveCount(1);
+    expect(readFileSync(join(dir, "harnesses.json"), "utf8")).not.toContain("supervisionOptions");
     await first.close();
 
     // Same config file, second launch: the prompt is gone (RQ-0001#AC-4).

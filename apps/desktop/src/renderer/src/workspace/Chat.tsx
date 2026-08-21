@@ -60,14 +60,16 @@ export function Chat({
   };
 
   if (state.status === "ready") {
-    const attachedHarness =
-      harnesses?.find((harness) => harness.id === startedWith)?.displayName ??
-      "the attached harness";
+    const attached = harnesses?.find((harness) => harness.id === startedWith);
+    const attachedHarness = attached?.displayName ?? "the attached harness";
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="chat">
         {/* Everything the agent is set to, plus supervision, in one popover (RQ-0042). */}
         <AgentPopover
           attachedHarness={attachedHarness}
+          // The record's own supervision mapping (RQ-0050#AC-2) — the same record the display name
+          // above comes from, so the popover reads one harness, not two.
+          supervisionOptions={attached?.supervisionOptions}
           projectId={projectId}
           modes={controls.modes}
           modeId={controls.modeId}
