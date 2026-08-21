@@ -1,5 +1,14 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative as nodeRelative } from "node:path";
+
+/**
+ * Bundle paths are the graph's keys and the findings' addresses, and they are compared against
+ * forward-slash strings everywhere (index links, `findingsFor`, the CLI's output). Windows's
+ * `relative()` answers with backslashes, which silently fails every one of those comparisons —
+ * the first Windows CI run proved it — so separators are normalised the moment a path enters
+ * the bundle.
+ */
+const relative = (from: string, to: string): string => nodeRelative(from, to).replaceAll("\\", "/");
 import { hasFrontmatter, parseOkfDocument } from "./parse.js";
 import {
   type Profile,

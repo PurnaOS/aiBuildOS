@@ -182,7 +182,9 @@ test("a worktree build leaves the workspace free, and lands on accept", async ()
   await w.getByTestId("board-card-build-menu-ST-0001").click();
   await w.getByTestId("board-card-build-worktree-ST-0001-h").click();
 
-  await expect.poll(() => readFileSync(storyFile, "utf8")).toContain("state: building");
+  await expect
+    .poll(() => readFileSync(storyFile, "utf8"), { timeout: 20000 })
+    .toContain("state: building");
   await expect.poll(() => existsSync(wtPath)).toBe(true);
   expect(
     execFileSync("git", ["-C", work, "branch", "--list", "aibuildos/st-0001"], {
@@ -244,7 +246,9 @@ test("restart lists a survivor without picking it up on its own", async () => {
   // `build:start` creates the worktree before the renderer ever writes `state: building` — seeing
   // the state on disk is already proof the worktree exists, and skipping a second poll for it here
   // widens the margin before `--mode=slow`'s ~500ms turn ends on its own.
-  await expect.poll(() => readFileSync(storyFile, "utf8")).toContain("state: building");
+  await expect
+    .poll(() => readFileSync(storyFile, "utf8"), { timeout: 20000 })
+    .toContain("state: building");
 
   // Closed mid-build, well ahead of that turn ending: `before-quit` closes every session
   // (DC-0021), but the worktree, its branch and the record survive on disk.

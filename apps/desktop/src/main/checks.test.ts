@@ -92,12 +92,13 @@ describe("running the project's checks", () => {
     );
 
     expect(problem).toBeNull();
+    // 127 is `sh`'s convention for "the shell ran, the named command did not exist"; cmd.exe says
+    // 9009 — still the exit code deciding the verdict, not stderr text.
+    const notFound = process.platform === "win32" ? 9009 : 127;
     expect(results).toEqual([
       { command: pass, outcome: "passed", exitCode: 0 },
       { command: fail, outcome: "failed", exitCode: 1 },
-      // 127 is `sh`'s own convention for "the shell ran, the named command did not exist" — still
-      // the exit code deciding the verdict, not stderr text.
-      { command: missing, outcome: "could_not_run", exitCode: 127 },
+      { command: missing, outcome: "could_not_run", exitCode: notFound },
     ]);
     // Captured as it streamed, not reconstructed after the fact: the chunk arrived through the
     // callback while `pass` was still running.
