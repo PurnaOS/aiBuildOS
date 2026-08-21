@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupAgentSettings, valueName } from "./agentControls.js";
+import { groupAgentSettings, supervisionReach, valueName } from "./agentControls.js";
 
 /**
  * TC-0107. The popover groups by origin and never dedupes — as functions, since there is no
@@ -72,6 +72,57 @@ describe("grouping agent settings by origin", () => {
       },
     ]);
     expect(groupAgentSettings([], null, [], "Stub")).toEqual([]);
+  });
+});
+
+/**
+ * TC-0120's pure half (RQ-0050#AC-3, AC-4). What the Supervision section is allowed to claim: only
+ * that the level reached the agent when it demonstrably did, and never silence when it no longer has.
+ */
+describe("what the supervision section says about its reach", () => {
+  const PERMISSION = {
+    id: "permission_mode",
+    name: "Permission mode",
+    currentValue: "ask",
+    options: [
+      { value: "ask", name: "Ask" },
+      { value: "auto", name: "Auto" },
+    ],
+  };
+  const MAPPING = { configId: "permission_mode", value: "ask" };
+
+  it("says the level is this application's alone when the harness maps nothing", () => {
+    expect(supervisionReach(undefined, [PERMISSION], "Stub")).toEqual({
+      note: "Applies in aiBuildOS only — Stub offers no option this level can set.",
+      diverged: false,
+    });
+  });
+
+  it("says the same when the record maps an option this agent never advertised", () => {
+    // The record is not the authority on what the agent offers; claiming reach here would be
+    // exactly the depth RQ-0050#AC-3 forbids implying.
+    expect(
+      supervisionReach({ configId: "nothing_like_it", value: "ask" }, [PERMISSION], "Stub"),
+    ).toEqual({
+      note: "Applies in aiBuildOS only — Stub offers no option this level can set.",
+      diverged: false,
+    });
+  });
+
+  it("names the option and its own value when the level is what the agent is set to", () => {
+    expect(supervisionReach(MAPPING, [PERMISSION], "Stub")).toEqual({
+      note: "Also sets Stub's Permission mode to Ask.",
+      diverged: false,
+    });
+  });
+
+  it("says so out loud once the agent has moved the option from its own side", () => {
+    const moved = { ...PERMISSION, currentValue: "auto" };
+
+    expect(supervisionReach(MAPPING, [moved], "Stub")).toEqual({
+      note: "Stub's Permission mode is now Auto — changed on the agent's side.",
+      diverged: true,
+    });
   });
 });
 
