@@ -319,6 +319,9 @@ function indexRow(id: string, title: string, targets: readonly string[]): string
 }
 
 /** Where a link target's row should point — the bundle's own prefix-to-directory table. */
+// ponytail: hardcoded prefix table, feeding only the index rows' navigation links (unvalidated by
+// design). A project whose profile moves a type's `dir` gets a wrong nav link; read the target
+// type's `dir` from the profile if custom bundle layouts arrive.
 function dirOf(id: string): string {
   const prefix = id.slice(0, 2).toUpperCase();
   return (
