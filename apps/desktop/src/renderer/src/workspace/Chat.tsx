@@ -7,6 +7,7 @@ import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { AgentPopover, SupervisionPill, useAgentControls } from "./AgentPopover.js";
 import { Composer, ComposerMenuProvider, StarterCards } from "./Composer.js";
 import { AsksAssistantMessage } from "./QuestionCard.js";
+import type { Tab } from "./TabStrip.js";
 import { ToolCallCard } from "./ToolCallCard.js";
 import { ToolSessionContext } from "./toolCall.js";
 
@@ -30,12 +31,16 @@ export function Chat({
   session,
   pending,
   onSent,
+  onOpen,
 }: {
   projectId: string;
   session: Session;
   /** Text the record rail asked to be sent, or `null`. */
   pending?: string | null;
   onSent?: () => void;
+  /** Opens a background playbook's `session:<id>` tab (RQ-0039#AC-3) — `Workspace.tsx`'s own
+   * `tabs.open`, threaded down to the composer menu that starts one. */
+  onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
 }): React.JSX.Element {
   const { harnesses } = useHarnesses();
   const { state, start } = session;
@@ -86,6 +91,7 @@ export function Chat({
             attachedHarness={attachedHarness}
             commands={controls.commands}
             sessionId={state.sessionId}
+            onOpen={onOpen}
           >
             <div className="relative min-h-0 flex-1">
               {/* The cards CopilotKit renders carry no session of their own; this is how a

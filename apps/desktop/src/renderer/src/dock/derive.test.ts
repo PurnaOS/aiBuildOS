@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type BuildInfo,
+  checkpointLabel,
   type DockData,
   deriveDock,
   describeActivity,
@@ -8,6 +9,9 @@ import {
   needsYouCount,
   nextAction,
   type SessionInfo,
+  terminalLabel,
+  terminalStatus,
+  worktreeBadges,
 } from "./derive.js";
 
 const session = (over: Partial<SessionInfo> & { sessionId: string }): SessionInfo => ({
@@ -29,6 +33,7 @@ const build = (over: Partial<BuildInfo> & { storyId: string }): BuildInfo => ({
   sprintId: null,
   ahead: 0,
   lastCheckpointAt: null,
+  dirty: false,
   ...over,
 });
 
@@ -68,6 +73,15 @@ describe("deriveDock", () => {
     expect(dock.builds[0]).toMatchObject({ state: "no session yet", needsYou: false });
   });
 
+  it("carries a build's sprint id and dirty state through unchanged (RQ-0037)", () => {
+    const dock = deriveDock(
+      [],
+      [build({ storyId: "ST-0004", sprintId: "SP-0001", dirty: true, ahead: 3 })],
+      (id) => id,
+    );
+    expect(dock.builds[0]).toMatchObject({ sprintId: "SP-0001", dirty: true, ahead: 3 });
+  });
+
   it("reads a chat-only session with no worktree build — Now's structural failure", () => {
     const dock = deriveDock([session({ sessionId: "s-main", state: "busy" })], [], (id) => id);
     expect(dock.builds).toHaveLength(0);
@@ -88,6 +102,7 @@ describe("deriveDock", () => {
           sprintId: null,
           ahead: 0,
           lastCheckpointAt: null,
+          dirty: false,
           state: "waiting on you",
           activity: null,
           lastEventAt: null,
@@ -157,6 +172,7 @@ describe("nextAction", () => {
           sprintId: null,
           ahead: 0,
           lastCheckpointAt: null,
+          dirty: false,
           state: "waiting on you",
           activity: null,
           lastEventAt: null,
@@ -220,5 +236,51 @@ describe("elapsedLabel", () => {
     expect(elapsedLabel(null, 5000)).toBe(null);
     expect(elapsedLabel(0, 42_000)).toBe("42s ago");
     expect(elapsedLabel(0, 3 * 60 * 60 * 1000)).toBe("3h ago");
+  });
+});
+
+/** RQ-0037#AC-2. `ahead === 0` reads as "no checkpoints yet" in words — never a blank — even though
+ * `lastCheckpointAt` is non-null at that point (the base's own commit date, not a checkpoint). */
+describe("checkpointLabel", () => {
+  it("says no checkpoints yet at ahead: 0, regardless of lastCheckpointAt", () => {
+    expect(checkpointLabel(0, "2026-08-20T00:00:00Z", 0)).toBe("no checkpoints yet");
+    expect(checkpointLabel(0, null, 0)).toBe("no checkpoints yet");
+  });
+
+  it("names the count and elapsed time once a checkpoint exists", () => {
+    const now = Date.parse("2026-08-21T00:01:00Z");
+    expect(checkpointLabel(1, "2026-08-21T00:00:00Z", now)).toBe(
+      "1 commit ahead · last checkpoint 1m ago",
+    );
+    expect(checkpointLabel(3, "2026-08-21T00:00:00Z", now)).toBe(
+      "3 commits ahead · last checkpoint 1m ago",
+    );
+  });
+});
+
+/** RQ-0037#AC-3. Dirty and resumable are independent, both readable as words. */
+describe("worktreeBadges", () => {
+  it("names dirty and resumable independently, and together", () => {
+    expect(worktreeBadges({ sessionId: "s1", dirty: false })).toEqual([]);
+    expect(worktreeBadges({ sessionId: "s1", dirty: true })).toEqual(["dirty"]);
+    expect(worktreeBadges({ sessionId: null, dirty: false })).toEqual(["resumable"]);
+    expect(worktreeBadges({ sessionId: null, dirty: true })).toEqual(["dirty", "resumable"]);
+  });
+});
+
+/** RQ-0038. Terminal rows label by the index baked into `main/terminals.ts`'s own `t1, t2…` ids. */
+describe("terminalLabel", () => {
+  it("reads the index out of the terminal id", () => {
+    expect(terminalLabel("t1", "myproject")).toBe("Terminal 1 · myproject");
+    expect(terminalLabel("t12", "demo")).toBe("Terminal 12 · demo");
+  });
+});
+
+describe("terminalStatus", () => {
+  it("reads running, exited, and exited with a non-zero code", () => {
+    expect(terminalStatus(undefined)).toBe("running");
+    expect(terminalStatus(0)).toBe("exited");
+    expect(terminalStatus(null)).toBe("exited");
+    expect(terminalStatus(1)).toBe("exited (1)");
   });
 });

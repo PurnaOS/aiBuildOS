@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { type BoardArtifact, deriveBoard, mergeVocabularies } from "./derive.js";
+import {
+  type BoardArtifact,
+  deriveBoard,
+  filterBySprint,
+  mergeVocabularies,
+  sprintProgress,
+  sprintsOf,
+} from "./derive.js";
 
 /**
  * TC-0040. A board is a derivation of the record, and nothing else.
@@ -59,5 +66,58 @@ describe("deriveBoard", () => {
 describe("mergeVocabularies", () => {
   it("keeps the first list's order and appends only what the second adds", () => {
     expect(mergeVocabularies(["a", "b"], ["b", "c"])).toEqual(["a", "b", "c"]);
+  });
+});
+
+/** RQ-0035#AC-5, TC-0092: the Work header's sprint selector is a filter, derived from the same
+ * inbound edges `project:record` already answers with — no separate sprint-membership fetch. */
+describe("sprintsOf", () => {
+  it("reads sprint membership off the inbound `contains` edges, and nothing else", () => {
+    expect(
+      sprintsOf([
+        { relationship: "contains", id: "SP-0001" },
+        { relationship: "implements", id: "EP-0001" },
+      ]),
+    ).toEqual(["SP-0001"]);
+  });
+
+  it("is empty for a card no sprint reaches", () => {
+    expect(sprintsOf([{ relationship: "implements", id: "EP-0001" }])).toEqual([]);
+  });
+});
+
+const ST_A: BoardArtifact = { id: "ST-0001", type: "Story", title: "A", state: "ready" };
+const ST_B: BoardArtifact = { id: "ST-0002", type: "Story", title: "B", state: "accepted" };
+const ST_C: BoardArtifact = { id: "ST-0003", type: "Story", title: "C", state: "ready" };
+const membership = new Map<string, readonly string[]>([
+  ["ST-0001", ["SP-0001"]],
+  ["ST-0002", ["SP-0001"]],
+]);
+
+describe("filterBySprint", () => {
+  it("`all` changes nothing", () => {
+    expect(filterBySprint([ST_A, ST_B, ST_C], membership, "all")).toEqual([ST_A, ST_B, ST_C]);
+  });
+
+  it("`backlog` is every card no sprint's `contains` reaches", () => {
+    expect(filterBySprint([ST_A, ST_B, ST_C], membership, "backlog")).toEqual([ST_C]);
+  });
+
+  it("a sprint id is only the cards that sprint reaches", () => {
+    expect(filterBySprint([ST_A, ST_B, ST_C], membership, "SP-0001")).toEqual([ST_A, ST_B]);
+  });
+
+  it("an unknown sprint id reaches nothing, rather than falling back to `all`", () => {
+    expect(filterBySprint([ST_A, ST_B, ST_C], membership, "SP-9999")).toEqual([]);
+  });
+});
+
+describe("sprintProgress", () => {
+  it("counts accepted over the total it is handed", () => {
+    expect(sprintProgress([ST_A, ST_B])).toEqual({ accepted: 1, total: 2 });
+  });
+
+  it("is 0/0 for an empty sprint", () => {
+    expect(sprintProgress([])).toEqual({ accepted: 0, total: 0 });
   });
 });

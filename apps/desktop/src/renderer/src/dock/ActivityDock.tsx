@@ -2,20 +2,23 @@ import type { ChannelResponse } from "@aibuildos/ipc";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useHarnesses } from "../harness/HarnessPanel.js";
-import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
+import { button, eyebrow, focusRing, middleTruncate, mono, primary } from "../ui.js";
 import { useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
 import {
   type BuildInfo,
   type BuildRow,
+  checkpointLabel,
   deriveDock,
   describeActivity,
   elapsedLabel,
   needsYouCount,
   nextAction,
   type SessionInfo,
+  worktreeBadges,
 } from "./derive.js";
 import { PermissionCard, type PermissionInfo } from "./PermissionCard.js";
+import { Terminals } from "./Terminals.js";
 
 type Record_ = ChannelResponse<"project:record">;
 type OpenTab = (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
@@ -172,6 +175,7 @@ export function ActivityDock({
     sprintId: build.sprintId,
     ahead: build.ahead,
     lastCheckpointAt: build.lastCheckpointAt,
+    dirty: build.dirty,
   }));
   const titleOf = (id: string): string => record?.artifacts?.find((a) => a.id === id)?.title ?? id;
   const artifactStateOf = (id: string): string | undefined =>
@@ -355,12 +359,56 @@ export function ActivityDock({
                       </div>
 
                       {row.branch !== "" && (
-                        <p
+                        <div
                           data-testid={`now-row-worktree-${row.storyId}`}
-                          className="mt-1 text-[11px] text-neutral-500"
+                          className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-neutral-500"
                         >
-                          Works in its own copy of the code —{" "}
-                          <span className={mono}>{row.branch}</span>.
+                          <span>
+                            Works in its own copy of the code —{" "}
+                            <span className={mono}>{row.branch}</span>.
+                          </span>
+                          {row.sprintId !== null && (
+                            <span
+                              data-testid={`now-row-sprint-${row.storyId}`}
+                              className={`${mono} rounded bg-neutral-100 px-1 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400`}
+                            >
+                              sprint {row.sprintId}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {row.branch !== "" && (
+                        <p
+                          data-testid={`now-row-path-${row.storyId}`}
+                          className={`mt-0.5 text-[11px] ${mono} text-neutral-500`}
+                        >
+                          {middleTruncate(row.path)}
+                        </p>
+                      )}
+
+                      <p
+                        data-testid={`now-row-checkpoint-${row.storyId}`}
+                        className="mt-0.5 text-[11px] text-neutral-500"
+                      >
+                        {checkpointLabel(row.ahead, row.lastCheckpointAt, clock)}
+                      </p>
+
+                      {worktreeBadges(row).length > 0 && (
+                        <p
+                          data-testid={`now-row-status-${row.storyId}`}
+                          className="mt-0.5 flex gap-2 text-[11px] text-amber-600 dark:text-amber-500"
+                        >
+                          {worktreeBadges(row).includes("dirty") && (
+                            <span data-testid={`now-row-dirty-${row.storyId}`}>
+                              uncommitted changes
+                            </span>
+                          )}
+                          {worktreeBadges(row).includes("resumable") && (
+                            <span data-testid={`now-row-resumable-${row.storyId}`}>
+                              orphaned — resumable
+                            </span>
+                          )}
                         </p>
                       )}
 
@@ -433,41 +481,61 @@ export function ActivityDock({
               <p className="mt-1.5 text-xs text-neutral-500">Nothing running in the background.</p>
             ) : (
               <div className="mt-1.5 flex flex-col gap-2">
-                {data.background.map((row) => (
-                  <div
-                    key={row.sessionId}
-                    data-testid={`dock-background-${row.sessionId}`}
-                    className="flex items-center justify-between gap-2 rounded border border-neutral-200 p-2 dark:border-neutral-800"
-                  >
-                    <div>
-                      <p className="text-sm">{row.label}</p>
-                      <span
-                        className={`text-xs ${row.needsYou ? "text-amber-600 dark:text-amber-500" : "text-neutral-500"}`}
-                      >
-                        {row.needsYou ? "waiting on you" : (row.state ?? "starting")}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      data-testid={`dock-background-open-${row.sessionId}`}
-                      onClick={() => openSession(row.sessionId, row.label)}
-                      className={`${button} ${focusRing} text-xs`}
+                {data.background.map((row) => {
+                  const permission = permissions.get(row.sessionId);
+                  return (
+                    <div
+                      key={row.sessionId}
+                      data-testid={`dock-background-${row.sessionId}`}
+                      className="rounded border border-neutral-200 dark:border-neutral-800"
                     >
-                      Open
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex items-center justify-between gap-2 p-2">
+                        <div>
+                          <p className="text-sm">{row.label}</p>
+                          <span
+                            className={`text-xs ${row.needsYou ? "text-amber-600 dark:text-amber-500" : "text-neutral-500"}`}
+                          >
+                            {row.needsYou ? "waiting on you" : (row.state ?? "starting")}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          data-testid={`dock-background-open-${row.sessionId}`}
+                          onClick={() => openSession(row.sessionId, row.label)}
+                          className={`${button} ${focusRing} text-xs`}
+                        >
+                          Open
+                        </button>
+                      </div>
+
+                      {permission !== undefined && (
+                        <div className="-mx-2 -mb-2 mt-2">
+                          <PermissionCard
+                            sessionId={row.sessionId}
+                            permission={permission}
+                            wrapperTestId={`dock-background-waiting-${row.sessionId}`}
+                            automaticTestId={`dock-background-waiting-${row.sessionId}-automatic`}
+                            answerTestId={(optionId) =>
+                              `dock-background-answer-${row.sessionId}-${optionId}`
+                            }
+                            onAnswered={() =>
+                              setPermissions((current) => {
+                                const next = new Map(current);
+                                next.delete(row.sessionId);
+                                return next;
+                              })
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
 
-          {/* Terminals: a placeholder header only — a concurrent lane's slot (RQ-0038), not this
-              one's. Nothing renders below it until that lane fills it in. */}
-          <section className="mt-4">
-            <p data-testid="dock-section-terminals" className={eyebrow}>
-              Terminals
-            </p>
-          </section>
+          <Terminals projectId={projectId} />
         </div>
       )}
     </div>

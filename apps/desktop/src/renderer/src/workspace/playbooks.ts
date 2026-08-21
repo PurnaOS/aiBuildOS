@@ -79,3 +79,17 @@ export function resolveHarness(
   if (preferred === undefined) return fallback;
   return harnesses.find((harness) => harness.displayName === preferred)?.displayName ?? fallback;
 }
+
+/** A harness a background run can actually spawn with (RQ-0039) — `session:start` takes an id,
+ * unlike `resolveHarness`'s display name (a playbook's own preference travels with the repository
+ * by name, DC-0019's Consequences). Matches the same preference, falling back to whatever is
+ * configured first rather than to "the attached harness" — a background run has no chat of its own
+ * already attached to fall back to. `null` only when nothing is configured at all. */
+export function backgroundHarnessId(
+  preferred: string | undefined,
+  harnesses: readonly { id: string; displayName: string }[],
+): string | null {
+  const byPreference =
+    preferred === undefined ? undefined : harnesses.find((h) => h.displayName === preferred);
+  return (byPreference ?? harnesses[0])?.id ?? null;
+}

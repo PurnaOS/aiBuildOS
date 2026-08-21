@@ -1,12 +1,13 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useState } from "react";
+import { useHarnesses } from "../harness/HarnessPanel.js";
 import { Loading } from "../Loading.js";
 import { approve, describeApproval, flipsFor, type SaveFn } from "../plan/approve.js";
 import { derivePlan, type PlanDraft, type PlanGroup, type PlanStory } from "../plan/derive.js";
 import { button, card, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { splitBody } from "../workspace/ArtifactTab.js";
-import { compose } from "../workspace/playbooks.js";
+import { backgroundHarnessId, compose } from "../workspace/playbooks.js";
 import { useBump, useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
 import { Column } from "./Column.js";
@@ -47,6 +48,7 @@ export function PlanSurface({
 }): React.JSX.Element {
   const revision = useRevision();
   const bump = useBump();
+  const { harnesses } = useHarnesses();
   const [record, setRecord] = useState<Record_ | null>(null);
   const [vocabulary, setVocabulary] = useState<string[]>([]);
   const [showRetired, setShowRetired] = useState(false);
@@ -55,6 +57,10 @@ export function PlanSurface({
   /** Requirement IDs picked in the `ready` column (ST-0027#AC-1). */
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [planning, setPlanning] = useState(false);
+  /** Planning in the background (RQ-0039#AC-1) — a separate flag from `planning` because the two
+   * buttons must not race each other into the same picked set. */
+  const [planningBg, setPlanningBg] = useState(false);
+  const [bgProblem, setBgProblem] = useState<string | null>(null);
   const [refusals, setRefusals] = useState<Record<string, string>>({});
   const [approving, setApproving] = useState(false);
   /** What Retire is asking about — the application's own dialog (RQ-0041#AC-2). */
@@ -140,6 +146,60 @@ export function PlanSurface({
       setSelected(new Set());
     } finally {
       setPlanning(false);
+    }
+  };
+
+  /**
+   * Plan the selected work beside the chat instead of inside it (RQ-0039#AC-1): the same picked
+   * requirements and the same plan playbook, composed exactly as `planSelected` does — but
+   * `session:start` with a `background` label and a fire-and-forget `session:prompt` in place of
+   * `onPrompt`, the WorkBoard worktree-build precedent, then the session tab opens. A refusal
+   * renders right on the footer, where the user pressed.
+   */
+  const planInBackground = async (): Promise<void> => {
+    const chosen = (readyColumn?.cards ?? []).filter((c) => picked.includes(c.id));
+    const playbook = findPlanPlaybook(record.artifacts ?? []);
+    if (chosen.length === 0 || playbook === undefined) return;
+
+    setPlanningBg(true);
+    setBgProblem(null);
+    try {
+      const artifact = await window.aibuildos.invoke("project:artifact", {
+        id: projectId,
+        artifactId: playbook.id,
+      });
+      const preferred =
+        typeof artifact.frontmatter.harness === "string" ? artifact.frontmatter.harness : undefined;
+      const harnessId = backgroundHarnessId(preferred, harnesses ?? []);
+      if (harnessId === null) {
+        setBgProblem("No coding agent is attached.");
+        return;
+      }
+
+      const started = await window.aibuildos.invoke("session:start", {
+        projectId,
+        harnessId,
+        background: { label: playbook.title },
+      });
+      if (!started.ok) {
+        setBgProblem(started.message);
+        return;
+      }
+
+      void window.aibuildos.invoke("session:prompt", {
+        sessionId: started.sessionId,
+        text: compose(
+          artifact.body,
+          chosen.map((c) => ({ id: c.id, title: c.title })),
+        ),
+      });
+      onOpen(
+        { id: `session:${started.sessionId}`, kind: "session", title: playbook.title },
+        { preview: false },
+      );
+      setSelected(new Set());
+    } finally {
+      setPlanningBg(false);
     }
   };
 
@@ -239,12 +299,27 @@ export function PlanSurface({
             <button
               type="button"
               data-testid="plan-start"
-              disabled={planning}
+              disabled={planning || planningBg}
               onClick={() => void planSelected()}
               className={`${primary} px-2 py-0.5 text-[11px]`}
             >
               {planning ? "Sending…" : "Plan the selected work"}
             </button>
+            {/* RQ-0039#AC-1: the same plan, run beside the chat instead of inside it. */}
+            <button
+              type="button"
+              data-testid="plan-start-background"
+              disabled={planning || planningBg}
+              onClick={() => void planInBackground()}
+              className={`${button} px-2 py-0.5 text-[11px] ${focusRing}`}
+            >
+              {planningBg ? "Starting…" : "Plan in the background"}
+            </button>
+            {bgProblem !== null && (
+              <p data-testid="plan-start-background-problem" className="text-[11px] text-red-600">
+                {bgProblem}
+              </p>
+            )}
           </div>
         )}
 

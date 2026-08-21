@@ -7,8 +7,17 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { button, card, eyebrow, field, focusRing, mono, primary } from "../ui.js";
 import { Activity } from "./Activity.js";
 import type { Command } from "./agentControls.js";
-import { compose, derivePlaybooks, type PlaybookButton, resolveHarness } from "./playbooks.js";
+import {
+  backgroundHarnessId,
+  compose,
+  derivePlaybooks,
+  type PlaybookButton,
+  resolveHarness,
+} from "./playbooks.js";
 import { useBump, useRevision } from "./revision.js";
+import type { Tab } from "./TabStrip.js";
+
+type OpenTab = (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
 
 /**
  * Playbooks and agent commands, offered where messages are composed (RQ-0043, ST-0061).
@@ -40,6 +49,14 @@ interface ComposerMenuValue {
    * idea prompt first. The one function both the `+` menu and the starter cards call, so "picking
    * a card is the same action as the menu entry" (RQ-0043#AC-3) is true by construction. */
   start: (playbook: LoadedPlaybook) => void;
+  /** Runs a playbook beside the chat instead of inside it (RQ-0039): `session:start` with a
+   * `background` label, then a fire-and-forgot `session:prompt` — the WorkBoard worktree-build
+   * precedent, not a new pipeline. Resolves `true` once it actually started. */
+  startBackground: (playbook: LoadedPlaybook) => Promise<boolean>;
+  /** Which playbooks currently have a background start in flight, and what refused if one did —
+   * keyed by playbook id so one row's failure never touches another's. */
+  backgroundStarting: ReadonlySet<string>;
+  backgroundProblems: Record<string, string>;
   /** So `Composer` can render the plan/question strip immediately above its own input row —
    * `CopilotChat` gives a custom `Input` no seam between its messages and itself, so this is the
    * only place left that renders "above the composer" and is still true (Activity.tsx's own words). */
@@ -64,6 +81,7 @@ export function ComposerMenuProvider({
   attachedHarness,
   commands,
   sessionId,
+  onOpen,
   children,
 }: {
   projectId: string;
@@ -71,6 +89,9 @@ export function ComposerMenuProvider({
   attachedHarness: string;
   commands: Command[];
   sessionId: string;
+  /** Opens the `session:<id>` tab a background run starts (RQ-0039#AC-3) — the same tab-opening
+   * callback every other surface already threads through, `Workspace.tsx`'s `tabs.open`. */
+  onOpen: OpenTab;
   children: React.ReactNode;
 }): React.JSX.Element {
   const revision = useRevision();
@@ -82,6 +103,8 @@ export function ComposerMenuProvider({
   const [seedProblem, setSeedProblem] = useState<string | null>(null);
   const [ideaTarget, setIdeaTarget] = useState<LoadedPlaybook | null>(null);
   const [idea, setIdea] = useState("");
+  const [backgroundStarting, setBackgroundStarting] = useState<Set<string>>(new Set());
+  const [backgroundProblems, setBackgroundProblems] = useState<Record<string, string>>({});
 
   // `revision` is a trigger, not a read: it is how an edit made anywhere — the artifact editor,
   // the agent, a seed — reaches this menu.
@@ -145,6 +168,67 @@ export function ComposerMenuProvider({
     });
   };
 
+  /**
+   * Run a playbook in the background (RQ-0039#AC-1): `session:start` with a `background` label,
+   * a fire-and-forget `session:prompt`, then the session tab opens — exactly WorkBoard's own
+   * worktree-build precedent (`startWorktreeBuild`), never a second pipeline. There is no
+   * whitelist (RQ-0039's own words): every playbook offers this, intake included — unlike its
+   * normal press, the background variant skips the idea dialog and sends the bare body, since a
+   * background run has no conversational turn for a two-step prompt to happen in.
+   *
+   * ponytail: intake-in-background could route through the same idea dialog with a `background`
+   * flag instead of skipping it; add that if losing the idea step for a background intake run
+   * turns out to matter.
+   *
+   * Resolves `true` once the session actually started, so the caller can close the menu on success
+   * and leave it open on a refusal — the refusal is what the menu staying open is *for*.
+   */
+  const startBackground = async (playbook: LoadedPlaybook): Promise<boolean> => {
+    setBackgroundProblems((current) => {
+      const next = { ...current };
+      delete next[playbook.id];
+      return next;
+    });
+    const harnessId = backgroundHarnessId(playbook.harness, harnesses ?? []);
+    if (harnessId === null) {
+      setBackgroundProblems((current) => ({
+        ...current,
+        [playbook.id]: "No coding agent is attached.",
+      }));
+      return false;
+    }
+
+    setBackgroundStarting((current) => new Set(current).add(playbook.id));
+    try {
+      const started = await window.aibuildos.invoke("session:start", {
+        projectId,
+        harnessId,
+        background: { label: playbook.title },
+      });
+      if (!started.ok) {
+        setBackgroundProblems((current) => ({ ...current, [playbook.id]: started.message }));
+        return false;
+      }
+      // Fire-and-forget: this resolves at the background session's own turn end, which the
+      // dock — not this button — is what watches for.
+      void window.aibuildos.invoke("session:prompt", {
+        sessionId: started.sessionId,
+        text: compose(playbook.body, []),
+      });
+      onOpen(
+        { id: `session:${started.sessionId}`, kind: "session", title: playbook.title },
+        { preview: false },
+      );
+      return true;
+    } finally {
+      setBackgroundStarting((current) => {
+        const next = new Set(current);
+        next.delete(playbook.id);
+        return next;
+      });
+    }
+  };
+
   const startIdea = (): void => {
     if (ideaTarget === null || idea.trim() === "") return;
     void sendMessage({
@@ -158,7 +242,18 @@ export function ComposerMenuProvider({
 
   return (
     <ComposerMenuContext
-      value={{ playbooks, seed, seeding, seedProblem, commands, start, sessionId }}
+      value={{
+        playbooks,
+        seed,
+        seeding,
+        seedProblem,
+        commands,
+        start,
+        startBackground,
+        backgroundStarting,
+        backgroundProblems,
+        sessionId,
+      }}
     >
       {children}
 
@@ -266,7 +361,18 @@ export function Composer({
   onStop,
   hideStopButton,
 }: InputProps): React.JSX.Element {
-  const { playbooks, seed, seeding, seedProblem, commands, start, sessionId } = useComposerMenu();
+  const {
+    playbooks,
+    seed,
+    seeding,
+    seedProblem,
+    commands,
+    start,
+    startBackground,
+    backgroundStarting,
+    backgroundProblems,
+    sessionId,
+  } = useComposerMenu();
   const [text, setText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [isComposing, setIsComposing] = useState(false);
@@ -343,6 +449,17 @@ export function Composer({
                       start(playbook);
                       setMenuOpen(false);
                     }}
+                    // The menu stays open on a background press (RQ-0039#AC-1): a `busy_cap`
+                    // refusal renders right here, where the user pressed — closing first would
+                    // hide it.
+                    onBackgroundPress={() => {
+                      // Closes on success only — a refusal stays put, right where it renders.
+                      void startBackground(playbook).then((ok) => {
+                        if (ok) setMenuOpen(false);
+                      });
+                    }}
+                    backgroundBusy={backgroundStarting.has(playbook.id)}
+                    backgroundProblem={backgroundProblems[playbook.id]}
                   />
                 ))}
               </div>
@@ -408,54 +525,82 @@ export function Composer({
 function PlaybookMenuItem({
   playbook,
   onPress,
+  onBackgroundPress,
+  backgroundBusy,
+  backgroundProblem,
 }: {
   playbook: LoadedPlaybook;
   onPress: () => void;
+  /** Runs the same playbook beside the chat instead of inside it (RQ-0039#AC-1). */
+  onBackgroundPress: () => void;
+  backgroundBusy: boolean;
+  backgroundProblem: string | undefined;
 }): React.JSX.Element {
   return (
-    <span className="flex items-center gap-1">
-      <button
-        type="button"
-        data-testid={`playbook-${playbook.id}`}
-        onClick={onPress}
-        className={`flex-1 rounded px-2 py-1.5 text-left text-xs hover:bg-neutral-50 dark:hover:bg-neutral-900 ${focusRing}`}
-      >
-        {playbook.title}
-      </button>
-      {/* A nested Popover, not an inline absolutely-positioned div: the outer menu scrolls
-          (`overflow-auto`), and a plain child would be clipped by it rather than shown. */}
-      <Popover.Root>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            data-testid={`playbook-info-${playbook.id}`}
-            aria-label={`About ${playbook.title}`}
-            className={`rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 ${focusRing}`}
-          >
-            ⓘ
-          </button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            data-testid={`playbook-popover-${playbook.id}`}
-            side="right"
-            align="start"
-            sideOffset={4}
-            className="z-30 w-72 rounded border border-neutral-300 bg-white p-3 text-xs shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            <p className="font-medium">{playbook.title}</p>
-            <p className="mt-1 text-neutral-500">
-              Runs with <span className={mono}>{playbook.harness}</span>
-            </p>
-            <pre
-              data-testid={`playbook-text-${playbook.id}`}
-              className={`mt-2 max-h-48 overflow-auto whitespace-pre-wrap ${mono}`}
+    <span className="flex flex-col gap-0.5">
+      <span className="flex items-center gap-1">
+        <button
+          type="button"
+          data-testid={`playbook-${playbook.id}`}
+          onClick={onPress}
+          className={`flex-1 rounded px-2 py-1.5 text-left text-xs hover:bg-neutral-50 dark:hover:bg-neutral-900 ${focusRing}`}
+        >
+          {playbook.title}
+        </button>
+        <button
+          type="button"
+          data-testid={`playbook-background-${playbook.id}`}
+          aria-label={`Run ${playbook.title} in the background`}
+          title="Run in the background"
+          disabled={backgroundBusy}
+          onClick={onBackgroundPress}
+          className={`rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800 ${focusRing}`}
+        >
+          {backgroundBusy ? "…" : "⇢"}
+        </button>
+        {/* A nested Popover, not an inline absolutely-positioned div: the outer menu scrolls
+            (`overflow-auto`), and a plain child would be clipped by it rather than shown. */}
+        <Popover.Root>
+          <Popover.Trigger asChild>
+            <button
+              type="button"
+              data-testid={`playbook-info-${playbook.id}`}
+              aria-label={`About ${playbook.title}`}
+              className={`rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 ${focusRing}`}
             >
-              {compose(playbook.body, [])}
-            </pre>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+              ⓘ
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              data-testid={`playbook-popover-${playbook.id}`}
+              side="right"
+              align="start"
+              sideOffset={4}
+              className="z-30 w-72 rounded border border-neutral-300 bg-white p-3 text-xs shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+            >
+              <p className="font-medium">{playbook.title}</p>
+              <p className="mt-1 text-neutral-500">
+                Runs with <span className={mono}>{playbook.harness}</span>
+              </p>
+              <pre
+                data-testid={`playbook-text-${playbook.id}`}
+                className={`mt-2 max-h-48 overflow-auto whitespace-pre-wrap ${mono}`}
+              >
+                {compose(playbook.body, [])}
+              </pre>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+      </span>
+      {backgroundProblem !== undefined && (
+        <p
+          data-testid={`playbook-background-problem-${playbook.id}`}
+          className="px-2 text-[11px] text-red-600"
+        >
+          {backgroundProblem}
+        </p>
+      )}
     </span>
   );
 }

@@ -889,13 +889,15 @@ function createHandlers(
       );
     },
 
-    "build:start": async ({ projectId, storyId, harnessId }) => {
+    "build:start": async ({ projectId, storyId, harnessId, sprintId }) => {
       const project = requireProject(projectId);
       const harness = loadHarnesses(harnessFile()).find((entry) => entry.id === harnessId);
       if (harness === undefined) {
         return { ok: false, code: "not_found", message: "That harness is no longer configured." };
       }
-      return await startBuild(sessions, project, storyId, harness);
+      // The request's own `sprintId` (RQ-0035, DC-0025) was being dropped here — `startBuild`
+      // already knows what to do with it (branch from the sprint, not HEAD), it just never arrived.
+      return await startBuild(sessions, project, storyId, harness, sprintId);
     },
 
     "build:list": async ({ projectId }) => {

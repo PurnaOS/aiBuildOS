@@ -1,13 +1,23 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { useHarnesses } from "../harness/HarnessPanel.js";
 import { Loading } from "../Loading.js";
 import { buildWalk } from "../review/walk.js";
-import { button, card, eyebrow, focusRing, mono } from "../ui.js";
+import { button, card, eyebrow, focusRing, mono, primary } from "../ui.js";
 import { useBump, useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
 import { Column } from "./Column.js";
-import { type BoardArtifact, type BoardColumn, deriveBoard, mergeVocabularies } from "./derive.js";
+import {
+  type BoardArtifact,
+  type BoardColumn,
+  deriveBoard,
+  filterBySprint,
+  mergeVocabularies,
+  type SprintFilter,
+  sprintProgress,
+  sprintsOf,
+} from "./derive.js";
 
 type Record_ = ChannelResponse<"project:record">;
 type ArtifactDetail = ChannelResponse<"project:artifact">;
@@ -58,6 +68,15 @@ export function WorkBoard({
   /** Stories starting a worktree build (RQ-0020) — a separate flag from `building` because the two
    * buttons must not race each other into the same story's guarded saves. */
   const [buildingWorktree, setBuildingWorktree] = useState<Set<string>>(new Set());
+  /** The sprint header's own filter (RQ-0035#AC-5): `all`, `backlog`, or one Sprint artifact's id. */
+  const [sprintFilter, setSprintFilter] = useState<SprintFilter>("all");
+  /** Ready cards checked to start a new sprint from (RQ-0035#AC-1) — the Plan surface's own
+   * pick-for-planning idiom, reused for picking stories rather than requirements. */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [startingSprint, setStartingSprint] = useState(false);
+  const [sprintProblem, setSprintProblem] = useState<string | null>(null);
+  const [finishOpen, setFinishOpen] = useState(false);
+  const [finishing, setFinishing] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the revision is a trigger, not a read
   useEffect(() => {
@@ -167,7 +186,7 @@ export function WorkBoard({
    * (ST-0037), not the main transcript.
    */
   const startWorktreeBuild = useCallback(
-    async (storyId: string, harnessId: string) => {
+    async (storyId: string, harnessId: string, sprintId?: string) => {
       if (building.has(storyId) || buildingWorktree.has(storyId)) return;
       const titleOf = (id: string): string =>
         record?.artifacts?.find((a) => a.id === id)?.title ?? id;
@@ -197,6 +216,9 @@ export function WorkBoard({
           projectId,
           storyId,
           harnessId,
+          // Build inside a sprint (RQ-0035#AC-2, DC-0025): the story branches from the sprint
+          // branch rather than `HEAD`, only when the header is actually filtered to one.
+          ...(sprintId !== undefined ? { sprintId } : {}),
         });
         if (!started.ok) {
           setProblems((current) => ({ ...current, [storyId]: started.message }));
@@ -264,9 +286,141 @@ export function WorkBoard({
     );
   }
 
-  const columns = deriveBoard(artifacts, vocabulary).filter(
+  // The Work header's sprint selector (RQ-0035#AC-5): every Sprint artifact in the record, each
+  // card's membership read off the same `inbound` edges `project:record` already answers with — no
+  // separate fetch per sprint (derive.ts's own words).
+  const sprints = (record.artifacts ?? [])
+    .filter((a) => a.type === "Sprint" && (showRetired || a.state !== "retired"))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const membership = new Map<string, readonly string[]>(
+    (record.artifacts ?? []).map((a) => [a.id, sprintsOf(a.inbound)]),
+  );
+  const activeSprint = sprints.find((s) => s.id === sprintFilter);
+  const filteredArtifacts = filterBySprint(artifacts, membership, sprintFilter);
+  const progress = activeSprint === undefined ? null : sprintProgress(filteredArtifacts);
+  // Only a sprint whose git side actually started has a worktree to merge (RQ-0035#AC-2, DC-0025).
+  const canFinish =
+    activeSprint !== undefined &&
+    activeSprint.state === "active" &&
+    progress !== null &&
+    progress.total > 0 &&
+    progress.accepted === progress.total;
+  // Build inside a sprint (RQ-0035#AC-2): only while the header is actually filtered to one that has
+  // started — `all`/`backlog` (or a sprint still stuck at `draft`) means a plain build from `HEAD`.
+  const sprintIdForBuild = activeSprint?.state === "active" ? activeSprint.id : undefined;
+
+  const columns = deriveBoard(filteredArtifacts, vocabulary).filter(
     (column) => showRetired || column.state !== "retired",
   );
+
+  const togglePick = (id: string): void => {
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  /**
+   * Start a sprint from the picked ready cards (RQ-0035#AC-1): the record is written the same way
+   * `NewArtifact.tsx` writes any other artifact — `project:create-artifact` mints it, then an
+   * ordinary guarded save adds `links.contains` — before `sprint:start` does the git side. A refusal
+   * anywhere is left exactly where it happened rather than unwound: the record and the branch are
+   * each their own source of truth (okf-conventions §4), never a transaction across the two.
+   */
+  const startSprintFromPicked = async (): Promise<void> => {
+    const ids = [...picked];
+    if (ids.length === 0) return;
+    setStartingSprint(true);
+    setSprintProblem(null);
+    try {
+      const created = await window.aibuildos.invoke("project:create-artifact", {
+        id: projectId,
+        type: "Sprint",
+        title: `Sprint (${ids.length} ${ids.length === 1 ? "story" : "stories"})`,
+      });
+      if (created.artifactId === null) {
+        setSprintProblem(created.problem ?? "The sprint could not be created.");
+        return;
+      }
+      const sprintId = created.artifactId;
+
+      const linked = await window.aibuildos.invoke("project:artifact-save", {
+        id: projectId,
+        artifactId: sprintId,
+        frontmatter: { "links.contains": ids },
+      });
+      if (linked.problem !== null) {
+        setSprintProblem(linked.problem);
+        bump();
+        return;
+      }
+
+      const started = await window.aibuildos.invoke("sprint:start", { projectId, sprintId });
+      if (!started.ok) {
+        setSprintProblem(started.message);
+        bump();
+        return;
+      }
+
+      await window.aibuildos.invoke("project:artifact-save", {
+        id: projectId,
+        artifactId: sprintId,
+        frontmatter: { state: "active" },
+      });
+      setPicked(new Set());
+      setSprintFilter(sprintId);
+      bump();
+    } finally {
+      setStartingSprint(false);
+    }
+  };
+
+  /**
+   * Finish a sprint (RQ-0035#AC-3, DC-0025): a refusal comes back as words on the header, not a
+   * generic message — `stories_live` names which worktrees are still live (read fresh from
+   * `build:list`, since the header itself tracks no such thing), `conflict` says main was left
+   * untouched, exactly as `mergeSprint` already left it.
+   */
+  const confirmFinish = async (): Promise<void> => {
+    if (activeSprint === undefined) return;
+    const sprintId = activeSprint.id;
+    setFinishOpen(false);
+    setFinishing(true);
+    setSprintProblem(null);
+    try {
+      const result = await window.aibuildos.invoke("sprint:merge", { projectId, sprintId });
+      if (!result.ok) {
+        if (result.code === "stories_live") {
+          const list = await window.aibuildos.invoke("build:list", { projectId });
+          const live = list.builds.filter((b) => b.sprintId === sprintId).map((b) => b.storyId);
+          setSprintProblem(
+            live.length > 0
+              ? `${sprintId} still has stories building in a worktree: ${live.join(", ")}. Finish or discard them first.`
+              : result.message,
+          );
+        } else if (result.code === "conflict") {
+          setSprintProblem(
+            `Finishing ${sprintId} conflicts with main — main is untouched. ${result.message}`,
+          );
+        } else {
+          setSprintProblem(result.message);
+        }
+        return;
+      }
+
+      await window.aibuildos.invoke("project:artifact-save", {
+        id: projectId,
+        artifactId: sprintId,
+        frontmatter: { state: "done" },
+      });
+      setSprintFilter("all");
+      bump();
+    } finally {
+      setFinishing(false);
+    }
+  };
 
   /**
    * The ready column's Build control (RQ-0045#AC-4, DC-0027 — the owner's decision): the primary
@@ -290,7 +444,8 @@ export function WorkBoard({
       // nothing to do (the caret's "In this conversation" still works — that reuses whatever the
       // main chat already picked, never a harness this button chose).
       buildDisabled: busy || busyWorktree || defaultHarness === undefined,
-      onBuild: () => defaultHarness && void startWorktreeBuild(artifact.id, defaultHarness.id),
+      onBuild: () =>
+        defaultHarness && void startWorktreeBuild(artifact.id, defaultHarness.id, sprintIdForBuild),
       menuTestId: `board-card-build-menu-${artifact.id}`,
       menuDisabled: busy || busyWorktree,
       menuEntries: [
@@ -306,7 +461,7 @@ export function WorkBoard({
           testId: `board-card-build-worktree-${artifact.id}-${harness.id}`,
           label: `In a worktree — ${harness.displayName}`,
           disabled: busy || busyWorktree,
-          onClick: () => void startWorktreeBuild(artifact.id, harness.id),
+          onClick: () => void startWorktreeBuild(artifact.id, harness.id, sprintIdForBuild),
         })),
       ],
     };
@@ -325,6 +480,57 @@ export function WorkBoard({
 
   return (
     <div data-testid="work-board" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* The sprint header (RQ-0035#AC-5): a filter over the same board, never swimlanes. */}
+      <div
+        data-testid="sprint-header"
+        className="flex shrink-0 flex-wrap items-center gap-2 border-b border-neutral-200 px-3 py-1.5 dark:border-neutral-800"
+      >
+        <select
+          data-testid="sprint-select"
+          // `field`'s own `w-full` would fight a plain `w-auto` appended after it — Tailwind's
+          // generated order decides the winner, not class-string order — so this is written out
+          // rather than trying to override one token of `field`.
+          className="w-auto rounded border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700"
+          value={sprintFilter}
+          onChange={(event) => {
+            setSprintFilter(event.target.value);
+            setPicked(new Set());
+          }}
+        >
+          <option value="all">All</option>
+          <option value="backlog">Backlog</option>
+          {sprints.map((sprint) => (
+            <option key={sprint.id} value={sprint.id}>
+              {sprint.title} · {sprint.id}
+            </option>
+          ))}
+        </select>
+
+        {progress !== null && (
+          <span data-testid="sprint-progress" className={`text-[11px] text-neutral-500 ${mono}`}>
+            {progress.accepted}/{progress.total} accepted
+          </span>
+        )}
+
+        {activeSprint !== undefined && (
+          <button
+            type="button"
+            data-testid="sprint-finish"
+            disabled={!canFinish || finishing}
+            onClick={() => setFinishOpen(true)}
+            className={`${button} text-xs ${focusRing}`}
+          >
+            {finishing ? "Finishing…" : "Finish sprint"}
+          </button>
+        )}
+
+        {sprintProblem !== null && (
+          <p data-testid="sprint-refusal" className="w-full text-[11px] text-red-600">
+            {sprintProblem}
+          </p>
+        )}
+      </div>
+
       <div data-testid="board-columns" className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3">
         {columns.map((column) =>
           column.state === "ready" || column.state === "review" ? (
@@ -342,6 +548,9 @@ export function WorkBoard({
               caption={BUILDER_COLUMNS.has(column.state) ? "moved by the builder" : undefined}
               actions={column.state === "ready" ? () => [] : reviewActions}
               build={column.state === "ready" ? buildControlFor : undefined}
+              picking={
+                column.state === "ready" ? { selected: picked, onToggle: togglePick } : undefined
+              }
             />
           ) : (
             <Column
@@ -364,6 +573,28 @@ export function WorkBoard({
           ),
         )}
       </div>
+      {/* "Start a sprint with N stories" (RQ-0035#AC-1) — the Plan surface's own picked-footer
+          idiom, over stories rather than requirements. */}
+      {picked.size > 0 && (
+        <div
+          data-testid="sprint-start-footer"
+          className="flex shrink-0 items-center gap-2 border-t border-neutral-200 px-3 py-1.5 dark:border-neutral-800"
+        >
+          <span className="text-[11px] text-neutral-500">{picked.size} picked</span>
+          <button
+            type="button"
+            data-testid="sprint-start"
+            disabled={startingSprint}
+            onClick={() => void startSprintFromPicked()}
+            className={`${primary} px-2 py-0.5 text-[11px]`}
+          >
+            {startingSprint
+              ? "Starting…"
+              : `Start a sprint with ${picked.size} ${picked.size === 1 ? "story" : "stories"}`}
+          </button>
+        </div>
+      )}
+
       <div className="shrink-0 border-t border-neutral-200 px-3 py-1.5 dark:border-neutral-800">
         <button
           type="button"
@@ -374,6 +605,49 @@ export function WorkBoard({
           {showRetired ? "Hide retired" : "Show retired"}
         </button>
       </div>
+
+      {/* Finish confirms through the application's own dialog (RQ-0035#AC-5), never
+          `window.confirm` — the same idiom `PlanSurface.tsx`'s retire dialog and `TabStrip.tsx`'s
+          discard dialog use. */}
+      <Dialog.Root
+        open={finishOpen}
+        onOpenChange={(next) => {
+          if (!next) setFinishOpen(false);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+          <Dialog.Content
+            data-testid="sprint-finish-dialog"
+            className="fixed top-1/2 left-1/2 w-[26rem] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-neutral-200 bg-white p-6 shadow-xl dark:border-neutral-800 dark:bg-neutral-950"
+          >
+            <Dialog.Title className="text-lg font-semibold tracking-tight">
+              Finish {activeSprint?.title ?? "this sprint"}?
+            </Dialog.Title>
+            <Dialog.Description className="mt-1 mb-4 text-sm text-neutral-500">
+              Merges the sprint branch into main with --no-ff. This cannot be undone from here.
+            </Dialog.Description>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                data-testid="sprint-finish-cancel"
+                onClick={() => setFinishOpen(false)}
+                className={`${button} ${focusRing}`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="sprint-finish-confirm"
+                onClick={() => void confirmFinish()}
+                className={`${primary} ${focusRing}`}
+              >
+                Finish
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
@@ -383,6 +657,13 @@ interface CardAction {
   readonly label: string;
   readonly onClick: () => void;
   readonly disabled?: boolean;
+}
+
+/** The ready column's pick-for-a-sprint checkbox (RQ-0035#AC-1) — `PlanSurface.tsx`'s own
+ * pick-for-planning idiom, over stories rather than requirements. Absent on `review`. */
+interface Picking {
+  readonly selected: ReadonlySet<string>;
+  readonly onToggle: (id: string) => void;
 }
 
 /**
@@ -425,6 +706,7 @@ function ActionColumn({
   caption,
   actions,
   build,
+  picking,
 }: {
   column: BoardColumn;
   projectId: string;
@@ -441,6 +723,8 @@ function ActionColumn({
   /** The ready column's Build control (ST-0044#AC-4). Absent for review, which has no build of its
    * own to offer. */
   build?: ((artifact: BoardArtifact) => BuildControl | null) | undefined;
+  /** The ready column's pick-for-a-sprint checkbox (RQ-0035#AC-1). Absent for review. */
+  picking?: Picking | undefined;
 }): React.JSX.Element {
   return (
     <div
@@ -468,6 +752,7 @@ function ActionColumn({
             problem={problems[artifact.id]}
             actions={actions(artifact)}
             build={build?.(artifact) ?? null}
+            picking={picking}
           />
         ))}
       </div>
@@ -487,6 +772,7 @@ function ActionCard({
   problem,
   actions,
   build,
+  picking,
 }: {
   artifact: BoardArtifact;
   projectId: string;
@@ -499,6 +785,7 @@ function ActionCard({
   problem?: string | undefined;
   actions: CardAction[];
   build?: BuildControl | null;
+  picking?: Picking | undefined;
 }): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moves, setMoves] = useState<string[] | null>(null);
@@ -535,6 +822,17 @@ function ActionCard({
       onDragEnd={onDragEnd}
       className={`${card} ${dragging?.id === artifact.id ? "opacity-50" : ""}`}
     >
+      {picking !== undefined && (
+        <label className="mb-1 flex items-center gap-1.5 text-[11px] text-neutral-500">
+          <input
+            type="checkbox"
+            data-testid={`sprint-pick-${artifact.id}`}
+            checked={picking.selected.has(artifact.id)}
+            onChange={() => picking.onToggle(artifact.id)}
+          />
+          Pick for a sprint
+        </label>
+      )}
       <button
         type="button"
         data-testid={`board-card-open-${artifact.id}`}

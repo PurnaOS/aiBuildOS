@@ -5,6 +5,7 @@ import { Loading } from "../Loading.js";
 import { eyebrow, field, focusRing, mono, primary, relativeTime } from "../ui.js";
 import { NewFile } from "./NewArtifact.js";
 import { useBump, useRevision } from "./revision.js";
+import { SyncHeader } from "./SyncHeader.js";
 import type { Tab } from "./TabStrip.js";
 
 /**
@@ -71,7 +72,10 @@ export function FilesRail({
       {tab === "files" ? (
         <FileTree projectId={projectId} onOpen={onOpen} onMenu={(entry) => void menu(entry)} />
       ) : (
-        <GitChanges projectId={projectId} onOpen={onOpen} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SyncHeader projectId={projectId} />
+          <GitChanges projectId={projectId} onOpen={onOpen} />
+        </div>
       )}
     </div>
   );

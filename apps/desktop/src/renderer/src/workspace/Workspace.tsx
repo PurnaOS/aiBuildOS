@@ -254,6 +254,7 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
                           session={session}
                           pending={pending}
                           onSent={() => setPending(null)}
+                          onOpen={tabs.open}
                         />
                       ) : tab.kind === "plan" ? (
                         <PlanSurface

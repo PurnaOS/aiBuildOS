@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compose, derivePlaybooks, resolveHarness } from "./playbooks.js";
+import { backgroundHarnessId, compose, derivePlaybooks, resolveHarness } from "./playbooks.js";
 
 /**
  * TC-0044. Playbooks are discovered from the record and composed with their context.
@@ -61,5 +61,29 @@ describe("resolving a playbook's harness", () => {
 
   it("falls back when the playbook names no preference at all", () => {
     expect(resolveHarness(undefined, HARNESSES, "Attached One")).toBe("Attached One");
+  });
+});
+
+/** RQ-0039: a background run needs a harness id, not a display name — `session:start`'s own shape. */
+describe("resolving a background run's harness id", () => {
+  const CONFIGURED = [
+    { id: "h1", displayName: "Claude Code" },
+    { id: "h2", displayName: "Codex" },
+  ];
+
+  it("matches a preference that is configured, by id", () => {
+    expect(backgroundHarnessId("Codex", CONFIGURED)).toBe("h2");
+  });
+
+  it("falls back to whatever is configured first when the preference matches nothing", () => {
+    expect(backgroundHarnessId("Some Other Agent", CONFIGURED)).toBe("h1");
+  });
+
+  it("falls back to the first configured harness when the playbook names no preference", () => {
+    expect(backgroundHarnessId(undefined, CONFIGURED)).toBe("h1");
+  });
+
+  it("is null when nothing is configured at all", () => {
+    expect(backgroundHarnessId(undefined, [])).toBeNull();
   });
 });

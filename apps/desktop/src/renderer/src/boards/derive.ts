@@ -52,3 +52,49 @@ export function deriveBoard(
 export function mergeVocabularies(a: readonly string[], b: readonly string[]): string[] {
   return [...a, ...b.filter((s) => !a.includes(s))];
 }
+
+/** `project:record`'s own derived-inverse shape (okf-conventions §4): who links to this artifact,
+ * and by which relationship. */
+export interface InboundEdge {
+  readonly relationship: string;
+  readonly id: string;
+}
+
+/**
+ * Which sprint(s) a story or bug belongs to (RQ-0035, DC-0025): the reverse index of a Sprint's own
+ * `contains` reaches it as an inbound `contains` edge — the derived inverse keeps the stored
+ * relationship's name (`graph.ts`), so no separate "contained_by" lookup exists to fall out of sync
+ * with it. A card can carry more than one, though the UI only ever starts a sprint with cards that
+ * carry none yet.
+ */
+export function sprintsOf(inbound: readonly InboundEdge[]): string[] {
+  return inbound.filter((edge) => edge.relationship === "contains").map((edge) => edge.id);
+}
+
+/** `all | backlog | <sprint id>` — the Work header's sprint selector (RQ-0035#AC-5). */
+export type SprintFilter = "all" | "backlog" | (string & {});
+
+/**
+ * The board's cards, narrowed to one sprint filter — a filter, not swimlanes (RQ-0035#AC-5): `all`
+ * changes nothing, `backlog` is every card no sprint's `contains` reaches, and a sprint id is only
+ * the cards that sprint reaches.
+ */
+export function filterBySprint<T extends { readonly id: string }>(
+  cards: readonly T[],
+  membership: ReadonlyMap<string, readonly string[]>,
+  filter: SprintFilter,
+): T[] {
+  if (filter === "all") return [...cards];
+  return cards.filter((card) => {
+    const sprints = membership.get(card.id) ?? [];
+    return filter === "backlog" ? sprints.length === 0 : sprints.includes(filter);
+  });
+}
+
+/** "3/5 accepted" (RQ-0035#AC-5) — counted over whatever the caller already narrowed to. */
+export function sprintProgress(cards: readonly { readonly state: string }[]): {
+  readonly accepted: number;
+  readonly total: number;
+} {
+  return { accepted: cards.filter((c) => c.state === "accepted").length, total: cards.length };
+}

@@ -40,6 +40,8 @@ export interface BuildInfo {
   readonly sprintId: string | null;
   readonly ahead: number;
   readonly lastCheckpointAt: string | null;
+  /** Uncommitted changes in the worktree — `git status` porcelain, non-empty (RQ-0037#AC-3). */
+  readonly dirty: boolean;
 }
 
 interface ActivityFields {
@@ -59,6 +61,7 @@ export interface BuildRow extends ActivityFields {
   readonly sprintId: string | null;
   readonly ahead: number;
   readonly lastCheckpointAt: string | null;
+  readonly dirty: boolean;
 }
 
 export interface MainRow extends ActivityFields {
@@ -118,6 +121,7 @@ export function deriveDock(
       sprintId: build.sprintId,
       ahead: build.ahead,
       lastCheckpointAt: build.lastCheckpointAt,
+      dirty: build.dirty,
       ...activityOf(session),
     };
   });
@@ -272,4 +276,47 @@ export function elapsedLabel(sinceMs: number | null, nowMs: number): string | nu
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   return `${Math.round(minutes / 60)}h ago`;
+}
+
+/**
+ * A build row's checkpoint fact, in words (RQ-0037#AC-2). Keyed off `ahead`, not
+ * `lastCheckpointAt`: at `ahead: 0` the worktree's newest commit is still its *base's* commit — a
+ * real, non-null date that would otherwise read as a checkpoint that never happened. Zero commits
+ * ahead is the only signal that means "no checkpoints yet".
+ */
+export function checkpointLabel(
+  ahead: number,
+  lastCheckpointAt: string | null,
+  nowMs: number,
+): string {
+  if (ahead === 0) return "no checkpoints yet";
+  const commits = ahead === 1 ? "1 commit" : `${ahead} commits`;
+  const when = elapsedLabel(lastCheckpointAt === null ? null : Date.parse(lastCheckpointAt), nowMs);
+  return when === null ? `${commits} ahead` : `${commits} ahead · last checkpoint ${when}`;
+}
+
+/** A build row's dirty/resumable facts, as words rather than colour alone (RQ-0037#AC-3). Both can
+ * apply at once — a worktree can be both mid-edit and orphaned by a restart. */
+export function worktreeBadges(
+  row: Pick<BuildRow, "sessionId" | "dirty">,
+): readonly ("dirty" | "resumable")[] {
+  const badges: ("dirty" | "resumable")[] = [];
+  if (row.dirty) badges.push("dirty");
+  if (row.sessionId === null) badges.push("resumable");
+  return badges;
+}
+
+/** A terminal row's label (RQ-0038): `main/terminals.ts` mints ids as `t1, t2…`, so the index is
+ * read straight out of the id rather than tracked separately. */
+export function terminalLabel(terminalId: string, cwdBasename: string): string {
+  const index = /^t(\d+)$/.exec(terminalId)?.[1] ?? terminalId;
+  return `Terminal ${index} · ${cwdBasename}`;
+}
+
+/** A terminal row's running/exited fact, in words (RQ-0038#AC-4). `undefined` is still running —
+ * distinct from `null`, node-pty's own "no exit code" case (killed rather than exited). */
+export function terminalStatus(exitCode: number | null | undefined): string {
+  if (exitCode === undefined) return "running";
+  if (exitCode === null || exitCode === 0) return "exited";
+  return `exited (${exitCode})`;
 }
