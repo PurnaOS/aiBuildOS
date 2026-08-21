@@ -314,5 +314,12 @@ describe("scaffolding a project", () => {
     expect(guideline).not.toContain("old one to `retired`");
     // Minting a new artifact still carries its own `state:` — the guard allows it, PB-0001 needs it.
     expect(guideline).toContain("set `state: draft`");
+
+    // A type definition's body is prose an agent acts on, not schema it only reads: the Decision
+    // profile told the reader to move a superseded record itself, and said so without the word
+    // "state" — which is how a grep-shaped sweep walked past it twice.
+    const decision = bundleFiles().get("docs/profile/decision.md") ?? "";
+    expect(decision).toContain("is the person's move");
+    expect(decision).not.toContain("move the old one to `superseded`");
   });
 });
