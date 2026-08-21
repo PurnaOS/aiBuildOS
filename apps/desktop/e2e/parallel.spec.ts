@@ -182,8 +182,8 @@ test("two builds run side by side, and cancelling one leaves the other running",
   const wt1 = join(worktrees, "p1", "ST-0001");
   const wt2 = join(worktrees, "p1", "ST-0002");
 
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-view-work").click();
+  // RQ-0045#AC-1, AC-3: Work is its own pinned surface now, not a nested strip view.
+  await w.getByTestId("tab-work").click();
 
   // AC-1: two stories build at once, each its own worktree, no shared working directory. The
   // worktree entries sit behind the Build control's caret (ST-0044#AC-4), one menu per card.
@@ -192,10 +192,12 @@ test("two builds run side by side, and cancelling one leaves the other running",
   await w.getByTestId("board-card-build-menu-ST-0002").click();
   await w.getByTestId("board-card-build-worktree-ST-0002-writer").click();
 
-  // TC-0074 (BG-0008): open the writer's session tab right away. Its single file-writer turn has no
-  // artificial delay, so subscribing any later risks its tool call's event having already come and
-  // gone with nobody listening — `session:event` is live, never replayed for a late subscriber.
-  await w.getByTestId("tab-now").click();
+  // RQ-0044: Now's rows live in the activity dock now — visible from every surface once expanded,
+  // whichever tab is focused. TC-0074 (BG-0008): open the writer's session tab right away. Its
+  // single file-writer turn has no artificial delay, so subscribing any later risks its tool call's
+  // event having already come and gone with nobody listening — `session:event` is live, never
+  // replayed for a late subscriber.
+  await w.getByTestId("dock-toggle").click();
   await w.getByTestId("now-row-open-ST-0002").click();
   await expect(w.getByTestId("session-transcript")).toContainText("Ran: Edit notes.md", {
     timeout: 20000,
@@ -205,13 +207,18 @@ test("two builds run side by side, and cancelling one leaves the other running",
   // its `building` is a blink `builds.ts`'s own turn-end flip (ST-0041) correctly lands before any
   // poll can see it — its parallelism is proven by the simultaneous worktrees and live Now rows
   // below, and its terminal truth (`review`) is asserted at the end.
-  await expect.poll(() => readFileSync(story1File, "utf8")).toContain("state: building");
+  // Never poll for the transient: a fast stub can finish its turn between two reads, landing the
+  // turn-end flip at review first. The guarded save admits only declared transitions, so either
+  // state is proof the walk went ready → queued → building (CI-proven on Windows).
+  await expect
+    .poll(() => readFileSync(story1File, "utf8"), { timeout: 20000 })
+    .toMatch(/state: (building|review)/);
   await expect.poll(() => existsSync(wt1)).toBe(true);
   await expect.poll(() => existsSync(wt2)).toBe(true);
   expect(wt1).not.toBe(wt2);
 
-  // AC-2: both on Now, live.
-  await w.getByTestId("tab-now").click();
+  // AC-2: both on Now, live — the dock stays expanded regardless of which tab is focused, so no
+  // further navigation is needed to see either row.
   await expect(w.getByTestId("now-row-ST-0001")).toBeVisible();
   await expect(w.getByTestId("now-row-ST-0002")).toBeVisible();
 
@@ -225,7 +232,7 @@ test("two builds run side by side, and cancelling one leaves the other running",
 
   // The boards told the truth throughout: the finished build is where review says it is, cancelling
   // it did not touch the other story at all.
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-work").click();
   await expect(
     w.getByTestId("board-column-review").getByTestId("board-card-ST-0002"),
   ).toBeVisible();

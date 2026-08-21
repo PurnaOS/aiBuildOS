@@ -176,14 +176,15 @@ test("a Now row reads in plain words with elapsed time, and a worktree row names
 
   const { app, w } = await launch(work, [{ id: "writer", mode: "file-writer" }]);
 
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-view-work").click();
+  // RQ-0045#AC-1, AC-3: Work is its own pinned surface now, not a nested strip view.
+  await w.getByTestId("tab-work").click();
   // ST-0044#AC-4: the worktree entries sit behind the Build control's caret, one menu rather than a
   // button per harness — a concurrent lane's change to `WorkBoard`, not this one's.
   await w.getByTestId("board-card-build-menu-ST-0001").click();
   await w.getByTestId("board-card-build-worktree-ST-0001-writer").click();
 
-  await w.getByTestId("tab-now").click();
+  // RQ-0044: Now's rows live in the activity dock now, expanded from its collapsed strip.
+  await w.getByTestId("dock-toggle").click();
   await expect(w.getByTestId("now-row-ST-0001")).toBeVisible({ timeout: 20000 });
 
   // AC-4: the row already answers "where are my files" — every build here is a worktree build.

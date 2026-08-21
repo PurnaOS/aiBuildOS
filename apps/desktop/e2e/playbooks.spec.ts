@@ -89,11 +89,14 @@ test("shows the standard playbooks, discloses one before pressing, and sends exa
   await w.getByTestId("start-h").click();
   await w.getByTestId("chat").waitFor({ timeout: 20000 });
 
-  const button = w.getByTestId("playbook-PB-0001");
+  // RQ-0043: PlaybookStrip is gone; playbooks are offered from the composer's `+` menu.
+  await w.getByTestId("composer-menu-trigger").click();
+  const menu = w.getByTestId("composer-menu");
+  const button = menu.getByTestId("playbook-PB-0001");
   await expect(button).toBeVisible();
   await expect(button).toHaveText("Draft requirements from an idea");
-  await expect(w.getByTestId("playbook-PB-0002")).toBeVisible();
-  await expect(w.getByTestId("playbook-PB-0003")).toBeVisible();
+  await expect(menu.getByTestId("playbook-PB-0002")).toBeVisible();
+  await expect(menu.getByTestId("playbook-PB-0003")).toBeVisible();
 
   // AC-3: description, harness and exact text, before anything is pressed. One line from the body,
   // not the whole disclosed text, is what the transcript is checked against below — a chat surface
@@ -102,13 +105,13 @@ test("shows the standard playbooks, discloses one before pressing, and sends exa
   // press opens the idea prompt (RQ-0017#AC-1) instead of sending at once, so the send-at-once
   // path is proven on a playbook that still has one.
   const snippet = "Implement the story and nothing beyond it";
-  await w.getByTestId("playbook-info-PB-0003").click();
+  await menu.getByTestId("playbook-info-PB-0003").click();
   const popover = w.getByTestId("playbook-popover-PB-0003");
   await expect(popover).toContainText("Build a story");
   await expect(popover).toContainText("Stub");
   await expect(w.getByTestId("playbook-text-PB-0003")).toContainText(snippet);
 
-  await w.getByTestId("playbook-PB-0003").click();
+  await menu.getByTestId("playbook-PB-0003").click();
 
   const surface = w.locator(".copilotKitMessages");
   await expect(surface).toContainText(snippet);
@@ -129,10 +132,34 @@ test("shows the standard playbooks, discloses one before pressing, and sends exa
     "Say hello first.",
   );
 
+  // The transcript is no longer empty, so this second press has to reach PB-0003 through the
+  // composer's menu — the same door the first press used, just as RQ-0043#AC-1 requires.
   await w.getByTestId("tab-chat").click();
   await w.getByTestId("chat").waitFor();
+  await w.getByTestId("composer-menu-trigger").click();
   await w.getByTestId("playbook-PB-0003").click();
   await expect(surface).toContainText("Say hello first.");
+
+  await app.close();
+});
+
+test("an empty transcript offers the playbooks as starter cards too, and a card starts one", async () => {
+  const { app, w } = await open();
+
+  await w.getByTestId("start-h").click();
+  await w.getByTestId("chat").waitFor({ timeout: 20000 });
+
+  // RQ-0043#AC-3: the same playbooks, offered again as centred cards while there is nothing else
+  // to show — pressing one is the same action a menu entry would run.
+  const card = w.getByTestId("playbook-card-PB-0003");
+  await expect(card).toBeVisible();
+  await card.click();
+
+  const snippet = "Implement the story and nothing beyond it";
+  const surface = w.locator(".copilotKitMessages");
+  await expect(surface).toContainText(snippet, { timeout: 20000 });
+  // The transcript is no longer empty, so the card offering is gone — only the menu remains.
+  await expect(w.getByTestId("playbook-card-PB-0001")).toHaveCount(0);
 
   await app.close();
 });
@@ -143,15 +170,17 @@ test("a project without playbooks offers to seed them, and seeding produces the 
   await w.getByTestId("start-h").click();
   await w.getByTestId("chat").waitFor({ timeout: 20000 });
 
-  await expect(w.getByTestId("playbook-PB-0001")).toHaveCount(0);
-  const seed = w.getByTestId("seed-playbooks");
+  await w.getByTestId("composer-menu-trigger").click();
+  const menu = w.getByTestId("composer-menu");
+  await expect(menu.getByTestId("playbook-PB-0001")).toHaveCount(0);
+  const seed = menu.getByTestId("seed-playbooks");
   await expect(seed).toBeVisible();
 
   await seed.click();
 
-  await expect(w.getByTestId("playbook-PB-0001")).toBeVisible({ timeout: 15000 });
-  await expect(w.getByTestId("playbook-PB-0002")).toBeVisible();
-  await expect(w.getByTestId("playbook-PB-0003")).toBeVisible();
+  await expect(menu.getByTestId("playbook-PB-0001")).toBeVisible({ timeout: 15000 });
+  await expect(menu.getByTestId("playbook-PB-0002")).toBeVisible();
+  await expect(menu.getByTestId("playbook-PB-0003")).toBeVisible();
   await expect(seed).toHaveCount(0);
 
   await app.close();

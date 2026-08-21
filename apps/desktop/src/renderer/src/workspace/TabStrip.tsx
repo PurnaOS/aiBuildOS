@@ -1,18 +1,16 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  Activity,
   Eye,
   FileCode2,
   FileDiff,
-  LayoutGrid,
+  KanbanSquare,
   ListChecks,
   MessageSquare,
   Radio,
   X,
 } from "lucide-react";
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
-import { getNowBadge, subscribeNowBadge } from "../now/badge.js";
-import { useBusySessionStream, useBusySessions, useMainStreaming } from "../now/motion.js";
+import { useCallback, useRef, useState } from "react";
+import { useBusySessionStream, useBusySessions, useMainStreaming } from "../dock/motion.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
 
 /**
@@ -24,23 +22,21 @@ import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
  */
 export type TabKind =
   | "chat"
-  | "board"
-  | "now"
+  | "plan"
+  | "work"
   | "session"
   | "file"
   | "artifact"
   | "diff"
-  | "plan"
   | "review";
 
 /** One icon per kind that says what it is (RQ-0029#AC-4) — `file`/`artifact` share the plain file
  * glyph they always had; nothing about *those* two was the finding. */
 const TAB_ICON: Record<TabKind, typeof MessageSquare> = {
   chat: MessageSquare,
-  board: LayoutGrid,
-  now: Activity,
-  session: Radio,
   plan: ListChecks,
+  work: KanbanSquare,
+  session: Radio,
   review: Eye,
   diff: FileDiff,
   file: FileCode2,
@@ -59,12 +55,12 @@ export interface Tab {
 }
 
 const CHAT: Tab = { id: "chat", kind: "chat", title: "Chat", preview: false };
-/** Pinned beside Chat (ST-0024#AC-1): the record's shape, not one artifact at a time. */
-const BOARD: Tab = { id: "board", kind: "board", title: "Board", preview: false };
-/** Pinned beside Board (RQ-0021#AC-2): the work's motion, and what waits on a person. */
-const NOW: Tab = { id: "now", kind: "now", title: "Now", preview: false };
+/** Pinned beside Chat (RQ-0045#AC-1): drafted work, browsed rather than banner-announced. */
+const PLAN: Tab = { id: "plan", kind: "plan", title: "Plan", preview: false };
+/** Pinned beside Plan (RQ-0045#AC-1, AC-3): the board plus the sprint header. */
+const WORK: Tab = { id: "work", kind: "work", title: "Work", preview: false };
 /** No pinned tab can be closed. */
-const PINNED = new Set([CHAT.id, BOARD.id, NOW.id]);
+const PINNED = new Set([CHAT.id, PLAN.id, WORK.id]);
 
 export interface Tabs {
   tabs: Tab[];
@@ -82,7 +78,7 @@ export interface Tabs {
 }
 
 export function useTabs(): Tabs {
-  const [tabs, setTabs] = useState<Tab[]>([CHAT, BOARD, NOW]);
+  const [tabs, setTabs] = useState<Tab[]>([CHAT, PLAN, WORK]);
   const [active, setActive] = useState<string>(CHAT.id);
   const [discarding, setDiscarding] = useState<Tab | null>(null);
   // Read by `close`, which must not depend on the tab list and be rebuilt on every change.
@@ -169,12 +165,9 @@ export function TabStrip({
   cancelDiscard,
 }: Tabs): React.JSX.Element {
   const open = tabs.filter((tab) => !PINNED.has(tab.id)).length;
-  // The Now tab's needs-you count (RQ-0021#AC-3, ST-0038#AC-2): NowTab is the only thing that knows
-  // it, and this label is drawn outside NowTab's own subtree — `now/badge.ts` is the bridge.
-  const needsYou = useSyncExternalStore(subscribeNowBadge, getNowBadge);
   // Work in motion (RQ-0030#AC-1): the MAIN session's streaming flag, and which session tabs are
-  // busy right now — both live in `now/motion.ts`, fed the same "always-mounted strip" way the Now
-  // badge is fed by an always-mounted `NowTab`.
+  // busy right now — both live in `dock/motion.ts`. The needs-you rollup itself moved to the activity
+  // dock's own collapsed strip (DC-0027) — this strip no longer carries it.
   const streaming = useMainStreaming();
   const busySessions = useBusySessions();
   useBusySessionStream();
@@ -208,17 +201,9 @@ export function TabStrip({
               className={`flex items-center gap-2 py-2 ${focusRing} ${tab.preview ? "italic" : ""}`}
             >
               <Icon size={12} aria-hidden />
-              <span className={tab.kind === "chat" || tab.kind === "board" ? "" : mono}>
+              <span className={tab.kind === "chat" || tab.kind === "work" ? "" : mono}>
                 {tab.title}
               </span>
-              {tab.kind === "now" && needsYou > 0 && (
-                <span
-                  data-testid="now-badge"
-                  className="rounded-full bg-amber-500 px-1.5 text-[10px] font-medium text-white"
-                >
-                  {needsYou} needs you
-                </span>
-              )}
               {/* A word and a quiet pulse, never colour alone (RQ-0030#AC-1). */}
               {working && (
                 <span

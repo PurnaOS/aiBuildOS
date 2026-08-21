@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Group, type Layout, Panel, Separator } from "react-resizable-panels";
-import { BoardTab } from "../boards/BoardTab.js";
-import { setMainStreaming } from "../now/motion.js";
-import { NowTab } from "../now/NowTab.js";
-import { SessionTab } from "../now/SessionTab.js";
-import { PlanTab } from "../plan/PlanTab.js";
+import { Group, type Layout, Panel, Separator, usePanelRef } from "react-resizable-panels";
+import { PlanSurface } from "../boards/PlanSurface.js";
+import { WorkBoard } from "../boards/WorkBoard.js";
+import { ActivityDock } from "../dock/ActivityDock.js";
+import { setMainStreaming } from "../dock/motion.js";
+import { SessionTab } from "../dock/SessionTab.js";
 import { ReviewTab } from "../review/ReviewTab.js";
 import { useTurnEnd } from "../review/useTurnEnd.js";
 import { useSession } from "../session/useSession.js";
@@ -41,7 +41,7 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
     session.state.status === "ready" ? session.state.sessionId : null,
   );
   // The one line this lane owns here (RQ-0030#AC-1): everything else about showing it lives in
-  // `now/motion.ts` and `TabStrip.tsx`.
+  // `dock/motion.ts` and `TabStrip.tsx`.
   useEffect(() => setMainStreaming(streaming), [streaming]);
   /**
    * A turn-end read or flip that failed (BG-0006, ST-0040#AC-2), or "Work on this" hitting a
@@ -173,6 +173,20 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
     void window.aibuildos.invoke("settings:set-chrome", { layout }).catch(() => undefined);
   }, []);
 
+  /**
+   * The activity dock's own resizable panel (RQ-0044#AC-1): collapsed it is a 28px strip, expanded it
+   * is user-resizable — both against the *same* `Panel`, never a remount, so a turn in flight never
+   * loses its subscriptions when someone drags or clicks. `collapsed` mirrors the panel's own size
+   * (via `onResize`) so `ActivityDock` knows which chrome to draw; the panel's imperative handle is
+   * what a click on its own toggle drives.
+   */
+  const dockPanelRef = usePanelRef();
+  const [dockCollapsed, setDockCollapsed] = useState(true);
+  const toggleDock = useCallback(() => {
+    if (dockPanelRef.current?.isCollapsed()) dockPanelRef.current.expand();
+    else dockPanelRef.current?.collapse();
+  }, [dockPanelRef]);
+
   // Mounted only once the stored layout is known: `defaultLayout` is read at mount by the panel
   // group, so handing it over later would have no effect at all.
   if (!layoutRead) return <div data-testid="workspace-loading" className="flex-1" />;
@@ -202,78 +216,112 @@ export function Workspace({ projectId }: { projectId: string }): React.JSX.Eleme
           <Handle />
 
           <Panel id="centre" defaultSize={55} minSize={30}>
-            <div className="flex h-full flex-col">
-              {workspaceProblem !== null && (
-                <div
-                  data-testid="turn-end-problem"
-                  className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-200 px-3 py-1.5 text-xs text-red-600 dark:border-neutral-800"
-                >
-                  <span>{workspaceProblem}</span>
-                  <button
-                    type="button"
-                    aria-label="Dismiss"
-                    onClick={() => setWorkspaceProblem(null)}
-                    className={`text-red-600 hover:text-red-700 ${focusRing}`}
-                  >
-                    ×
-                  </button>
+            {/* The activity dock sits under every surface (RQ-0044, DC-0027) — a second, vertical
+            Group nested in this Panel, so dragging or toggling it never touches the horizontal split
+            beside it. */}
+            <Group orientation="vertical" id="centre-vertical" className="flex h-full flex-col">
+              <Panel id="centre-tabs" minSize={120}>
+                <div className="flex h-full flex-col">
+                  {workspaceProblem !== null && (
+                    <div
+                      data-testid="turn-end-problem"
+                      className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-200 px-3 py-1.5 text-xs text-red-600 dark:border-neutral-800"
+                    >
+                      <span>{workspaceProblem}</span>
+                      <button
+                        type="button"
+                        aria-label="Dismiss"
+                        onClick={() => setWorkspaceProblem(null)}
+                        className={`text-red-600 hover:text-red-700 ${focusRing}`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+                  <TabStrip {...tabs} />
+                  {/* Every open tab stays mounted; only the focused one is shown. Unmounting would
+                  throw away an editor's unsaved work the moment someone glanced at the conversation,
+                  and would drop the conversation's own scrollback on the way back. */}
+                  {tabs.tabs.map((tab) => (
+                    <div
+                      key={tab.id}
+                      className={tab.id === tabs.active ? "min-h-0 flex-1" : "hidden"}
+                      aria-hidden={tab.id !== tabs.active}
+                    >
+                      {tab.kind === "chat" ? (
+                        <Chat
+                          projectId={projectId}
+                          session={session}
+                          pending={pending}
+                          onSent={() => setPending(null)}
+                        />
+                      ) : tab.kind === "plan" ? (
+                        <PlanSurface
+                          projectId={projectId}
+                          onOpen={tabs.open}
+                          onPrompt={setPending}
+                        />
+                      ) : tab.kind === "work" ? (
+                        <WorkBoard projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
+                      ) : tab.kind === "session" ? (
+                        <SessionTab
+                          projectId={projectId}
+                          sessionId={tab.id.replace(/^session:/, "")}
+                        />
+                      ) : tab.kind === "review" ? (
+                        <ReviewTab
+                          projectId={projectId}
+                          storyId={tab.id.replace(/^review:/, "")}
+                          onPrompt={setPending}
+                        />
+                      ) : tab.kind === "diff" ? (
+                        <DiffTab projectId={projectId} path={tab.id.replace(/^diff:/, "")} />
+                      ) : tab.kind === "file" ? (
+                        <FileTab
+                          projectId={projectId}
+                          path={tab.id}
+                          sessionId={
+                            session.state.status === "ready" ? session.state.sessionId : null
+                          }
+                          streaming={streaming}
+                          onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
+                        />
+                      ) : tab.kind === "artifact" ? (
+                        <ArtifactTab
+                          projectId={projectId}
+                          artifactId={tab.id}
+                          sessionId={
+                            session.state.status === "ready" ? session.state.sessionId : null
+                          }
+                          streaming={streaming}
+                          onSaved={bump}
+                          onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
+                          onPrompt={setPending}
+                        />
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
-              )}
-              <TabStrip {...tabs} />
-              {/* Every open tab stays mounted; only the focused one is shown. Unmounting would throw
-              away an editor's unsaved work the moment someone glanced at the conversation, and would
-              drop the conversation's own scrollback on the way back. */}
-              {tabs.tabs.map((tab) => (
-                <div
-                  key={tab.id}
-                  className={tab.id === tabs.active ? "min-h-0 flex-1" : "hidden"}
-                  aria-hidden={tab.id !== tabs.active}
-                >
-                  {tab.kind === "chat" ? (
-                    <Chat
-                      projectId={projectId}
-                      session={session}
-                      pending={pending}
-                      onSent={() => setPending(null)}
-                    />
-                  ) : tab.kind === "board" ? (
-                    <BoardTab projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
-                  ) : tab.kind === "now" ? (
-                    <NowTab projectId={projectId} onOpen={tabs.open} />
-                  ) : tab.kind === "session" ? (
-                    <SessionTab projectId={projectId} sessionId={tab.id.replace(/^session:/, "")} />
-                  ) : tab.kind === "plan" ? (
-                    <PlanTab projectId={projectId} onOpen={tabs.open} onPrompt={setPending} />
-                  ) : tab.kind === "review" ? (
-                    <ReviewTab
-                      projectId={projectId}
-                      storyId={tab.id.replace(/^review:/, "")}
-                      onPrompt={setPending}
-                    />
-                  ) : tab.kind === "diff" ? (
-                    <DiffTab projectId={projectId} path={tab.id.replace(/^diff:/, "")} />
-                  ) : tab.kind === "file" ? (
-                    <FileTab
-                      projectId={projectId}
-                      path={tab.id}
-                      sessionId={session.state.status === "ready" ? session.state.sessionId : null}
-                      streaming={streaming}
-                      onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
-                    />
-                  ) : tab.kind === "artifact" ? (
-                    <ArtifactTab
-                      projectId={projectId}
-                      artifactId={tab.id}
-                      sessionId={session.state.status === "ready" ? session.state.sessionId : null}
-                      streaming={streaming}
-                      onSaved={bump}
-                      onDirtyChange={(dirty) => tabs.setDirty(tab.id, dirty)}
-                      onPrompt={setPending}
-                    />
-                  ) : null}
-                </div>
-              ))}
-            </div>
+              </Panel>
+              <Separator className="h-px cursor-row-resize bg-neutral-200 transition-colors hover:bg-neutral-400 dark:bg-neutral-800 dark:hover:bg-neutral-600" />
+              <Panel
+                id="dock"
+                defaultSize={28}
+                minSize={160}
+                maxSize={420}
+                collapsedSize={28}
+                collapsible
+                panelRef={dockPanelRef}
+                onResize={(size) => setDockCollapsed(size.inPixels <= 32)}
+              >
+                <ActivityDock
+                  projectId={projectId}
+                  onOpen={tabs.open}
+                  collapsed={dockCollapsed}
+                  onToggle={toggleDock}
+                />
+              </Panel>
+            </Group>
           </Panel>
           <Handle />
 

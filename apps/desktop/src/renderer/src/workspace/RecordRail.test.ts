@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { describe, expect, test, vi } from "vitest";
-import type { NowTab } from "../now/NowTab.js";
+import type { ActivityDock } from "../dock/ActivityDock.js";
 import type { ReviewTab } from "../review/ReviewTab.js";
 import { Row } from "./RecordRail.js";
 
@@ -94,11 +94,14 @@ describe("Row's inbound edges (AC-1)", () => {
 
 // AC-3: the dead props are gone. Excess-property checks on a literal fail the build the moment
 // either callback returns to its component's props — `bun run typecheck` is what actually proves
-// this; these two assignments only exist to give it something to fail on.
-const _noOnPrompt: Parameters<typeof NowTab>[0] = {
+// this; these two assignments only exist to give it something to fail on. `NowTab` died with the
+// activity dock (RQ-0044, DC-0027); `ActivityDock` inherits the same invariant.
+const _noOnPrompt: Parameters<typeof ActivityDock>[0] = {
   projectId: "p",
   onOpen: () => {},
-  // @ts-expect-error NowTab declares no `onPrompt` (RQ-0041#AC-3) — restoring it breaks this line.
+  collapsed: true,
+  onToggle: () => {},
+  // @ts-expect-error ActivityDock declares no `onPrompt` (RQ-0041#AC-3) — restoring it breaks this line.
   onPrompt: () => {},
 };
 

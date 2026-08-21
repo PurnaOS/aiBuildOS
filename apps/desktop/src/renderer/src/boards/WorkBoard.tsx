@@ -6,7 +6,7 @@ import { buildWalk } from "../review/walk.js";
 import { button, card, eyebrow, focusRing, mono } from "../ui.js";
 import { useBump, useRevision } from "../workspace/revision.js";
 import type { Tab } from "../workspace/TabStrip.js";
-import { Column } from "./BoardTab.js";
+import { Column } from "./Column.js";
 import { type BoardArtifact, type BoardColumn, deriveBoard, mergeVocabularies } from "./derive.js";
 
 type Record_ = ChannelResponse<"project:record">;
@@ -269,32 +269,46 @@ export function WorkBoard({
   );
 
   /**
-   * The ready column's Build control (ST-0044#AC-4): pressing the button itself starts the build in
-   * this checkout, exactly as it always did (build.spec.ts and commit.spec.ts press this same testid
-   * expecting exactly that, and this lane does not own those specs) — collapsing the worktree
-   * buttons, one per harness, behind a single caret next to it instead of leaving them all sitting on
-   * the card. `null` for a Bug, which offers no build control at all.
+   * The ready column's Build control (RQ-0045#AC-4, DC-0027 — the owner's decision): the primary
+   * press now starts a worktree build, with the first configured harness — today's first caret entry,
+   * simply promoted — since parallel worktree builds are the default and the conversation is the
+   * exception. The caret still lists every configured harness (a multi-harness project still has to
+   * choose which one a *non-default* worktree build spawns with, `parallel.spec.ts`'s own case), with
+   * "In this conversation" first — the old primary action, now one press further away. `null` for a
+   * Bug, which offers no build control at all.
    */
   const buildControlFor = (artifact: BoardArtifact): BuildControl | null => {
     if (artifact.type !== "Story") return null;
     const busy = building.has(artifact.id);
     const busyWorktree = buildingWorktree.has(artifact.id);
     const configured = harnesses ?? [];
+    const defaultHarness = configured[0];
     return {
       buildTestId: `board-card-build-${artifact.id}`,
       buildLabel: busy ? "Building…" : busyWorktree ? "Starting…" : "Build",
-      buildDisabled: busy || busyWorktree,
-      onBuild: () => void startBuild(artifact.id),
+      // A worktree build needs a harness to spawn with; with none configured the primary press has
+      // nothing to do (the caret's "In this conversation" still works — that reuses whatever the
+      // main chat already picked, never a harness this button chose).
+      buildDisabled: busy || busyWorktree || defaultHarness === undefined,
+      onBuild: () => defaultHarness && void startWorktreeBuild(artifact.id, defaultHarness.id),
       menuTestId: `board-card-build-menu-${artifact.id}`,
-      // One entry per configured harness (RQ-0020#AC-1): a worktree build spawns a session right
-      // away, so — unlike the plain Build button, which reuses whatever the main chat already
-      // picked — it has to know which harness to spawn with before the click ever fires.
-      worktreeEntries: configured.map((harness) => ({
-        testId: `board-card-build-worktree-${artifact.id}-${harness.id}`,
-        label: `In a worktree — ${harness.displayName}`,
-        disabled: busy || busyWorktree,
-        onClick: () => void startWorktreeBuild(artifact.id, harness.id),
-      })),
+      menuDisabled: busy || busyWorktree,
+      menuEntries: [
+        {
+          testId: `board-card-build-chat-${artifact.id}`,
+          label: "In this conversation",
+          disabled: busy || busyWorktree,
+          onClick: () => void startBuild(artifact.id),
+        },
+        // One entry per configured harness (RQ-0020#AC-1): a worktree build spawns a session right
+        // away, so it has to know which harness to spawn with before the click ever fires.
+        ...configured.map((harness) => ({
+          testId: `board-card-build-worktree-${artifact.id}-${harness.id}`,
+          label: `In a worktree — ${harness.displayName}`,
+          disabled: busy || busyWorktree,
+          onClick: () => void startWorktreeBuild(artifact.id, harness.id),
+        })),
+      ],
     };
   };
 
@@ -310,7 +324,7 @@ export function WorkBoard({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div data-testid="work-board" className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div data-testid="board-columns" className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3">
         {columns.map((column) =>
           column.state === "ready" || column.state === "review" ? (
@@ -372,9 +386,9 @@ interface CardAction {
 }
 
 /**
- * The ready column's split Build control (ST-0044#AC-4): a primary button that starts the build in
- * this checkout, plus — only when at least one harness is configured — a caret beside it that opens
- * the worktree entries, one per harness, in place of a row of always-visible buttons.
+ * The ready column's split Build control (ST-0044#AC-4, RQ-0045#AC-4): a primary button that starts a
+ * worktree build with the default harness, plus a caret beside it — "In this conversation" first,
+ * then one entry per configured harness — in place of a row of always-visible buttons.
  */
 interface BuildControl {
   readonly buildTestId: string;
@@ -382,7 +396,10 @@ interface BuildControl {
   readonly buildDisabled: boolean;
   readonly onBuild: () => void;
   readonly menuTestId: string;
-  readonly worktreeEntries: readonly CardAction[];
+  /** The caret's own disabled state — deliberately not `buildDisabled`: with no harness configured
+   * the primary press has nothing to start, but "In this conversation" still works. */
+  readonly menuDisabled: boolean;
+  readonly menuEntries: readonly CardAction[];
 }
 
 /**
@@ -560,13 +577,13 @@ function ActionCard({
           >
             {build.buildLabel}
           </button>
-          {build.worktreeEntries.length > 0 && (
+          {build.menuEntries.length > 0 && (
             <button
               type="button"
               data-testid={build.menuTestId}
-              aria-label={`Worktree build options for ${artifact.id}`}
+              aria-label={`Build options for ${artifact.id}`}
               onClick={() => setBuildMenuOpen((open) => !open)}
-              disabled={build.buildDisabled}
+              disabled={build.menuDisabled}
               className={`px-1.5 text-xs ${button} ${focusRing}`}
             >
               ▾
@@ -575,31 +592,28 @@ function ActionCard({
         </div>
       )}
 
-      {build !== null &&
-        build !== undefined &&
-        buildMenuOpen &&
-        build.worktreeEntries.length > 0 && (
-          <div
-            data-testid={`board-card-build-worktree-options-${artifact.id}`}
-            className="mt-1 flex flex-col items-start gap-0.5"
-          >
-            {build.worktreeEntries.map((entry) => (
-              <button
-                key={entry.testId}
-                type="button"
-                data-testid={entry.testId}
-                disabled={entry.disabled}
-                onClick={() => {
-                  setBuildMenuOpen(false);
-                  entry.onClick();
-                }}
-                className={`text-[11px] underline hover:text-neutral-900 dark:hover:text-neutral-100 ${mono}`}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
-        )}
+      {build !== null && build !== undefined && buildMenuOpen && build.menuEntries.length > 0 && (
+        <div
+          data-testid={`board-card-build-worktree-options-${artifact.id}`}
+          className="mt-1 flex flex-col items-start gap-0.5"
+        >
+          {build.menuEntries.map((entry) => (
+            <button
+              key={entry.testId}
+              type="button"
+              data-testid={entry.testId}
+              disabled={entry.disabled}
+              onClick={() => {
+                setBuildMenuOpen(false);
+                entry.onClick();
+              }}
+              className={`text-[11px] underline hover:text-neutral-900 dark:hover:text-neutral-100 ${mono}`}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <button
         type="button"

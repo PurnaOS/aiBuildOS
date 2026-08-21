@@ -48,23 +48,29 @@ async function open(mode: string) {
 test("shows what the agent offers, and follows the agent when it changes", async () => {
   const { app, w } = await open("controls");
 
-  await expect(w.getByTestId("controls")).toBeVisible();
-  await expect(w.getByTestId("control-mode")).toContainText("Plan");
-  await expect(w.getByTestId("control-model")).toContainText("Sonnet");
-  await expect(w.getByTestId("control-thought_level")).toContainText("Think");
+  // RQ-0042: every agent setting lives in one popover now, behind its trigger.
+  await w.getByTestId("agent-popover-trigger").click();
+  const popover = w.getByTestId("agent-popover");
+  await expect(popover.getByTestId("control-mode")).toContainText("Plan");
+  await expect(popover.getByTestId("control-model")).toContainText("Sonnet");
+  await expect(popover.getByTestId("control-thought_level")).toContainText("Think");
 
   // Changing asks the agent; the chip follows the agent's own confirmation.
-  await w.getByTestId("control-model").click();
-  await w.getByTestId("control-model-opus").click();
-  await expect(w.getByTestId("control-model")).toContainText("Opus");
+  await popover.getByTestId("control-model").click();
+  await popover.getByTestId("control-model-opus").click();
+  await expect(popover.getByTestId("control-model")).toContainText("Opus");
 
-  await w.getByTestId("control-mode").click();
-  await w.getByTestId("control-mode-code").click();
-  await expect(w.getByTestId("control-mode")).toContainText("Code");
+  await popover.getByTestId("control-mode").click();
+  await popover.getByTestId("control-mode-code").click();
+  await expect(popover.getByTestId("control-mode")).toContainText("Code");
 
-  // Commands the agent advertised, sent as ordinary text.
-  await w.getByTestId("control-commands").click();
-  await w.getByTestId("control-commands-review").click();
+  await w.keyboard.press("Escape");
+
+  // RQ-0043: the agent's commands are offered from the composer's `+` menu, and picking one
+  // inserts it into the composer — sent, like anything else typed there, by pressing Enter.
+  await w.getByTestId("composer-menu-trigger").click();
+  await w.getByTestId("command-review").click();
+  await w.keyboard.press("Enter");
   await expect(w.getByTestId("chat")).toContainText("/review");
 
   await app.close();
@@ -73,8 +79,14 @@ test("shows what the agent offers, and follows the agent when it changes", async
 test("shows nothing at all when the agent advertises nothing", async () => {
   const { app, w } = await open("rich");
 
-  // Absent, not an empty menu — the difference the design turns on.
-  await expect(w.getByTestId("controls")).toHaveCount(0);
+  await w.getByTestId("agent-popover-trigger").click();
+  const popover = w.getByTestId("agent-popover");
+
+  // Absent, not an empty menu — the difference the design turns on. Supervision still shows: it
+  // is not a setting the agent could have offered or withheld.
+  await expect(popover.getByTestId("control-mode")).toHaveCount(0);
+  await expect(popover).not.toContainText("Agent options");
+  await expect(popover.getByTestId("supervision")).toBeVisible();
 
   await app.close();
 });

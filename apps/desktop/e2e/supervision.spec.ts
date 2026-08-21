@@ -111,3 +111,36 @@ test("an ask still waits for a person, even at hands-off", async () => {
 
   await app.close();
 });
+
+/**
+ * TC-0108. RQ-0042#AC-2 to AC-4 through the running application, against the stub agent's real
+ * two-MODE collision: its own "Mode" config option sits beside the ACP session's own mode control.
+ */
+test("the popover disambiguates a name collision by origin, and hands-off echoes on the trigger", async () => {
+  const { app, w } = await open("controls");
+
+  await w.getByTestId("start-h").click();
+  await w.getByTestId("chat").waitFor({ timeout: 20000 });
+
+  await w.getByTestId("agent-popover-trigger").click();
+  const popover = w.getByTestId("agent-popover");
+
+  // Both entries render, disambiguated by their group headings rather than merged on the name
+  // they share.
+  await expect(popover).toContainText("Session");
+  await expect(popover).toContainText("Agent options — Stub");
+  await expect(popover.getByTestId("control-mode")).toContainText("Mode");
+  await expect(popover.getByTestId("control-style")).toContainText("Mode");
+
+  // Supervision works inside the popover exactly as it did on its own, same testid.
+  await expect(popover.getByTestId("supervision")).toContainText("closest");
+  await popover.getByTestId("supervision").click();
+  await expect(popover.getByTestId("supervision")).toContainText("hands-off");
+
+  // Closed, the trigger still carries the amber echo — readable without opening anything.
+  await w.keyboard.press("Escape");
+  const trigger = w.getByTestId("agent-popover-trigger");
+  await expect(trigger).toContainText("hands-off");
+
+  await app.close();
+});

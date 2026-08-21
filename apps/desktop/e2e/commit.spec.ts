@@ -201,10 +201,12 @@ test("the Git tab stages and commits an edit, and accepting a story offers a com
   expect(readFileSync(join(work, "README.md"), "utf8")).toBe(README_EDITED);
 
   // AC-4/AC-5: build and accept a story through the stub's file-writer, the same walk build.spec
-  // exercises — the point here is what happens *after* Accept, not the walk itself.
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-view-work").click();
-  await w.getByTestId("board-card-build-ST-0001").click();
+  // exercises — the point here is what happens *after* Accept, not the walk itself. RQ-0045#AC-4:
+  // the primary press is a worktree build now, so this in-chat build reaches "In this
+  // conversation" behind the caret instead.
+  await w.getByTestId("tab-work").click();
+  await w.getByTestId("board-card-build-menu-ST-0001").click();
+  await w.getByTestId("board-card-build-chat-ST-0001").click();
   await expect
     .poll(() => readFileSync(join(work, "docs/user-stories/st-0001.md"), "utf8"))
     .toContain("state: building");
@@ -220,7 +222,7 @@ test("the Git tab stages and commits an edit, and accepting a story offers a com
     })
     .toContain("state: review");
 
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-work").click();
   await w.getByTestId("board-card-review-ST-0001").click();
   await expect(w.getByTestId("review-tab")).toBeVisible();
   await w.getByTestId("review-accept").click();
@@ -269,9 +271,11 @@ test("the review tab's offer, pressed, stages every changed path itself and comm
   const { app, w, work } = await open();
   const seedLog = log(work);
 
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-view-work").click();
-  await w.getByTestId("board-card-build-ST-0001").click();
+  // RQ-0045#AC-4: the primary press is a worktree build now — this in-chat build reaches "In this
+  // conversation" behind the caret instead.
+  await w.getByTestId("tab-work").click();
+  await w.getByTestId("board-card-build-menu-ST-0001").click();
+  await w.getByTestId("board-card-build-chat-ST-0001").click();
   await expect
     .poll(() => readFileSync(join(work, "docs/user-stories/st-0001.md"), "utf8"))
     .toContain("state: building");
@@ -287,7 +291,7 @@ test("the review tab's offer, pressed, stages every changed path itself and comm
     })
     .toContain("state: review");
 
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-work").click();
   await w.getByTestId("board-card-review-ST-0001").click();
   await expect(w.getByTestId("review-tab")).toBeVisible();
   await w.getByTestId("review-accept").click();

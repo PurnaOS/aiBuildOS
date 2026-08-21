@@ -167,8 +167,7 @@ test("talking a ready story into work lands it in review, and the Build control 
   const storyFile = join(work, "docs/user-stories/st-0001.md");
 
   // AC-4's other half (TC-0044): one Build control per ready card, not one button per harness.
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-view-work").click();
+  await w.getByTestId("tab-work").click();
   await expect(w.getByTestId("board-card-build-ST-0001")).toHaveText("Build");
   await w.getByTestId("board-card-build-menu-ST-0001").click();
   await expect(w.getByTestId("board-card-build-worktree-ST-0001-h")).toContainText(

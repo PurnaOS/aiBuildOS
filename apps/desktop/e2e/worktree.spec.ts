@@ -174,13 +174,11 @@ test("a worktree build leaves the workspace free, and lands on accept", async ()
   const wtPath = join(worktrees, "p1", "ST-0001");
 
   // AC-1: Build-in-a-worktree walks ready → queued → building in main, and creates the worktree —
-  // pressed before any turn ran, so the flips land deterministically.
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-view-work").click();
-  // ST-0044#AC-4: the worktree entries sit behind the Build control's caret, one menu rather than
-  // a button per harness.
-  await w.getByTestId("board-card-build-menu-ST-0001").click();
-  await w.getByTestId("board-card-build-worktree-ST-0001-h").click();
+  // pressed before any turn ran, so the flips land deterministically. RQ-0045#AC-4: the primary
+  // press is a worktree build now — with one harness configured, that press alone is the whole
+  // story, no caret needed.
+  await w.getByTestId("tab-work").click();
+  await w.getByTestId("board-card-build-ST-0001").click();
 
   // "building" is transient: a fast stub can complete its whole turn between two polls, landing
   // the turn-end flip at review before this reads the file. The guarded save only admits declared
@@ -214,7 +212,7 @@ test("a worktree build leaves the workspace free, and lands on accept", async ()
     .toContain("state: review");
 
   // AC-4: review reads the branch's changes, and accept merges --no-ff into main.
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-work").click();
   await w.getByTestId("board-card-review-ST-0001").click();
   await expect(w.getByTestId("review-tab")).toBeVisible();
   await expect(w.getByTestId("review-diffs")).toContainText("notes.md");
@@ -241,10 +239,9 @@ test("restart lists a survivor without picking it up on its own", async () => {
   const storyFile = join(work, "docs/user-stories/st-0001.md");
 
   const first = await open(config, worktrees);
-  await first.w.getByTestId("tab-board").click();
-  await first.w.getByTestId("board-view-work").click();
-  await first.w.getByTestId("board-card-build-menu-ST-0001").click();
-  await first.w.getByTestId("board-card-build-worktree-ST-0001-h").click();
+  // RQ-0045#AC-4: the primary press starts a worktree build now.
+  await first.w.getByTestId("tab-work").click();
+  await first.w.getByTestId("board-card-build-ST-0001").click();
 
   // `build:start` creates the worktree before the renderer ever writes `state: building` — seeing
   // the state on disk is already proof the worktree exists, and skipping a second poll for it here
@@ -270,7 +267,7 @@ test("restart lists a survivor without picking it up on its own", async () => {
   ).toContain("aibuildos/st-0001");
 
   // v1: reopening only enumerates the survivor — no session is picked up on its own.
-  await second.w.getByTestId("tab-now").click();
+  await second.w.getByTestId("dock-toggle").click();
   await expect(second.w.getByTestId("now-row-ST-0001")).toBeVisible();
   await expect(second.w.getByTestId("now-row-state-ST-0001")).toHaveText("no session yet");
 

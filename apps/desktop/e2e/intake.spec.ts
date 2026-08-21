@@ -76,8 +76,14 @@ async function open(
   return { app, w, work };
 }
 
+/**
+ * RQ-0043: the door is the composer's `+` menu now, not a permanent strip — reached the same way
+ * whether the transcript is empty (the first call, in each test below) or not (AC-6's reopened
+ * door), so one helper covers both.
+ */
 async function startIdea(w: Page, idea: string): Promise<void> {
-  await w.getByTestId("playbook-PB-0001").click();
+  await w.getByTestId("composer-menu-trigger").click();
+  await w.getByTestId("composer-menu").getByTestId("playbook-PB-0001").click();
   await w.getByTestId("playbook-idea-input-PB-0001").fill(idea);
   await w.getByTestId("playbook-idea-start-PB-0001").click();
 }
@@ -156,7 +162,7 @@ test("the interview drafts requirements as it settles them", async () => {
     "state: draft",
   );
 
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-plan").click();
   await expect(w.getByTestId("board-column-draft").getByTestId("board-card-RQ-0001")).toBeVisible();
 
   // The bundle this leaves behind is exactly what `docs:check` itself would accept.
@@ -170,7 +176,7 @@ test("the interview drafts requirements as it settles them", async () => {
     "state: draft",
   );
 
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-plan").click();
   await expect(w.getByTestId("board-column-draft").getByTestId("board-card-RQ-0002")).toBeVisible();
 
   await app.close();
@@ -194,7 +200,7 @@ test("stopping mid-interview keeps drafts already written, as drafts", async () 
   const second = w.getByTestId("question-card").last();
   await expect(second).toContainText("What must work first?");
 
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-plan").click();
   await expect(w.getByTestId("board-column-draft").getByTestId("board-card-RQ-0001")).toBeVisible();
   expect(readFileSync(join(work, "docs/requirements/rq-0001.md"), "utf8")).toBe(SEEDED_DRAFT);
   expect(existsSync(join(work, "docs/requirements/rq-0002.md"))).toBe(false);
@@ -202,7 +208,8 @@ test("stopping mid-interview keeps drafts already written, as drafts", async () 
   // Nothing about the app is stuck: the record is still browsable and the door still works.
   await w.getByTestId("tab-chat").click();
   await expect(w.getByTestId("chat")).toBeVisible();
-  await expect(w.getByTestId("playbook-PB-0001")).toBeEnabled();
+  await w.getByTestId("composer-menu-trigger").click();
+  await expect(w.getByTestId("composer-menu").getByTestId("playbook-PB-0001")).toBeEnabled();
 
   await app.close();
 });

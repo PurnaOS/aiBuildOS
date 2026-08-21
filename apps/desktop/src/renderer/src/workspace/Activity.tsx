@@ -1,6 +1,7 @@
-import { AlertTriangle, Check, Circle } from "lucide-react";
+import { Check, Circle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
+import { PermissionCard, type PermissionInfo } from "../dock/PermissionCard.js";
+import { eyebrow, mono } from "../ui.js";
 
 /**
  * The plan and the agent's questions (ST-0010, ST-0011).
@@ -9,19 +10,14 @@ import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
  * *inside* the transcript: a plan buried in the scrollback is not an answer to "how far along is
  * it", and a question that scrolls away is a turn that never finishes.
  *
- * So both sit above the composer, where they stay visible.
+ * So both sit above the composer, where they stay visible. The permission itself is answered by the
+ * one shared `PermissionCard` (RQ-0044#AC-6, ST-0063) — this component still owns *tracking* which
+ * permission is open, since that is the same AG-UI stream the plan reads, but rendering the answer is
+ * no longer this file's copy to keep in step with the dock's.
  */
 interface PlanEntry {
   content: string;
   status?: string;
-}
-
-interface Permission {
-  requestId: string;
-  toolCall?: { title?: string };
-  options: { optionId: string; name: string; kind?: string }[];
-  /** Set when hands-off supervision answered this one before it ever reached the screen (RQ-0022#AC-3). */
-  automatic?: boolean;
 }
 
 /** The `name` the bridge puts on each custom event. Kept in step with `packages/acp/src/bridge.ts`. */
@@ -29,8 +25,7 @@ const CUSTOM = { plan: "acp.plan", permission: "acp.permission" };
 
 export function Activity({ sessionId }: { sessionId: string }): React.JSX.Element | null {
   const [plan, setPlan] = useState<PlanEntry[]>([]);
-  const [permission, setPermission] = useState<Permission | null>(null);
-  const [answering, setAnswering] = useState(false);
+  const [permission, setPermission] = useState<PermissionInfo | null>(null);
 
   useEffect(() => {
     setPlan([]);
@@ -54,81 +49,23 @@ export function Activity({ sessionId }: { sessionId: string }): React.JSX.Elemen
         // The agent resends the whole plan every time and the client replaces it wholesale.
         setPlan(((event.value as { entries?: PlanEntry[] })?.entries ?? []).slice());
       }
-      if (event.name === CUSTOM.permission) setPermission(event.value as Permission);
+      if (event.name === CUSTOM.permission) setPermission(event.value as PermissionInfo);
     });
   }, [sessionId]);
-
-  const answer = async (optionId: string | null): Promise<void> => {
-    if (!permission) return;
-
-    setAnswering(true);
-    try {
-      await window.aibuildos.invoke("session:permission", {
-        sessionId,
-        requestId: permission.requestId,
-        optionId,
-      });
-      setPermission(null);
-    } finally {
-      setAnswering(false);
-    }
-  };
 
   if (plan.length === 0 && permission === null) return null;
 
   return (
     <div className="border-t border-neutral-200 dark:border-neutral-800">
       {permission && (
-        <div
-          data-testid="permission"
-          className={`border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 ${
-            permission.automatic
-              ? "bg-neutral-50 dark:bg-neutral-900"
-              : "bg-amber-50 dark:bg-amber-950/30"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {permission.automatic ? (
-              <Check size={13} className="shrink-0 text-neutral-500" aria-hidden />
-            ) : (
-              <AlertTriangle size={13} className="shrink-0 text-amber-600" aria-hidden />
-            )}
-            <span
-              className={`${eyebrow} ${
-                permission.automatic ? "text-neutral-500" : "text-amber-700 dark:text-amber-500"
-              }`}
-            >
-              {permission.automatic ? "answered automatically" : "waiting for you"}
-            </span>
-          </div>
-          <p className="mt-1.5 text-sm">
-            {permission.toolCall?.title ?? "The agent needs permission."}
-          </p>
-
-          {permission.automatic ? (
-            // Settled, not a decision left to make — a line, not buttons for a click that already
-            // happened (RQ-0022#AC-3).
-            <p data-testid="permission-automatic" className="mt-2.5 text-xs text-neutral-500">
-              Allowed automatically — hands-off supervision.
-            </p>
-          ) : (
-            // One control per option the agent sent, in the agent's own words. Nothing invented.
-            <div className="mt-2.5 flex flex-wrap gap-2">
-              {permission.options.map((option, index) => (
-                <button
-                  key={option.optionId}
-                  type="button"
-                  data-testid={`permission-${option.optionId}`}
-                  disabled={answering}
-                  onClick={() => void answer(option.optionId)}
-                  className={`${index === 0 ? primary : button} ${focusRing}`}
-                >
-                  {option.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <PermissionCard
+          sessionId={sessionId}
+          permission={permission}
+          wrapperTestId="permission"
+          automaticTestId="permission-automatic"
+          answerTestId={(optionId) => `permission-${optionId}`}
+          onAnswered={() => setPermission(null)}
+        />
       )}
 
       {plan.length > 0 && (

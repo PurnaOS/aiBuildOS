@@ -107,8 +107,8 @@ test("an idea picked on the board is planned, approved, built and accepted", asy
   await w.getByTestId("start-h").click();
   await w.getByTestId("chat").waitFor({ timeout: 20000 });
 
-  // Pick, and ask for the plan.
-  await w.getByTestId("tab-board").click();
+  // Pick, and ask for the plan. The backlog lives on the Plan surface now (RQ-0045#AC-1).
+  await w.getByTestId("tab-plan").click();
   await w.getByTestId("plan-pick-RQ-0001").check();
   await w.getByTestId("plan-start").click();
   await w.getByTestId("tab-chat").click();
@@ -116,10 +116,9 @@ test("an idea picked on the board is planned, approved, built and accepted", asy
     timeout: 20000,
   });
 
-  // Review what the agent drafted, and approve it.
-  await w.getByTestId("tab-board").click();
-  await expect(w.getByTestId("plan-banner")).toBeVisible();
-  await w.getByTestId("plan-banner-open").click();
+  // Review what the agent drafted, and approve it. No banner, no second door: the drafts are on
+  // the surface they belong to, reachable by browsing (RQ-0045#AC-2).
+  await w.getByTestId("tab-plan").click();
   await expect(w.getByTestId("plan-story-ST-0001")).toBeVisible();
   await w.getByTestId("plan-approve").click();
   await expect(w.getByTestId("plan-empty")).toBeVisible({ timeout: 15000 });
@@ -127,11 +126,19 @@ test("an idea picked on the board is planned, approved, built and accepted", asy
     "state: ready",
   );
 
-  // Build it, and let the turn end move it to review.
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-view-work").click();
-  await w.getByTestId("board-card-build-ST-0001").click();
+  // Build it, and let the turn end move it to review. This journey is the in-conversation build,
+  // which now lives behind the Build control's caret — the primary press starts a worktree build
+  // (RQ-0045#AC-4), and that path has worktree.spec and parallel.spec to itself.
+  await w.getByTestId("tab-work").click();
+  await w.getByTestId("board-card-build-menu-ST-0001").click();
+  await w.getByTestId("board-card-build-chat-ST-0001").click();
   await expect(w.getByTestId("board-column-review").getByTestId("board-card-ST-0001")).toBeVisible({
+    timeout: 30000,
+  });
+
+  // The dock said so before the board did: work in motion is visible from wherever you stand, and
+  // its next-action line names the one thing left to do (RQ-0044#AC-3).
+  await expect(w.getByTestId("dock-next-action-text")).toContainText("ST-0001", {
     timeout: 30000,
   });
 

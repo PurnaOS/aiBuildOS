@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EventPayload } from "@aibuildos/ipc";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { startBuild } from "./builds.js";
+import { mergeBuild, resumeBuild, startBuild, startSprint } from "./builds.js";
 import { git } from "./git.js";
 import type { Harness } from "./harnesses.js";
 import { SessionRegistry } from "./sessions.js";
@@ -90,15 +90,41 @@ async function waitFor(
   }
 }
 
+/** Registers a project and a harness the way `ipc.ts`'s stores would, for `resumeBuild` — which,
+ * unlike `startBuild`, is handed raw ids and resolves both itself (ST-0054). */
+function registerConfig(configDir: string, projectId: string, work: string): void {
+  writeFileSync(
+    join(configDir, "projects.json"),
+    JSON.stringify([{ id: projectId, name: "demo", path: work, lastOpened: null }]),
+  );
+  writeFileSync(
+    join(configDir, "harnesses.json"),
+    JSON.stringify([
+      {
+        id: harness.id,
+        displayName: harness.displayName,
+        command: harness.command,
+        args: harness.args,
+      },
+    ]),
+  );
+}
+
 describe("the build's flip", () => {
   let worktrees: string;
+  let configDir: string;
   let projects: string[];
   let sessions: SessionRegistry;
   let flips: { sessionId: string; value: unknown }[];
 
   beforeEach(() => {
     worktrees = mkdtempSync(join(tmpdir(), "aibuildos-builds-worktrees-"));
+    configDir = mkdtempSync(join(tmpdir(), "aibuildos-builds-config-"));
     process.env.AIBUILDOS_WORKTREES_ROOT = worktrees;
+    // Pointed at a directory with no files yet — `loadProjects`/`loadHarnesses` read a missing file
+    // as empty, never a throw, so tests that never call `resumeBuild` are unaffected.
+    process.env.AIBUILDOS_PROJECTS_FILE = join(configDir, "projects.json");
+    process.env.AIBUILDOS_HARNESSES_FILE = join(configDir, "harnesses.json");
     projects = [];
     flips = [];
     sessions = new SessionRegistry(
@@ -119,7 +145,10 @@ describe("the build's flip", () => {
   afterEach(async () => {
     await sessions.closeAll();
     delete process.env.AIBUILDOS_WORKTREES_ROOT;
+    delete process.env.AIBUILDOS_PROJECTS_FILE;
+    delete process.env.AIBUILDOS_HARNESSES_FILE;
     rmSync(worktrees, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    rmSync(configDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     for (const work of projects)
       rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
@@ -176,5 +205,127 @@ describe("the build's flip", () => {
 
     expect(readFileSync(storyFile, "utf8")).toContain("state: draft");
     expect(flips).toEqual([]);
+  });
+
+  it(
+    "a sprint story branches from the sprint branch, flips stay in main, and the sprint branch's " +
+      "docs/ stays byte-identical to its base until merge (DC-0025, ST-0053)",
+    async () => {
+      const work = await seedProject("ST-0004", "building");
+      projects.push(work);
+      const storyFile = join(work, "docs/user-stories/st-0004.md");
+
+      const sprint = await startSprint(work, "SP-0001");
+      if (!sprint.ok) throw new Error(sprint.message);
+      const sprintBase = (await git(work, "rev-parse", sprint.branch)).trim();
+
+      const started = await startBuild(
+        sessions,
+        { id: "p1", path: work },
+        "ST-0004",
+        harness,
+        "SP-0001",
+      );
+      if (!started.ok) throw new Error(`${started.code}: ${started.message}`);
+
+      await sessions.prompt(started.sessionId, "build it");
+      await waitFor(() => readFileSync(storyFile, "utf8").includes("state: review"));
+
+      // The flip landed in main's own checkout (ST-0053#AC-3) — the sprint branch's own copy of
+      // the story is untouched, still at `building`.
+      expect(await git(work, "show", `${sprint.branch}:docs/user-stories/st-0004.md`)).toContain(
+        "state: building",
+      );
+
+      const merged = await mergeBuild(work, "ST-0004");
+      expect(merged).toEqual({ ok: true });
+
+      // ST-0053#AC-2: the checkpoint landed on the sprint branch, not main.
+      expect(
+        (await git(work, "rev-list", "--count", `${sprintBase}..${sprint.branch}`)).trim(),
+      ).not.toBe("0");
+      // DC-0025's byte-identical invariant: even with that checkpoint landed, the sprint branch's
+      // docs/ is still exactly what it was at its base — the flip never touched it.
+      expect((await git(work, "diff", sprintBase, sprint.branch, "--", "docs/")).trim()).toBe("");
+    },
+  );
+
+  it("startBuild refuses no_sprint when the named sprint has no worktree", async () => {
+    const work = await seedProject("ST-0008", "building");
+    projects.push(work);
+
+    const result = await startBuild(
+      sessions,
+      { id: "p1", path: work },
+      "ST-0008",
+      harness,
+      "SP-9999",
+    );
+    expect(result).toEqual({ ok: false, code: "no_sprint", message: expect.any(String) });
+  });
+
+  it("resumeBuild re-attaches to a surviving worktree: review walks back to building, and the same attach() runs its checkpoint→flip", async () => {
+    const work = await seedProject("ST-0005", "building");
+    projects.push(work);
+    registerConfig(configDir, "p1", work);
+    const storyFile = join(work, "docs/user-stories/st-0005.md");
+
+    const started = await startBuild(sessions, { id: "p1", path: work }, "ST-0005", harness);
+    if (!started.ok) throw new Error(`${started.code}: ${started.message}`);
+    await sessions.prompt(started.sessionId, "build it");
+    await waitFor(() => readFileSync(storyFile, "utf8").includes("state: review"));
+
+    // The session ends (quit, crash) without a merge or a discard — the worktree, its branch, and
+    // the record's `review` state all survive on disk, exactly as DC-0021 promises.
+    await sessions.close(started.sessionId);
+
+    const resumed = await resumeBuild(sessions, "p1", "ST-0005", harness.id);
+    if (!resumed.ok) throw new Error(`${resumed.code}: ${resumed.message}`);
+
+    // ST-0054#AC-3: review walks back to building before the fresh session ever prompts.
+    expect(readFileSync(storyFile, "utf8")).toContain("state: building");
+
+    // The same attach(): a turn on the resumed session checkpoints and flips exactly as a fresh
+    // build's would.
+    await sessions.prompt(resumed.sessionId, "keep going");
+    await waitFor(() => readFileSync(storyFile, "utf8").includes("state: review"));
+  });
+
+  it("resumeBuild refuses not_found for an unknown project, harness, or worktree", async () => {
+    const work = await seedProject("ST-0006", "building");
+    projects.push(work);
+    registerConfig(configDir, "p1", work);
+
+    expect(await resumeBuild(sessions, "nope", "ST-0006", harness.id)).toEqual({
+      ok: false,
+      code: "not_found",
+      message: expect.any(String),
+    });
+    expect(await resumeBuild(sessions, "p1", "ST-0006", "nope")).toEqual({
+      ok: false,
+      code: "not_found",
+      message: expect.any(String),
+    });
+    // No worktree was ever started for ST-0006.
+    expect(await resumeBuild(sessions, "p1", "ST-0006", harness.id)).toEqual({
+      ok: false,
+      code: "not_found",
+      message: expect.any(String),
+    });
+  });
+
+  it("resumeBuild refuses already_attached while a session is already running for the story", async () => {
+    const work = await seedProject("ST-0007", "building");
+    projects.push(work);
+    registerConfig(configDir, "p1", work);
+
+    const started = await startBuild(sessions, { id: "p1", path: work }, "ST-0007", harness);
+    if (!started.ok) throw new Error(`${started.code}: ${started.message}`);
+
+    expect(await resumeBuild(sessions, "p1", "ST-0007", harness.id)).toEqual({
+      ok: false,
+      code: "already_attached",
+      message: expect.any(String),
+    });
   });
 });

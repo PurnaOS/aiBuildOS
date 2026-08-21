@@ -163,10 +163,11 @@ test("a story is built, flips to review on turn end, is sent back with a note, a
 
   // AC-1: Build walks ready → queued → building, on disk and on the board — pressed before a session
   // exists, so the walk's two guarded saves land deterministically, ahead of anything the stub could
-  // race them with.
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-view-work").click();
-  await w.getByTestId("board-card-build-ST-0001").click();
+  // race them with. RQ-0045#AC-4: the primary press is a worktree build now, so the in-chat build
+  // this test exercises presses "In this conversation" behind the caret instead.
+  await w.getByTestId("tab-work").click();
+  await w.getByTestId("board-card-build-menu-ST-0001").click();
+  await w.getByTestId("board-card-build-chat-ST-0001").click();
 
   await expect.poll(() => readFileSync(storyFile, "utf8")).toContain("state: building");
   await expect(
@@ -188,7 +189,7 @@ test("a story is built, flips to review on turn end, is sent back with a note, a
     .poll(() => readFileSync(storyFile, "utf8"), { timeout: 20000 })
     .toContain("state: review");
 
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-work").click();
   await w.getByTestId("board-card-review-ST-0001").click();
   await expect(w.getByTestId("review-tab")).toBeVisible();
   await expect(w.getByTestId("review-story")).toContainText("AC-1");
@@ -212,7 +213,7 @@ test("a story is built, flips to review on turn end, is sent back with a note, a
     .toContain("state: review");
 
   // AC-4: Accept is the one flip, review → accepted.
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-work").click();
   await w.getByTestId("board-card-review-ST-0001").click();
   await expect(w.getByTestId("review-tab")).toBeVisible();
   await w.getByTestId("review-accept").click();

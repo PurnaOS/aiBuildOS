@@ -199,8 +199,8 @@ async function open(
 }
 
 async function openReview(w: Page): Promise<void> {
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-view-work").click();
+  // RQ-0045#AC-1, AC-3: Work is its own pinned surface now, not a nested strip view.
+  await w.getByTestId("tab-work").click();
   await w.getByTestId("board-card-review-ST-0001").click();
   await expect(w.getByTestId("review-tab")).toBeVisible();
 }

@@ -83,8 +83,9 @@ async function open(): Promise<{ app: ElectronApplication; w: Page; work: string
   await w.getByTestId("workspace").waitFor();
   await w.getByTestId("start-h").click();
   await w.getByTestId("chat").waitFor({ timeout: 20000 });
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-tab").waitFor();
+  // RQ-0045#AC-2: Plan absorbs the old Board tab's Backlog view and PlanTab's drafts, one surface.
+  await w.getByTestId("tab-plan").click();
+  await w.getByTestId("plan-surface").waitFor();
 
   return { app, w, work };
 }
@@ -193,7 +194,7 @@ test("a proposal lands as drafts, is shaped, and approval schedules it", async (
   const surface = w.locator(".copilotKitMessages");
   await expect(surface).toContainText("RQ-0001");
   await expect(surface).toContainText("RQ-0002");
-  // The stub's own turn ending is the revision bump the plan and the banner both wait on.
+  // The stub's own turn ending is the revision bump the plan waits on.
   await expect(surface).toContainText("Proposed 2 draft stories.", { timeout: 20000 });
 
   // AC-2: the drafts are ordinary files a restart does not lose — asserted straight off disk.
@@ -204,11 +205,10 @@ test("a proposal lands as drafts, is shaped, and approval schedules it", async (
     "implements: [RQ-0002]",
   );
 
-  // AC-3: the banner offers the plan whenever draft work exists.
-  await w.getByTestId("tab-board").click();
-  await expect(w.getByTestId("plan-banner")).toContainText("4");
-  await w.getByTestId("plan-banner-open").click();
-  await expect(w.getByTestId("plan-tab")).toBeVisible();
+  // RQ-0045#AC-2: browsing to Plan shows the drafts in-surface directly — no banner, no second
+  // door to click through first.
+  await w.getByTestId("tab-plan").click();
+  await expect(w.getByTestId("plan-surface")).toBeVisible();
 
   // Grouped under the requirement each story implements.
   const groupOne = w.getByTestId("plan-group-RQ-0001");
@@ -283,9 +283,8 @@ test("a proposal lands as drafts, is shaped, and approval schedules it", async (
     },
   );
 
-  await w.getByTestId("tab-board").click();
-  await expect(w.getByTestId("plan-banner")).toBeVisible();
-  await w.getByTestId("plan-banner-open").click();
+  // RQ-0045#AC-2: back to Plan directly — no banner to reopen.
+  await w.getByTestId("tab-plan").click();
 
   // AC-7: the validator's own rejection is marked before anything is attempted.
   await expect(w.getByTestId("plan-story-rejected-ST-0098")).toBeVisible();

@@ -154,7 +154,7 @@ test("a file written by the terminal, a state flipped on disk, and a terminal co
   });
 
   // AC-2: a state changed on disk, not through `project:artifact-save`, moves the card.
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-plan").click();
   await expect(w.getByTestId("board-card-RQ-0001")).toBeVisible();
 
   writeFileSync(

@@ -1,66 +1,15 @@
 import type { ChannelResponse } from "@aibuildos/ipc";
 import { useEffect, useState } from "react";
-import { card, eyebrow, focusRing, mono } from "../ui.js";
+import { card, eyebrow, mono } from "../ui.js";
 import type { Tab } from "../workspace/TabStrip.js";
-import { BacklogBoard } from "./BacklogBoard.js";
 import type { BoardColumn } from "./derive.js";
-import { WorkBoard } from "./WorkBoard.js";
 
 /**
- * The Board tab (RQ-0011, ST-0024): Backlog and Work, behind the same switcher FilesRail uses for
- * files|git. Pinned beside Chat — nowhere else in the workspace shows the record's *shape*, only one
- * artifact at a time.
- */
-export function BoardTab({
-  projectId,
-  onOpen,
-  onPrompt,
-}: {
-  projectId: string;
-  onOpen: (tab: Omit<Tab, "preview">, options?: { preview?: boolean }) => void;
-  /** Sends text into the conversation as the user's own visible message — how "Plan the selected
-   * work" speaks (RQ-0014#AC-1). Unused until the picking lane lands; threaded now so it does not
-   * need a Workspace edit then. */
-  onPrompt: (text: string) => void;
-}): React.JSX.Element {
-  const [view, setView] = useState<"backlog" | "work">("backlog");
-
-  return (
-    <div data-testid="board-tab" className="flex h-full flex-col overflow-hidden">
-      <div className="flex h-[34px] shrink-0 items-stretch border-b border-neutral-200 dark:border-neutral-800">
-        {(["backlog", "work"] as const).map((name) => (
-          <button
-            key={name}
-            type="button"
-            data-testid={`board-view-${name}`}
-            data-active={view === name}
-            onClick={() => setView(name)}
-            className={`px-3.5 text-xs capitalize ${focusRing} ${
-              view === name
-                ? "font-medium shadow-[inset_0_-2px_0_currentColor]"
-                : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
-            }`}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
-
-      {view === "backlog" ? (
-        <BacklogBoard projectId={projectId} onOpen={onOpen} onPrompt={onPrompt} />
-      ) : (
-        <WorkBoard projectId={projectId} onOpen={onOpen} onPrompt={onPrompt} />
-      )}
-    </div>
-  );
-}
-
-type ArtifactDetail = ChannelResponse<"project:artifact">;
-
-/**
- * One board column: a header (state name, plus why it refuses drops when it does), and its cards in
- * derived order. Shared by both boards — the difference between them is entirely in the policy
- * functions each passes in, never in how a column draws itself.
+ * One board column and its cards — shared by both boards (RQ-0011, RQ-0045#AC-2, ST-0064): the
+ * difference between the Plan surface and the Work surface is entirely in the policy functions each
+ * passes in, never in how a column or a card draws itself. Moved out of the old `BoardTab.tsx`, which
+ * used to be the nested Backlog/Work strip both boards sat behind — that strip is gone (RQ-0045#AC-1),
+ * this is what it left shared.
  */
 export function Column({
   column,
@@ -135,6 +84,8 @@ export function Column({
   );
 }
 
+type ArtifactDetail = ChannelResponse<"project:artifact">;
+
 function Card({
   artifact,
   projectId,
@@ -188,7 +139,7 @@ function Card({
   }, [menuOpen, projectId, artifact.id, artifact.state, filterMoves]);
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop is mouse-only; "Move to…" below is the keyboard/screen-reader twin for every move dragging can make.
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop is mouse-only; "Move to…" below is the keyboard/screen-reader path to every move dragging can make.
     <div
       data-testid={`board-card-${artifact.id}`}
       draggable

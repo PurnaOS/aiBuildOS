@@ -4,9 +4,8 @@ import { type ComponentProps, useEffect, useState } from "react";
 import { useHarnesses } from "../harness/HarnessPanel.js";
 import type { Session } from "../session/useSession.js";
 import { button, eyebrow, focusRing, mono, primary } from "../ui.js";
-import { Activity } from "./Activity.js";
-import { Controls } from "./Controls.js";
-import { PlaybookStrip } from "./PlaybookStrip.js";
+import { AgentPopover, SupervisionPill, useAgentControls } from "./AgentPopover.js";
+import { Composer, ComposerMenuProvider, StarterCards } from "./Composer.js";
 import { AsksAssistantMessage } from "./QuestionCard.js";
 import { ToolCallCard } from "./ToolCallCard.js";
 import { ToolSessionContext } from "./toolCall.js";
@@ -40,15 +39,16 @@ export function Chat({
 }): React.JSX.Element {
   const { harnesses } = useHarnesses();
   const { state, start } = session;
-  /** A slash command the user picked. It is sent as ordinary text, which is all a command is. */
-  const [command, setCommand] = useState<string | null>(null);
   // Which harness this session was actually started with — `SessionState` does not carry it, and
   // it is RQ-0013#AC-6's fallback: what a playbook button runs with when its own preference matches
   // nothing configured.
   const [startedWith, setStartedWith] = useState<string | null>(null);
-  // Feeds ToolCallCard's terminal cards the streamed `acp.tool_call_update` content CopilotKit never
-  // sees (ST-0047) — one subscription for the whole conversation, called unconditionally so it stays
-  // ahead of the conditional returns below rather than becoming a conditional hook itself.
+  // Called unconditionally, ahead of the conditional returns below, so it stays one hook rather than
+  // a conditional one — `sessionId` is `null` outside the ready branch and the hook no-ops on that.
+  const controls = useAgentControls(
+    state.status === "ready" ? state.sessionId : null,
+    state.status === "ready" ? state.offered : {},
+  );
   const pick = async (harnessId: string): Promise<void> => {
     setStartedWith(harnessId);
     await start(harnessId);
@@ -60,15 +60,15 @@ export function Chat({
       "the attached harness";
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="chat">
-        {/* Project-scoped, so it sits above the agent's own controls rather than among them. Not
-            wrapped in a bordered row of its own: while the level is still loading it renders
-            nothing at all, rather than an empty strip flashing above the conversation. */}
-        <Supervision projectId={projectId} />
-        {/* What the agent is set to, above the conversation it applies to. */}
-        <Controls
-          sessionId={state.sessionId}
-          offered={state.offered}
-          onCommand={(text) => setCommand(text)}
+        {/* Everything the agent is set to, plus supervision, in one popover (RQ-0042). */}
+        <AgentPopover
+          attachedHarness={attachedHarness}
+          projectId={projectId}
+          modes={controls.modes}
+          modeId={controls.modeId}
+          options={controls.options}
+          setMode={controls.setMode}
+          setOption={controls.setOption}
         />
         <CopilotKit
           selfManagedAgents={{ default: state.agent }}
@@ -77,25 +77,30 @@ export function Chat({
           // advance — one card draws whatever it ran, where it ran it.
           renderToolCalls={[{ name: "*", render: ToolCallCard as ToolRenderer["render"] }]}
         >
-          {/* The standard steps, filtered from the record alone (DC-0019) — above the transcript,
-              because they are how a session that has nothing asked of it yet gets started. */}
-          <PlaybookStrip
+          {/* Playbooks and the agent's own commands, offered where messages are composed
+              (RQ-0043) — the `+` menu on the composer below, and starter cards on an empty
+              transcript. */}
+          <ComposerMenuProvider
             projectId={projectId}
             harnesses={harnesses}
             attachedHarness={attachedHarness}
-          />
-          <div className="min-h-0 flex-1">
-            {/* The cards CopilotKit renders carry no session of their own; this is how a
-                ToolCallCard knows which session's stream to read (BG-0008's store). */}
-            <ToolSessionContext value={state.sessionId}>
-              <CopilotChat className="h-full" AssistantMessage={AsksAssistantMessage} />
-            </ToolSessionContext>
-          </div>
-          {/* The plan and any question the agent is waiting on, kept above the composer rather than
-              left to scroll away. */}
-          <Activity sessionId={state.sessionId} />
-          <PendingPrompt text={pending ?? null} onSent={onSent} />
-          <PendingPrompt text={command} onSent={() => setCommand(null)} />
+            commands={controls.commands}
+            sessionId={state.sessionId}
+          >
+            <div className="relative min-h-0 flex-1">
+              {/* The cards CopilotKit renders carry no session of their own; this is how a
+                  ToolCallCard knows which session's stream to read (BG-0008's store). */}
+              <ToolSessionContext value={state.sessionId}>
+                <CopilotChat
+                  className="h-full"
+                  AssistantMessage={AsksAssistantMessage}
+                  Input={Composer}
+                />
+              </ToolSessionContext>
+              <StarterCards />
+            </div>
+            <PendingPrompt text={pending ?? null} onSent={onSent} />
+          </ComposerMenuProvider>
         </CopilotKit>
       </div>
     );
@@ -146,7 +151,7 @@ export function Chat({
   return (
     <Centred>
       <div className="max-w-md">
-        <Supervision projectId={projectId} />
+        <SupervisionPill projectId={projectId} />
         <p className="text-sm">Nothing has been asked yet.</p>
         <p className="mt-1 text-xs text-neutral-500">
           Pick a coding agent to work on this project. It runs in{" "}
@@ -227,55 +232,4 @@ function HarnessButtons({
 
 function Centred({ children }: { children: React.ReactNode }): React.JSX.Element {
   return <div className="flex h-full items-center justify-center p-8 text-center">{children}</div>;
-}
-
-type SupervisionLevel = "closest" | "hands-off";
-
-/**
- * How closely this project's sessions are supervised (RQ-0022#AC-1).
- *
- * Project-scoped rather than session-scoped, so it reads and writes independent of whether a session
- * is even open — on screen before one starts, on the start surface, and again once one is running.
- * A two-word toggle rather than a menu: there are exactly two levels today, and the vision names more
- * only as their own requirement arrives.
- */
-function Supervision({ projectId }: { projectId: string }): React.JSX.Element | null {
-  const [level, setLevel] = useState<SupervisionLevel | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    void window.aibuildos.invoke("project:list", undefined).then((projects) => {
-      if (!live) return;
-      setLevel(projects.find((project) => project.id === projectId)?.supervision ?? "closest");
-    });
-    return () => {
-      live = false;
-    };
-  }, [projectId]);
-
-  if (level === null) return null;
-
-  const change = async (next: SupervisionLevel): Promise<void> => {
-    const previous = level;
-    setLevel(next);
-    const { problem } = await window.aibuildos.invoke("project:set-supervision", {
-      id: projectId,
-      level: next,
-    });
-    // A change that did not actually persist must not be shown as though it had.
-    if (problem) setLevel(previous);
-  };
-
-  return (
-    <button
-      type="button"
-      data-testid="supervision"
-      title="How closely permission requests are supervised"
-      onClick={() => void change(level === "hands-off" ? "closest" : "hands-off")}
-      className={`mt-2 mb-3 flex shrink-0 items-center gap-1.5 self-start rounded border border-neutral-200 px-2 py-1 text-xs dark:border-neutral-800 ${focusRing}`}
-    >
-      <span className={eyebrow}>supervision</span>
-      <span>{level}</span>
-    </button>
-  );
 }

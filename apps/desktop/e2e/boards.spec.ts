@@ -60,8 +60,9 @@ async function open(seed: (work: string) => void): Promise<{
   await w.setViewportSize({ width: 1440, height: 900 });
   await w.getByTestId("project-open").first().click();
   await w.getByTestId("workspace").waitFor();
-  await w.getByTestId("tab-board").click();
-  await w.getByTestId("board-tab").waitFor();
+  // RQ-0045: Board's nested Backlog|Work strip is gone — Backlog is now the pinned Plan surface.
+  await w.getByTestId("tab-plan").click();
+  await w.getByTestId("plan-surface").waitFor();
   return { app, w, work };
 }
 
@@ -113,9 +114,9 @@ test("moves a card via its menu, refuses an illegal move, picks up an outside ed
     );
   });
 
-  // AC-1: one column per vocabulary state, Backlog active by default — including a state no seeded
-  // requirement occupies, which can only come from the profile: no artifact could put it there.
-  await expect(w.getByTestId("board-view-backlog")).toHaveAttribute("data-active", "true");
+  // AC-1: one column per vocabulary state, the Plan surface reached directly (RQ-0045#AC-1) —
+  // including a state no seeded requirement occupies, which can only come from the profile: no
+  // artifact could put it there.
   await expect(w.getByTestId("board-column-draft").getByTestId("board-card-RQ-0001")).toBeVisible();
   await expect(w.getByTestId("board-column-verified")).toBeVisible();
 
@@ -154,7 +155,7 @@ test("moves a card via its menu, refuses an illegal move, picks up an outside ed
   await title.fill("The first thing, retitled");
   await expect(w.getByTestId("artifact-saved")).toHaveText("saved");
 
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-plan").click();
   await expect(
     w.getByTestId("board-column-building").getByTestId("board-card-RQ-0003"),
   ).toBeVisible();
@@ -275,37 +276,44 @@ test("the Work board restricts moves to the edges a person owns", async () => {
     writeFileSync(join(dir, "docs/bugs/bg-0001.md"), BUG_IN_QUEUE);
   });
 
-  await w.getByTestId("board-view-work").click();
-  await expect(w.getByTestId("board-view-work")).toHaveAttribute("data-active", "true");
+  // RQ-0045#AC-1: Work is its own pinned surface now, not a nested strip view.
+  await w.getByTestId("tab-work").click();
+  await expect(w.getByTestId("tab-work")).toHaveAttribute("data-active", "true");
+  // `open()` already visited Plan, which stays mounted (RQ-0045#AC-1) — its own Requirement board
+  // shares state names with this one (`ready`, `building`, `retired`), so every lookup below is
+  // scoped to this surface's own root rather than the whole page.
+  const board = w.getByTestId("work-board");
 
   // AC-6: the columns the builders write take no moves, and say why — whether or not anything is in
   // them right now, which is what makes the caption a property of the column, not of a card.
-  await expect(w.getByTestId("board-column-ready")).toContainText("moved by the builder");
-  await expect(w.getByTestId("board-column-queued")).toContainText("moved by the builder");
-  await expect(w.getByTestId("board-column-building")).toContainText("moved by the builder");
-  await expect(w.getByTestId("board-column-accepted")).not.toContainText("moved by the builder");
+  await expect(board.getByTestId("board-column-ready")).toContainText("moved by the builder");
+  await expect(board.getByTestId("board-column-queued")).toContainText("moved by the builder");
+  await expect(board.getByTestId("board-column-building")).toContainText("moved by the builder");
+  await expect(board.getByTestId("board-column-accepted")).not.toContainText(
+    "moved by the builder",
+  );
 
   // Stories and Bugs on one board, told apart by their mono ID prefix.
   await expect(
-    w.getByTestId("board-column-review").getByTestId("board-card-ST-0001"),
+    board.getByTestId("board-column-review").getByTestId("board-card-ST-0001"),
   ).toBeVisible();
   await expect(
-    w.getByTestId("board-column-queued").getByTestId("board-card-BG-0001"),
+    board.getByTestId("board-column-queued").getByTestId("board-card-BG-0001"),
   ).toBeVisible();
 
   // AC-6, the discriminating case: `queued → building` is a transition the profile itself declares
   // legal, but it is the builder's own edge, not a verdict a person renders — so it stays off the
   // menu even though `project:artifact` reports it as legal. Only retirement is offered from here.
-  await w.getByTestId("board-card-menu-BG-0001").click();
-  const builderMoves = w.getByTestId("board-card-moves-BG-0001");
+  await board.getByTestId("board-card-menu-BG-0001").click();
+  const builderMoves = board.getByTestId("board-card-moves-BG-0001");
   await expect(builderMoves.getByTestId("board-card-move-BG-0001-retired")).toBeVisible();
   await expect(builderMoves.getByTestId("board-card-move-BG-0001-building")).toHaveCount(0);
   await expect(builderMoves.getByTestId("board-card-move-BG-0001-review")).toHaveCount(0);
 
   // AC-6: from `review`, exactly the verdicts a person owns — accept, send back, reject, retire —
   // never the builders' own `ready`/`queued` edges.
-  await w.getByTestId("board-card-menu-ST-0001").click();
-  const moves = w.getByTestId("board-card-moves-ST-0001");
+  await board.getByTestId("board-card-menu-ST-0001").click();
+  const moves = board.getByTestId("board-card-moves-ST-0001");
   await expect(moves.getByTestId("board-card-move-ST-0001-accepted")).toBeVisible();
   await expect(moves.getByTestId("board-card-move-ST-0001-building")).toBeVisible();
   await expect(moves.getByTestId("board-card-move-ST-0001-rejected")).toBeVisible();
@@ -313,7 +321,7 @@ test("the Work board restricts moves to the edges a person owns", async () => {
 
   await moves.getByTestId("board-card-move-ST-0001-accepted").click();
   await expect(
-    w.getByTestId("board-column-accepted").getByTestId("board-card-ST-0001"),
+    board.getByTestId("board-column-accepted").getByTestId("board-card-ST-0001"),
   ).toBeVisible();
   expect(readFileSync(join(work, "docs/user-stories/st-0001.md"), "utf8")).toContain(
     "state: accepted",
@@ -354,7 +362,7 @@ test("orders a column by priority before ID (TC-0050, BG-0005)", async () => {
     );
   });
 
-  await w.getByTestId("tab-board").click();
+  await w.getByTestId("tab-plan").click();
   const cards = w.getByTestId("board-column-draft").locator('[data-testid^="board-card-RQ-"]');
   await expect(cards).toHaveCount(2);
   await expect(cards.first()).toHaveAttribute("data-testid", "board-card-RQ-0002");
