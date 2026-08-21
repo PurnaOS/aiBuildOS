@@ -32,13 +32,20 @@ describe("seeding playbooks into an adopted project", () => {
   });
 
   /** Writes the template bundle, dropping playbook pieces — and, opted out, the root instruction
-   * files RQ-0028 seeds — the caller does not want present. */
+   * files RQ-0028 seeds or the `.claude/` guardrail layer RQ-0049 seeds — the caller does not
+   * want present. */
   function adopt(
-    options: { playbooks?: boolean; profileType?: boolean; instructions?: boolean } = {},
+    options: {
+      playbooks?: boolean;
+      profileType?: boolean;
+      instructions?: boolean;
+      hooks?: boolean;
+    } = {},
   ): void {
     for (const [relative, content] of bundleFiles()) {
       if (options.playbooks === false && relative.startsWith("docs/playbooks/")) continue;
       if (options.profileType === false && relative === "docs/profile/playbook.md") continue;
+      if (options.hooks === false && relative.startsWith(".claude/")) continue;
       if (
         options.instructions === false &&
         (relative === "AGENTS.md" || relative === "CLAUDE.md")
@@ -53,13 +60,16 @@ describe("seeding playbooks into an adopted project", () => {
     }
   }
 
-  it("refuses without a configured identity, and writes nothing", () => {
-    adopt({ playbooks: false, profileType: false });
+  it("refuses without a configured identity — writing no artifacts, but still the hooks", () => {
+    adopt({ playbooks: false, profileType: false, hooks: false });
 
-    const problem = seedPlaybooks(dir);
+    const problem = seedPlaybooks(dir, true);
 
     expect(problem).toContain("user.name");
     expect(existsSync(join(dir, "docs", "playbooks"))).toBe(false);
+    // The guardrail layer needs no owner, so the refusal does not hold it back (RQ-0049#AC-1).
+    expect(existsSync(join(dir, ".claude", "settings.json"))).toBe(true);
+    expect(existsSync(join(dir, ".claude", "hooks", "guard-record.sh"))).toBe(true);
   });
 
   it("writes the standard playbooks, healing a profile that predates the type", () => {
@@ -92,7 +102,7 @@ describe("seeding playbooks into an adopted project", () => {
 
     const agents = readFileSync(join(dir, "AGENTS.md"), "utf8");
     const claude = readFileSync(join(dir, "CLAUDE.md"), "utf8");
-    expect(agents).toContain("ready → queued → building → review");
+    expect(agents).toContain("Never edit a `state:` field");
     expect(claude).toContain("@AGENTS.md");
     // Neither carries frontmatter, so unlike the playbooks the owner token never applies.
     expect(agents).not.toContain("{{OWNER}}");
@@ -133,6 +143,51 @@ describe("seeding playbooks into an adopted project", () => {
     expect(seedPlaybooks(dir)).toBeNull();
 
     expect(readFileSync(join(dir, "docs", "profile", "playbook.md"), "utf8")).toBe(before);
+  });
+
+  /**
+   * TC-0117 (RQ-0049#AC-1). A project scaffolded before the guardrail layer existed gains it on
+   * re-seed — even though the playbook refusal still stands — and a hook file that is already
+   * there, edited or not, is never overwritten.
+   */
+  it("adds missing hook files on re-seed, playbook refusal and all", () => {
+    adopt({ playbooks: true, profileType: true, hooks: false });
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+
+    const problem = seedPlaybooks(dir, true);
+
+    // The refusal is unchanged; the guardrails landed anyway.
+    expect(problem).toContain("already has playbook");
+    expect(existsSync(join(dir, ".claude", "settings.json"))).toBe(true);
+    expect(existsSync(join(dir, ".claude", "hooks", "guard-record.sh"))).toBe(true);
+  });
+
+  it("never overwrites an edited hook file, even while it seeds the missing ones", () => {
+    adopt({ playbooks: false, profileType: false, hooks: false });
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "settings.json"), '{ "hooks": {} }\n', "utf8");
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+
+    expect(seedPlaybooks(dir, true)).toBeNull();
+
+    // The project's own settings, untouched — not the template's.
+    expect(readFileSync(join(dir, ".claude", "settings.json"), "utf8")).toBe('{ "hooks": {} }\n');
+    // The script was genuinely absent, so it is still written.
+    expect(existsSync(join(dir, ".claude", "hooks", "guard-record.sh"))).toBe(true);
+  });
+
+  /**
+   * TC-0117 (RQ-0049#AC-3, ST-0066#AC-3). A harness without hook support produces no hook file and
+   * no error: the seed writes the playbooks exactly as it did before RQ-0049.
+   */
+  it("writes no hook file for a harness without hook support, and does not fail", () => {
+    adopt({ playbooks: false, profileType: false, hooks: false });
+    execFileSync("git", ["-C", dir, "config", "user.name", "Adopter"]);
+
+    expect(seedPlaybooks(dir)).toBeNull();
+
+    expect(existsSync(join(dir, ".claude"))).toBe(false);
+    expect(existsSync(join(dir, "docs", "playbooks", "pb-0001.md"))).toBe(true);
   });
 
   it("refuses when the project already has a playbook, and writes nothing else", () => {

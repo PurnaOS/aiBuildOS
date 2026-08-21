@@ -26,8 +26,9 @@ When asked for a new feature or a meaningful behaviour change:
 3. **Otherwise create the requirement first.** Mint the next `RQ-NNNN`, write the acceptance criteria
    as `[AC-n]` items, and set `state: draft`.
 4. **Establish relationships.** Add `depends_on` for requirements this one needs, `derived_from` if it
-   refines another, `related_to` for context. Move to `state: ready` only once the criteria and the
-   dependencies are settled — flipping to `ready` is the scheduling act.
+   refines another, `related_to` for context, then leave the requirement in `draft`. It moves to
+   `state: ready` once the criteria and the dependencies are settled — flipping to `ready` is the
+   scheduling act, and scheduling is the person's.
 5. **Create or update the epic / user story.** The Story carries `implements: [RQ-…]` and
    `parent: [EP-…]`.
 6. **Define the verification.** Write the TestCases with `verifies: [RQ-…]` (or `[RQ-…#AC-n]` for a
@@ -41,8 +42,8 @@ code quietly drifting away from it:
 
 - If the requirement was incomplete, edit it and add the missing criteria. Existing `[AC-n]` numbers
   keep their meaning; new criteria append.
-- If it was wrong, write the replacement and link the new one `supersedes: [RQ-old]`, then move the
-  old one to `retired`.
+- If it was wrong, write the replacement and link the new one `supersedes: [RQ-old]` — retiring the
+  old one is the person's move, and the `supersedes` link is what tells them to make it.
 - Either way the trace survives: the story still implements a requirement, the tests still verify one.
 
 ## Bugs

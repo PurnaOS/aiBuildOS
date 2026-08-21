@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadProfile } from "@aibuildos/knowledge-engine/load";
 import { bundleFiles, OWNER_PLACEHOLDER } from "./scaffold.js";
@@ -29,11 +29,18 @@ import { bundleFiles, OWNER_PLACEHOLDER } from "./scaffold.js";
  *     leaves behind always validates. The type is data (okf-conventions §6), so healing it here
  *     costs nothing a fresh scaffold was not already going to pay.
  *
+ * The guardrail hook layer (RQ-0049) rides every call whose configured harness supports hooks —
+ * `hooks`, decided by the caller from the harness store — ahead of both refusals; see `seedHooks`.
+ *
  * Synchronous throughout, on purpose: `project:seed-playbooks` (`ipc.ts`) calls this from a handler
  * that is not `async` and does not await its result, so an asynchronous identity lookup here would
  * hand the IPC contract a `Promise` where it expects a string.
  */
-export function seedPlaybooks(projectPath: string): string | null {
+export function seedPlaybooks(projectPath: string, hooks = false): string | null {
+  // Before either refusal, on purpose: hook files carry no owner and are no part of the playbook
+  // question, so a project scaffolded before RQ-0049 gains its missing guardrails on any re-seed.
+  if (hooks) seedHooks(projectPath);
+
   const docsRoot = join(projectPath, "docs");
   const playbooksDir = join(docsRoot, "playbooks");
 
@@ -64,6 +71,26 @@ export function seedPlaybooks(projectPath: string): string | null {
   }
 
   return null;
+}
+
+/**
+ * The guardrail hook layer (RQ-0049#AC-1): whichever `.claude/` template file is missing is
+ * written, one that is present — edited or not — is never touched, the same per-file rule
+ * `AGENTS.md`/`CLAUDE.md` follow. Only reached when a configured harness supports hooks
+ * (RQ-0049#AC-3) — which is also how a project scaffolded before the layer existed, or before
+ * Claude Code was configured, gains it the next time scaffolding runs (RQ-0049#AC-1). Activation
+ * is Claude Code's own trust dialog, never this seed (RQ-0049#AC-4).
+ */
+function seedHooks(projectPath: string): void {
+  for (const [relative, content] of bundleFiles()) {
+    if (!relative.startsWith(".claude/")) continue;
+    const target = join(projectPath, relative);
+    if (existsSync(target)) continue;
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content, "utf8");
+    // Invoked as an executable by the harness, like `scaffold.ts`'s seed writes it.
+    if (relative.endsWith(".sh")) chmodSync(target, 0o755);
+  }
 }
 
 /**

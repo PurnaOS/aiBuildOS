@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { commitAll, git, initRepo } from "./git.js";
 
@@ -29,11 +29,16 @@ import { commitAll, git, initRepo } from "./git.js";
  * ponytail: the templates are a snapshot of this repo's own `docs/profile/` and `docs/guidelines/`,
  * so the two can drift. Upgrade path is a `docs:check` rule that diffs them.
  */
-const templates = import.meta.glob("./okf-template/**/*.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
+const templates = import.meta.glob(
+  // Two patterns because the glob's default skips dotfiles: the record's markdown, and the
+  // Claude Code guardrail layer under `.claude/` (RQ-0049) — settings plus the hook script.
+  ["./okf-template/**/*.md", "./okf-template/.claude/**"],
+  {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  },
+) as Record<string, string>;
 
 const TEMPLATE_ROOT = "./okf-template/";
 
@@ -57,18 +62,44 @@ export function bundleFiles(): Map<string, string> {
 }
 
 /**
+ * Whether one configured harness reads the `.claude/` hook layer this template ships (RQ-0049).
+ *
+ * The store keeps no preset id — `HarnessPanel` copies a preset's command/args into the draft and
+ * `saveHarness` mints a UUID — so the launch spec is the only signal there is. `displayName` is
+ * deliberately excluded: it is the user's label, not what runs.
+ *
+ * ponytail: a name-sniff on the command line ("claude" anywhere in command+args, which catches both
+ * the `@agentclientprotocol/claude-agent-acp` preset and a hand-configured binary). Upgrade path is
+ * a capability flag on the harness record when a second hook-supporting harness exists.
+ */
+export function harnessSupportsHooks(harness: {
+  command: string;
+  args: readonly string[];
+}): boolean {
+  return /claude/i.test([harness.command, ...harness.args].join(" "));
+}
+
+/**
  * Write the OKF bundle into an existing directory, with `owner` filled in wherever the template left
  * it blank. Exported for its own test.
  *
  * A blind `replaceAll` on every file rather than only the playbook ones: the token cannot appear by
  * accident in the other templates, and singling out paths here would be a second place that has to
  * know which files are artifacts.
+ *
+ * `hooks` gates the `.claude/` guardrail layer (RQ-0049): it is written only when a configured
+ * harness supports file-side hooks — a plainer harness scaffolds exactly as before, instructions
+ * only, no error (RQ-0049#AC-3, ST-0066#AC-3). Activation is Claude Code's own trust dialog, never
+ * this seed (RQ-0049#AC-4).
  */
-export function seedBundle(dir: string, owner = ""): void {
+export function seedBundle(dir: string, owner = "", hooks = false): void {
   for (const [relative, content] of bundleFiles()) {
+    if (!hooks && relative.startsWith(".claude/")) continue;
     const target = join(dir, relative);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, content.replaceAll(OWNER_PLACEHOLDER, owner), "utf8");
+    // The guardrail hook script (RQ-0049) is invoked as an executable by the harness.
+    if (relative.endsWith(".sh")) chmodSync(target, 0o755);
   }
 }
 
@@ -120,16 +151,20 @@ export function claimProjectDirectory(parentDir: string, name: string): string {
  * same reason and with the same `git_identity` error this already had before there were playbooks to
  * seed — one refusal, not two that could disagree.
  */
-export async function fillProject(dir: string, name: string): Promise<void> {
+export async function fillProject(dir: string, name: string, hooks = false): Promise<void> {
   await initRepo(dir);
   writeFileSync(join(dir, "README.md"), readme(name), "utf8");
-  seedBundle(dir, await resolveOwner(dir));
+  seedBundle(dir, await resolveOwner(dir), hooks);
   await commitAll(dir, "chore: initial commit");
 }
 
 /** The whole of creating a project, for callers that do not need to register it in between. */
-export async function scaffoldProject(parentDir: string, name: string): Promise<string> {
+export async function scaffoldProject(
+  parentDir: string,
+  name: string,
+  hooks = false,
+): Promise<string> {
   const dir = claimProjectDirectory(parentDir, name);
-  await fillProject(dir, name);
+  await fillProject(dir, name, hooks);
   return dir;
 }

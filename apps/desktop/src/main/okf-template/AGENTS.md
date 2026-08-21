@@ -16,11 +16,10 @@ fixes are exempt.
 
 ## State discipline
 
-You may walk **work states only**, and only on the Story you are implementing:
-`ready → queued → building → review`. Never `draft → ready` — scheduling is the person's. Never
-`accepted`, `done`, `rejected`, or any other verdict — those are the person's too. Never a
-Requirement's own state. If you are building in a worktree, leave every `state:` field exactly as
-you found it; the application walks the states, not you.
+Never edit a `state:` field — not on a Story, not on a Requirement, not anywhere in `docs/`. The
+application walks every state itself, from the main checkout: it is the one place that can see the
+whole record. A guard enforces this, so an attempt is refused rather than quietly accepted.
+Scheduling is the person's, and so are the verdicts — `accepted`, `done`, `rejected`.
 
 ## Playbooks
 
